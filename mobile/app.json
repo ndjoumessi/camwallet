@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#0a0f1e"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.camwallet.app",
@@ -52,7 +54,8 @@
         {
           "faceIDPermission": "CamWallet utilise Face ID pour sécuriser l'accès."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "scheme": "camwallet",
     "experiments": {
