@@ -1,123 +1,298 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
+  Image,
+  Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as ImagePicker from 'expo-image-picker';
+import * as LocalAuthentication from 'expo-local-authentication';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Badge } from '../components/ui';
+import { userApi, authApi, MeResponse } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
 
-const MENU_ITEMS = [
-  {
-    icon: '🔒',
-    label: 'Sécurité & PIN',
-    desc: 'Modifier votre PIN, biométrie',
-    group: 'Compte',
-  },
-  { icon: '🔔', label: 'Notifications', desc: 'Alertes SMS et push', group: 'Compte' },
-  { icon: '📋', label: 'KYC & Identité', desc: 'Vérification compte', group: 'Compte' },
-  { icon: '💳', label: 'Limites & Plafonds', desc: 'Gérer vos plafonds', group: 'Compte' },
-  { icon: '📊', label: 'Mes statistiques', desc: 'Dépenses, économies', group: 'Activité' },
-  { icon: '🎁', label: 'Cashback & Promos', desc: 'Offres en cours', group: 'Activité' },
-  { icon: '❓', label: 'Aide & Support', desc: 'Centre d\'aide, contact', group: 'Support' },
-  { icon: '📜', label: 'Conditions d\'utilisation', desc: '', group: 'Support' },
-  { icon: '🔐', label: 'Confidentialité', desc: 'Données personnelles', group: 'Support' },
-];
+const BIO_KEY = 'cw_biometric_enabled';
 
-const GROUPS = ['Compte', 'Activité', 'Support'];
+// Mapping statut KYC → badge.
+const KYC_BADGE: Record<string, { label: string; color: string; bg: string }> = {
+  APPROVED: { label: '✓ Vérifié', color: Colors.primary, bg: Colors.primaryLight },
+  PENDING: { label: '⏳ En attente', color: Colors.yellow, bg: Colors.yellow + '20' },
+  SUBMITTED: { label: '⏳ En revue', color: Colors.yellow, bg: Colors.yellow + '20' },
+  REJECTED: { label: '✕ Rejeté', color: Colors.red, bg: Colors.errorBg },
+};
+
+const initials = (name?: string | null, phone?: string) =>
+  name
+    ? name.split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+    : (phone ?? '?').replace(/\D/g, '').slice(-2);
+
+const fcfa = (centimes: number) => Math.round(centimes / 100).toLocaleString('fr-FR');
 
 interface ProfileScreenProps {
   onLogout: () => void;
 }
 
 export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
-  const { user, balance } = useStore();
+  const storeUser = useStore((s) => s.user);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogout = () => {
+  // Édition
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ fullName: '', email: '', city: '', dateOfBirth: '' });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [biometric, setBiometric] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    userApi
+      .getMe()
+      .then((d) => { setMe(d); setError(null); })
+      .catch((e) => setError(e?.response?.data?.message ?? 'Erreur de chargement'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    AsyncStorage.getItem(BIO_KEY).then((v) => setBiometric(v === '1'));
+  }, []);
+
+  const openEdit = () => {
+    if (!me) return;
+    setForm({
+      fullName: me.fullName ?? '',
+      email: me.email ?? '',
+      city: me.city ?? '',
+      dateOfBirth: me.dateOfBirth ? me.dateOfBirth.slice(0, 10) : '',
+    });
+    setEditing(true);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const updated = await userApi.updateProfile({
+        fullName: form.fullName.trim() || undefined,
+        email: form.email.trim() || undefined,
+        city: form.city.trim() || undefined,
+        dateOfBirth: form.dateOfBirth.trim() || undefined,
+      });
+      setMe((prev) => (prev ? { ...prev, ...updated } : updated));
+      setEditing(false);
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.response?.data?.message ?? 'Échec de la mise à jour');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const pickAvatar = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission requise', "Autorisez l'accès à la galerie pour changer la photo.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.6,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    setUploading(true);
+    try {
+      const { avatarUrl } = await userApi.uploadAvatar(result.assets[0].uri);
+      setMe((prev) => (prev ? { ...prev, avatarUrl } : prev));
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.response?.data?.message ?? "Échec de l'upload");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const changePin = () => {
+    const phone = me?.phone;
+    if (!phone) return;
     Alert.alert(
-      'Se déconnecter',
-      'Êtes-vous sûr de vouloir vous déconnecter ?',
+      'Changer le PIN',
+      'Un code OTP vous sera envoyé par SMS pour sécuriser le changement.',
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Se déconnecter', style: 'destructive', onPress: onLogout },
-      ]
+        {
+          text: 'Envoyer le code',
+          onPress: async () => {
+            try {
+              await authApi.requestPinReset(phone);
+              Alert.alert('Code envoyé', 'Saisissez le code OTP reçu par SMS pour définir un nouveau PIN.');
+            } catch (e: any) {
+              Alert.alert('Erreur', e?.response?.data?.message ?? "Échec de l'envoi");
+            }
+          },
+        },
+      ],
     );
   };
+
+  const toggleBiometric = async (value: boolean) => {
+    if (value) {
+      const hasHw = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!hasHw || !enrolled) {
+        Alert.alert('Indisponible', "Aucune biométrie configurée sur cet appareil.");
+        return;
+      }
+      const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Activer la biométrie' });
+      if (!res.success) return;
+    }
+    setBiometric(value);
+    await AsyncStorage.setItem(BIO_KEY, value ? '1' : '0');
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Se déconnecter', 'Êtes-vous sûr de vouloir vous déconnecter ?', [
+      { text: 'Annuler', style: 'cancel' },
+      { text: 'Se déconnecter', style: 'destructive', onPress: onLogout },
+    ]);
+  };
+
+  const name = me?.fullName ?? storeUser?.name ?? 'Utilisateur';
+  const phone = me?.phone ?? '';
+  const kyc = KYC_BADGE[me?.kycStatus ?? 'PENDING'] ?? KYC_BADGE.PENDING;
+  const memberSince = me?.createdAt
+    ? new Date(me.createdAt).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+    : '—';
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile card */}
-      <LinearGradient
-        colors={['#0d2a1f', '#0a1628']}
-        style={styles.profileCard}
-      >
-        <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>{user.avatar}</Text>
-        </View>
+      <LinearGradient colors={['#0d2a1f', '#0a1628']} style={styles.profileCard}>
+        <TouchableOpacity onPress={pickAvatar} activeOpacity={0.8} style={styles.profileAvatar}>
+          {me?.avatarUrl ? (
+            <Image source={{ uri: me.avatarUrl }} style={styles.avatarImg} />
+          ) : (
+            <Text style={styles.profileAvatarText}>{initials(name, phone)}</Text>
+          )}
+          <View style={styles.avatarEditBadge}>
+            {uploading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.avatarEditIcon}>📷</Text>}
+          </View>
+        </TouchableOpacity>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{user.name}</Text>
-          <Text style={styles.profilePhone}>+237 {user.phone}</Text>
+          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.profilePhone}>+237 {phone}</Text>
+          {me?.email ? <Text style={styles.profilePhone}>{me.email}</Text> : null}
+          {me?.city ? <Text style={styles.profilePhone}>📍 {me.city}</Text> : null}
           <View style={styles.profileBadges}>
-            <Badge label="✓ Vérifié" color={Colors.primary} bg={Colors.primaryLight} />
+            <Badge label={kyc.label} color={kyc.color} bg={kyc.bg} />
             <Badge label="🇨🇲 XAF" color={Colors.blue} bg={Colors.infoBg} />
           </View>
         </View>
       </LinearGradient>
 
-      {/* Balance summary */}
-      <View style={styles.statsRow}>
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>{balance.toLocaleString('fr-FR')}</Text>
-          <Text style={styles.statLabel}>Solde FCFA</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>127</Text>
-          <Text style={styles.statLabel}>Transactions</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statValue}>Pro</Text>
-          <Text style={styles.statLabel}>Compte</Text>
-        </View>
-      </View>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      {loading && !me ? (
+        <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.xl }} />
+      ) : (
+        <>
+          <TouchableOpacity style={styles.editBtn} onPress={openEdit} activeOpacity={0.8}>
+            <Text style={styles.editBtnText}>✏️  Modifier le profil</Text>
+          </TouchableOpacity>
 
-      {/* Menu groups */}
-      {GROUPS.map((group) => (
-        <View key={group} style={styles.menuGroup}>
-          <Text style={styles.groupLabel}>{group}</Text>
-          {MENU_ITEMS.filter((m) => m.group === group).map((item) => (
-            <TouchableOpacity
-              key={item.label}
-              style={styles.menuItem}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-            >
-              <View style={styles.menuItemIcon}>
-                <Text style={{ fontSize: 20 }}>{item.icon}</Text>
+          {/* Edit form (inline) */}
+          {editing && (
+            <View style={styles.editCard}>
+              {([
+                ['fullName', 'Nom complet', 'Jean Dupont'],
+                ['email', 'Email', 'jean@example.cm'],
+                ['city', 'Ville', 'Douala'],
+                ['dateOfBirth', 'Date de naissance (AAAA-MM-JJ)', '1995-04-23'],
+              ] as const).map(([key, label, ph]) => (
+                <View key={key} style={{ marginBottom: Spacing.md }}>
+                  <Text style={styles.fieldLabel}>{label}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={(form as any)[key]}
+                    onChangeText={(v) => setForm((f) => ({ ...f, [key]: v }))}
+                    placeholder={ph}
+                    placeholderTextColor={Colors.textMuted}
+                    autoCapitalize={key === 'email' ? 'none' : 'words'}
+                    keyboardType={key === 'email' ? 'email-address' : 'default'}
+                  />
+                </View>
+              ))}
+              <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                <TouchableOpacity style={[styles.formBtn, styles.cancelBtn]} onPress={() => setEditing(false)}>
+                  <Text style={styles.cancelBtnText}>Annuler</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.formBtn, styles.saveBtn]} onPress={save} disabled={saving}>
+                  <Text style={styles.saveBtnText}>{saving ? '…' : 'Enregistrer'}</Text>
+                </TouchableOpacity>
               </View>
+            </View>
+          )}
+
+          {/* Stats */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{me?.wallet ? fcfa(me.wallet.balance) : '—'}</Text>
+              <Text style={styles.statLabel}>Solde FCFA</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{me?.stats.transactionsCount ?? 0}</Text>
+              <Text style={styles.statLabel}>Transactions</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{memberSince}</Text>
+              <Text style={styles.statLabel}>Membre depuis</Text>
+            </View>
+          </View>
+
+          {/* Sécurité */}
+          <View style={styles.menuGroup}>
+            <Text style={styles.groupLabel}>Sécurité</Text>
+            <TouchableOpacity style={styles.menuItem} onPress={changePin} activeOpacity={0.7}>
+              <View style={styles.menuItemIcon}><Text style={{ fontSize: 20 }}>🔒</Text></View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>{item.label}</Text>
-                {item.desc ? <Text style={styles.menuItemDesc}>{item.desc}</Text> : null}
+                <Text style={styles.menuItemLabel}>Changer le PIN</Text>
+                <Text style={styles.menuItemDesc}>Code OTP requis</Text>
               </View>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      ))}
+            <View style={styles.menuItem}>
+              <View style={styles.menuItemIcon}><Text style={{ fontSize: 20 }}>🧬</Text></View>
+              <View style={styles.menuItemInfo}>
+                <Text style={styles.menuItemLabel}>Connexion biométrique</Text>
+                <Text style={styles.menuItemDesc}>Face ID / empreinte</Text>
+              </View>
+              <Switch
+                value={biometric}
+                onValueChange={toggleBiometric}
+                trackColor={{ false: Colors.border, true: Colors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+        </>
+      )}
 
       {/* Logout */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
         <Text style={styles.logoutText}>🚪 Se déconnecter</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>CamWallet v1.0.0 · Marché Cameroun 🇨🇲</Text>
+      <Text style={styles.version}>CamWallet v1.1.0 · Marché Cameroun 🇨🇲</Text>
       <View style={{ height: 80 }} />
     </ScrollView>
   );
@@ -133,20 +308,49 @@ const styles = StyleSheet.create({
   profileAvatar: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: Colors.primary + '30', borderWidth: 2, borderColor: Colors.primary + '60',
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center', overflow: 'visible',
   },
+  avatarImg: { width: 60, height: 60, borderRadius: 30 },
+  avatarEditBadge: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center',
+  },
+  avatarEditIcon: { fontSize: 12 },
   profileAvatarText: { color: Colors.primary, fontWeight: Typography.black, fontSize: Typography.xl },
-  profileInfo: { flex: 1, gap: 4 },
+  profileInfo: { flex: 1, gap: 2 },
   profileName: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.black },
   profilePhone: { color: Colors.textMuted, fontSize: Typography.sm },
-  profileBadges: { flexDirection: 'row', gap: Spacing.sm, marginTop: 4 },
+  profileBadges: { flexDirection: 'row', gap: Spacing.sm, marginTop: 6, flexWrap: 'wrap' },
+  errorText: { color: Colors.red, textAlign: 'center', marginHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+  editBtn: {
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.lg,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
+  },
+  editBtnText: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
+  editCard: {
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.xl,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.lg, padding: Spacing.lg,
+  },
+  fieldLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginBottom: 4 },
+  input: {
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text, fontSize: Typography.base,
+  },
+  formBtn: { flex: 1, borderRadius: BorderRadius.sm, padding: Spacing.md, alignItems: 'center' },
+  cancelBtn: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  cancelBtnText: { color: Colors.textSoft, fontWeight: Typography.semibold },
+  saveBtn: { backgroundColor: Colors.primary },
+  saveBtnText: { color: '#fff', fontWeight: Typography.bold },
   statsRow: {
     flexDirection: 'row', backgroundColor: Colors.card,
     borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg,
     marginHorizontal: Spacing.lg, marginBottom: Spacing.xl, padding: Spacing.lg,
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statValue: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.black },
+  statValue: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.black },
   statLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
   statDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 4 },
   menuGroup: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
