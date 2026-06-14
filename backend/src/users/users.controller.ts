@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   HttpCode,
   HttpStatus,
@@ -61,5 +62,12 @@ export class UsersController {
   @ApiOperation({ summary: 'Enregistre le jeton de notification push (Expo)' })
   setPushToken(@Request() req: any, @Body() dto: PushTokenDto) {
     return this.usersService.setPushToken(req.user.id, dto.pushToken);
+  }
+
+  @Delete('me')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Suppression du compte (soft delete — statut DELETED)' })
+  deleteAccount(@Request() req: any) {
+    return this.usersService.deleteAccount(req.user.id);
   }
 }

@@ -4,7 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionStatus } from '@prisma/client';
+import { TransactionStatus, UserStatus } from '@prisma/client';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 // Champs renvoyés au client — jamais le pinHash.
@@ -94,6 +94,21 @@ export class UsersService {
     await this.prisma.user.update({
       where: { id: userId },
       data: { pushToken },
+    });
+    return { ok: true };
+  }
+
+  // Soft delete : passe le statut à DELETED. Les données sont conservées pour la traçabilité ANIF.
+  async deleteAccount(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { status: UserStatus.DELETED, pushToken: null },
     });
     return { ok: true };
   }

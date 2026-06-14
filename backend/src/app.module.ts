@@ -13,6 +13,7 @@ import { KycModule } from './kyc/kyc.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { MerchantModule } from './merchant/merchant.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PrismaModule } from './prisma/prisma.module';
     KycModule,
     NotificationsModule,
     CloudinaryModule,
+    MerchantModule,
   ],
 })
 export class AppModule {}

@@ -500,6 +500,204 @@ export class AdminService {
     };
   }
 
+  // ─── Conformité ANIF ──────────────────────────────────────────────────────
+  // Transactions dépassant les seuils réglementaires + dossiers ouverts.
+  async getAnifAlerts() {
+    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const d24h = new Date(Date.now() - 24 * 3600 * 1000);
+    const ANIF_THRESHOLD = 50_000_000n; // 500 000 FCFA en centimes
+
+    const [largeTx, frequentSenders, cases] = await Promise.all([
+      // Transactions dépassant le seuil ANIF sur 30 jours
+      this.prisma.transaction.findMany({
+        where: { amount: { gte: ANIF_THRESHOLD }, createdAt: { gte: d30 } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        include: {
+          sender: { select: { phone: true, fullName: true, kycStatus: true } },
+          receiver: { select: { phone: true, fullName: true } },
+        },
+      }),
+      // Émetteurs avec fréquence anormale (> 10 tx en 24h)
+      this.prisma.transaction.groupBy({
+        by: ['senderId'],
+        where: {
+          createdAt: { gte: d24h },
+          status: { not: TransactionStatus.FAILED },
+          senderId: { not: null },
+        },
+        _count: { _all: true },
+        having: { senderId: { _count: { gt: 10 } } },
+      }),
+      // Dossiers ANIF ouverts (stockés dans audit_logs)
+      this.prisma.auditLog.findMany({
+        where: { action: { startsWith: 'ANIF_CASE_' } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          id: true, action: true, resource: true, metadata: true, createdAt: true,
+          user: { select: { fullName: true, email: true } },
+        },
+      }),
+    ]);
+
+    return {
+      alerts: largeTx.map((tx) => ({
+        id: tx.id,
+        reference: tx.reference,
+        amount: tx.amount,
+        type: tx.type,
+        status: tx.status,
+        sender: tx.sender,
+        receiver: tx.receiver,
+        createdAt: tx.createdAt,
+        reason: 'MONTANT_ELEVE',
+      })),
+      frequentSenders: frequentSenders.length,
+      cases,
+      threshold: ANIF_THRESHOLD.toString(),
+    };
+  }
+
+  async openAnifCase(adminId: string, transactionId: string, reason: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: { id: true, reference: true, amount: true },
+    });
+
+    await this.writeAudit(adminId, 'ANIF_CASE_OPEN', `Transaction:${transactionId}`, {
+      reason,
+      reference: tx?.reference ?? transactionId,
+      amount: tx?.amount?.toString(),
+      caseRef: `ANIF-${Date.now()}`,
+    });
+
+    return { ok: true, caseRef: `ANIF-${Date.now()}` };
+  }
+
+  // ─── Opérations OM/MoMo (Recharges & Retraits) ───────────────────────────
+  async getOperations(page = 1, limit = 20, operator?: string) {
+    const skip = (page - 1) * limit;
+    const where: any = {
+      type: { in: [TransactionType.RECHARGE, TransactionType.WITHDRAWAL] },
+    };
+    if (operator) where.operator = operator;
+
+    const [operations, total] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          sender: { select: { phone: true, fullName: true } },
+          receiver: { select: { phone: true, fullName: true } },
+        },
+      }),
+      this.prisma.transaction.count({ where }),
+    ]);
+
+    // Statistiques agrégées volume recharge vs retrait sur 7 jours
+    const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const [rechargeVol, withdrawalVol] = await Promise.all([
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        _count: { _all: true },
+        where: { type: TransactionType.RECHARGE, status: TransactionStatus.COMPLETED, createdAt: { gte: d7 } },
+      }),
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        _count: { _all: true },
+        where: { type: TransactionType.WITHDRAWAL, status: TransactionStatus.COMPLETED, createdAt: { gte: d7 } },
+      }),
+    ]);
+
+    return {
+      data: operations,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      stats7d: {
+        recharge: { count: rechargeVol._count._all, amount: rechargeVol._sum.amount ?? 0n },
+        withdrawal: { count: withdrawalVol._count._all, amount: withdrawalVol._sum.amount ?? 0n },
+      },
+    };
+  }
+
+  async retryOperation(adminId: string, id: string) {
+    const tx = await this.prisma.transaction.findUnique({
+      where: { id },
+      select: { id: true, status: true, type: true, retryCount: true },
+    });
+    if (!tx) throw new NotFoundException('Opération introuvable');
+    if (tx.status !== TransactionStatus.PENDING) {
+      throw new NotFoundException('Seules les opérations PENDING peuvent être relancées');
+    }
+
+    await this.prisma.transaction.update({
+      where: { id },
+      data: { retryCount: { increment: 1 } },
+    });
+
+    await this.writeAudit(adminId, 'OPERATION_RETRY', `Transaction:${id}`, {
+      previousRetryCount: tx.retryCount,
+    });
+    return { ok: true };
+  }
+
+  // ─── Santé des intégrations ───────────────────────────────────────────────
+  async getHealthIntegrations() {
+    const d24h = new Date(Date.now() - 24 * 3600 * 1000);
+    const d1h = new Date(Date.now() - 3600 * 1000);
+
+    const [omCompleted, mtnCompleted, failedWebhooks, stalePending] = await Promise.all([
+      this.prisma.transaction.count({
+        where: { operator: 'ORANGE_MONEY', status: TransactionStatus.COMPLETED, createdAt: { gte: d24h } },
+      }),
+      this.prisma.transaction.count({
+        where: { operator: 'MTN_MOMO', status: TransactionStatus.COMPLETED, createdAt: { gte: d24h } },
+      }),
+      this.prisma.webhookEvent.count({ where: { processed: false, createdAt: { gte: d24h } } }),
+      this.prisma.transaction.count({ where: { status: TransactionStatus.PENDING, createdAt: { lt: d1h } } }),
+    ]);
+
+    const omStatus = omCompleted > 0 ? 'UP' : failedWebhooks > 3 ? 'DOWN' : 'UNKNOWN';
+    const mtnStatus = mtnCompleted > 0 ? 'UP' : failedWebhooks > 3 ? 'DOWN' : 'UNKNOWN';
+
+    return {
+      integrations: [
+        {
+          name: 'Orange Money',
+          key: 'orange_money',
+          status: omStatus,
+          completedTx24h: omCompleted,
+          pendingWebhooks: failedWebhooks,
+        },
+        {
+          name: 'MTN MoMo',
+          key: 'mtn_momo',
+          status: mtnStatus,
+          completedTx24h: mtnCompleted,
+          pendingWebhooks: 0,
+        },
+        {
+          name: 'SMS OTP',
+          key: 'sms_otp',
+          status: 'SIMULATED',
+          note: 'Simulation (AfricasTalking en prod)',
+          completedTx24h: null,
+        },
+        {
+          name: 'Push Expo',
+          key: 'expo_push',
+          status: 'UP',
+          note: 'Expo Push API',
+          completedTx24h: null,
+        },
+      ],
+      stalePendingTx: stalePending,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   // Force la réinitialisation du PIN : le hash est vidé (l'utilisateur doit
   // repasser par le flux « PIN oublié » / OTP) et les verrous sont levés.
   async resetUserPin(adminId: string, userId: string) {
