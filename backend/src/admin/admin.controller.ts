@@ -106,56 +106,56 @@ export class AdminController {
     return this.adminService.getAlerts();
   }
 
-  @Get("audit")
-  @ApiOperation({ summary: "Journal d"audit des actions admin" })
+  @Get('audit')
+  @ApiOperation({ summary: "Journal d'audit des actions admin" })
   audit() {
     return this.adminService.getAudit();
   }
 
   // ─── ANIF ──────────────────────────────────────────────────────────────────
 
-  @Get("anif/alerts")
+  @Get('anif/alerts')
   @ApiOperation({ summary: "Alertes anti-blanchiment ANIF (transactions > seuil, fréquence anormale)" })
   anifAlerts() {
     return this.adminService.getAnifAlerts();
   }
 
-  @Post("anif/cases")
+  @Post('anif/cases')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Ouvrir un dossier d\"enquête ANIF pour une transaction" })
+  @ApiOperation({ summary: "Ouvrir un dossier d'enquête ANIF pour une transaction" })
   openAnifCase(
     @Request() req: any,
     @Body() body: { transactionId: string; reason: string },
   ) {
     if (!body.transactionId || !body.reason) {
-      throw new BadRequestException("transactionId et reason sont requis");
+      throw new BadRequestException('transactionId et reason sont requis');
     }
     return this.adminService.openAnifCase(req.user.id, body.transactionId, body.reason);
   }
 
   // ─── Opérations OM/MoMo ────────────────────────────────────────────────────
 
-  @Get("operations")
-  @ApiOperation({ summary: "Liste des recharges et retraits OM/MoMo avec statut webhook" })
+  @Get('operations')
+  @ApiOperation({ summary: 'Liste des recharges et retraits OM/MoMo avec statut webhook' })
   operations(
-    @Query("page") page = 1,
-    @Query("limit") limit = 20,
-    @Query("operator") operator?: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('operator') operator?: string,
   ) {
     return this.adminService.getOperations(+page, +limit, operator);
   }
 
-  @Post("operations/:id/retry")
+  @Post('operations/:id/retry')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Relancer une opération PENDING (increment retryCount)" })
-  retryOperation(@Request() req: any, @Param("id") id: string) {
+  @ApiOperation({ summary: 'Relancer une opération PENDING (incrément retryCount)' })
+  retryOperation(@Request() req: any, @Param('id') id: string) {
     return this.adminService.retryOperation(req.user.id, id);
   }
 
   // ─── Santé des intégrations ────────────────────────────────────────────────
 
-  @Get("health/integrations")
-  @ApiOperation({ summary: "Statut des intégrations OM, MTN, SMS OTP, Push Expo" })
+  @Get('health/integrations')
+  @ApiOperation({ summary: 'Statut des intégrations OM, MTN, SMS OTP, Push Expo' })
   healthIntegrations() {
     return this.adminService.getHealthIntegrations();
   }
