@@ -1,9 +1,15 @@
-import React, { useState, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
+import LoginPage from './LoginPage'
+import {
+  hasSession, logout, toFcfa, SessionExpiredError,
+  getStats, getUsers, getTransactions,
+  type AdminStats, type AdminUser, type AdminTransaction,
+} from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
 const C = {
@@ -28,13 +34,6 @@ const VOLUME_DATA = [
   { date: 'Juil', volume: 41500000, tx: 10720, users: 1020 },
 ]
 
-const TX_TYPE_DATA = [
-  { name: 'P2P', value: 44, color: C.blue },
-  { name: 'QR Marchands', value: 31, color: C.green },
-  { name: 'Recharges', value: 17, color: C.yellow },
-  { name: 'Retraits', value: 8, color: C.purple },
-]
-
 const REVENUE_DATA = [
   { date: 'Jan', commissions: 125000, retraits: 62000, abonnements: 40000 },
   { date: 'Fév', commissions: 187000, retraits: 93500, abonnements: 60000 },
@@ -56,16 +55,6 @@ const TRANSACTIONS = [
   { id: 'TX008', type: 'P2P', from: 'Thierry Ndi', to: 'Christine Samba', amount: 5000, status: 'success', date: '12/06/2026 18:30', risk: 'low' },
 ]
 
-const USERS = [
-  { id: 'U001', name: 'Jean-Paul Mbarga', phone: '691234567', balance: 87450, status: 'verified', kyc: 'approved', joined: '12/01/2026', risk: 'low', txCount: 47 },
-  { id: 'U002', name: 'Marie Ngono', phone: '670112233', balance: 34200, status: 'verified', kyc: 'approved', joined: '05/02/2026', risk: 'low', txCount: 28 },
-  { id: 'U003', name: 'Paul Biya Jr', phone: '655443322', balance: 12600, status: 'verified', kyc: 'pending', joined: '20/03/2026', risk: 'med', txCount: 15 },
-  { id: 'U004', name: 'Awa Fanta', phone: '699887766', balance: 5800, status: 'blocked', kyc: 'approved', joined: '01/04/2026', risk: 'high', txCount: 72 },
-  { id: 'U005', name: 'Sylvain Kotto', phone: '677554411', balance: 23400, status: 'verified', kyc: 'approved', joined: '14/04/2026', risk: 'low', txCount: 31 },
-  { id: 'U006', name: 'Alice Bello', phone: '622334455', balance: 8900, status: 'pending', kyc: 'pending', joined: '02/05/2026', risk: 'low', txCount: 8 },
-  { id: 'U007', name: 'Unknown User', phone: '699000000', balance: 450000, status: 'suspended', kyc: 'rejected', joined: '01/06/2026', risk: 'high', txCount: 14 },
-]
-
 const KYC_QUEUE = [
   { id: 'K001', name: 'Rodrigue Mbé', phone: '681234567', submitted: '14/06/2026', type: 'CNI + Selfie', status: 'pending' },
   { id: 'K002', name: 'Christine Samba', phone: '674445566', submitted: '13/06/2026', type: 'Passeport + Selfie', status: 'pending' },
@@ -83,6 +72,50 @@ const ALERTS = [
 // ── Formatters ────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString('fr-FR') + ' FCFA'
 const fmtM = (n: number) => (n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : (n / 1000).toFixed(0) + 'k') + ' FCFA'
+
+// ── Mapping enums backend → clés des badges UI ────────────
+const USER_STATUS_BADGE: Record<string, string> = {
+  ACTIVE: 'verified', SUSPENDED: 'suspended', LOCKED: 'blocked', DELETED: 'rejected',
+}
+const KYC_STATUS_BADGE: Record<string, string> = {
+  PENDING: 'pending', SUBMITTED: 'review', APPROVED: 'approved', REJECTED: 'rejected',
+}
+const TX_STATUS_BADGE: Record<string, string> = {
+  COMPLETED: 'success', PENDING: 'pending', PROCESSING: 'pending',
+  FAILED: 'failed', REFUNDED: 'flagged', CANCELLED: 'failed',
+}
+// enum backend → libellé court attendu par TxTypeBadge
+const TX_TYPE_LABEL: Record<string, string> = {
+  P2P: 'P2P', QR_PAYMENT: 'QR', RECHARGE: 'RECHARGE', WITHDRAWAL: 'RETRAIT', REFUND: 'REFUND',
+}
+// libellé court (bouton filtre) → enum backend
+const TX_TYPE_FILTER: Record<string, string> = {
+  P2P: 'P2P', QR: 'QR_PAYMENT', RECHARGE: 'RECHARGE', RETRAIT: 'WITHDRAWAL',
+}
+const TX_TYPE_COLOR: Record<string, string> = {
+  P2P: C.blue, QR_PAYMENT: C.green, RECHARGE: C.yellow, WITHDRAWAL: C.purple, REFUND: C.red,
+}
+
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleString('fr-FR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+
+const initials = (name?: string | null) =>
+  name ? name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : '?'
+
+const partyLabel = (
+  p: { fullName: string | null; phone: string } | null,
+  fallback: string,
+) => (p ? p.fullName ?? p.phone : fallback)
+
+// Petit bandeau d'état (chargement / erreur / vide) partagé par les pages.
+function StateRow({ loading, error, empty }: { loading: boolean; error: string | null; empty?: string }) {
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Chargement…</div>
+  if (error) return <div style={{ textAlign: 'center', padding: 40, color: C.red }}>{error}</div>
+  if (empty) return <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{empty}</div>
+  return null
+}
 
 // ── Status badges ─────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -138,8 +171,8 @@ function TxTypeBadge({ type }: { type: string }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────
-function KPICard({ label, value, delta, deltaUp, icon, color = C.green }: {
-  label: string, value: string, delta: string, deltaUp: boolean, icon: string, color?: string
+function KPICard({ label, value, delta, deltaUp, icon, color = C.green, sub }: {
+  label: string, value: string, delta?: string, deltaUp?: boolean, icon: string, color?: string, sub?: string
 }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', flex: 1, minWidth: 0 }}>
@@ -148,9 +181,12 @@ function KPICard({ label, value, delta, deltaUp, icon, color = C.green }: {
         <span style={{ fontSize: 20 }}>{icon}</span>
       </div>
       <div style={{ fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
-      <div style={{ fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
-        {deltaUp ? '↑' : '↓'} {delta} vs mois dernier
-      </div>
+      {delta && (
+        <div style={{ fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
+          {deltaUp ? '↑' : '↓'} {delta} vs mois dernier
+        </div>
+      )}
+      {sub && <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{sub}</div>}
     </div>
   )
 }
@@ -172,27 +208,61 @@ const ChartTooltip = ({ active, payload, label }: any) => {
 
 // ── Pages ────────────────────────────────────────────────
 function DashboardPage() {
+  const [stats, setStats] = useState<AdminStats | null>(null)
+  const [recent, setRecent] = useState<AdminTransaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    Promise.all([getStats(), getTransactions({ limit: 5 })])
+      .then(([s, tx]) => {
+        if (!alive) return
+        setStats(s)
+        setRecent(tx.data)
+      })
+      .catch((e) => {
+        if (alive && !(e instanceof SessionExpiredError))
+          setError(e instanceof Error ? e.message : 'Erreur de chargement')
+      })
+      .finally(() => alive && setLoading(false))
+    return () => { alive = false }
+  }, [])
+
+  const donut = (stats?.transactions.byType ?? []).map((t) => ({
+    name: TX_TYPE_LABEL[t.type] ?? t.type,
+    value: t.count,
+    color: TX_TYPE_COLOR[t.type] ?? C.textMuted,
+  }))
+
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vue d'ensemble</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Juin 2026 — Données temps réel</p>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
       </div>
 
+      {(loading || error) && <StateRow loading={loading} error={error} />}
+
       {/* KPIs */}
+      {stats && (
       <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        <KPICard label="Volume mensuel" value="41,5M FCFA" delta="+22,5%" deltaUp icon="💰" />
-        <KPICard label="Utilisateurs actifs" value="1 024" delta="+18%" deltaUp icon="👥" />
-        <KPICard label="Transactions" value="10 720" delta="+14,8%" deltaUp icon="⚡" color={C.blue} />
-        <KPICard label="Revenus" value="762 500 FCFA" delta="+28,3%" deltaUp icon="📈" color={C.yellow} />
+        <KPICard label="Volume complété" value={fmt(toFcfa(stats.volume.completedAmount))} icon="💰"
+          sub={`Frais perçus : ${fmt(toFcfa(stats.volume.collectedFees))}`} />
+        <KPICard label="Solde plateforme" value={fmt(toFcfa(stats.totalBalance))} icon="🏦" color={C.purple} />
+        <KPICard label="Utilisateurs" value={stats.users.total.toLocaleString('fr-FR')} icon="👥"
+          sub={stats.users.byRole.map((r) => `${r.count} ${r.role.toLowerCase()}`).join(' · ')} />
+        <KPICard label="Transactions" value={stats.transactions.total.toLocaleString('fr-FR')} icon="⚡" color={C.blue}
+          sub={`${stats.transactions.pending} en attente`} />
       </div>
+      )}
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 20 }}>
         {/* Volume area chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions</h3>
+            <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions <span style={{ color: C.textMuted, fontWeight: 500, fontSize: 11 }}>· démo</span></h3>
             <select style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMuted, fontSize: 12, padding: '4px 8px', cursor: 'pointer' }}>
               <option>7 derniers mois</option>
             </select>
@@ -219,16 +289,17 @@ function DashboardPage() {
           <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Répartition des types</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <PieChart width={130} height={130}>
-              <Pie data={TX_TYPE_DATA} cx={60} cy={60} innerRadius={40} outerRadius={60} dataKey="value" paddingAngle={2}>
-                {TX_TYPE_DATA.map((d, i) => <Cell key={i} fill={d.color} />)}
+              <Pie data={donut} cx={60} cy={60} innerRadius={40} outerRadius={60} dataKey="value" paddingAngle={2}>
+                {donut.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Pie>
             </PieChart>
             <div style={{ flex: 1 }}>
-              {TX_TYPE_DATA.map((d, i) => (
+              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>Aucune transaction</span>}
+              {donut.map((d, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: 12, color: C.textSoft }}>{d.name}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.value}%</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.value}</span>
                 </div>
               ))}
             </div>
@@ -240,7 +311,7 @@ function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
         {/* Revenue bar */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus par source</h3>
+          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus par source <span style={{ color: C.textMuted, fontWeight: 500, fontSize: 11 }}>· démo</span></h3>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={REVENUE_DATA} barSize={10}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -256,7 +327,7 @@ function DashboardPage() {
 
         {/* User growth */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Croissance utilisateurs</h3>
+          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Croissance utilisateurs <span style={{ color: C.textMuted, fontWeight: 500, fontSize: 11 }}>· démo</span></h3>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={VOLUME_DATA}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -281,22 +352,21 @@ function DashboardPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              {['Réf.', 'Type', 'De', 'À', 'Montant', 'Statut', 'Risque', 'Date'].map(h => (
+              {['Réf.', 'Type', 'De', 'À', 'Montant', 'Statut', 'Date'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '0 12px 10px' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {TRANSACTIONS.slice(0, 5).map(tx => (
+            {recent.map(tx => (
               <tr key={tx.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.id}</td>
-                <td style={{ padding: '10px 12px' }}><TxTypeBadge type={tx.type} /></td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{tx.from}</td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{tx.to}</td>
-                <td style={{ padding: '10px 12px', color: C.text, fontWeight: 600 }}>{fmt(tx.amount)}</td>
-                <td style={{ padding: '10px 12px' }}><StatusBadge status={tx.status} /></td>
-                <td style={{ padding: '10px 12px' }}><RiskBadge risk={tx.risk} /></td>
-                <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{tx.date}</td>
+                <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
+                <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
+                <td style={{ padding: '10px 12px', color: C.text, fontWeight: 600 }}>{fmt(toFcfa(tx.amount))}</td>
+                <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
+                <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
               </tr>
             ))}
           </tbody>
@@ -375,25 +445,51 @@ function AlertsPage() {
 }
 
 function UsersPage() {
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
 
-  const filtered = USERS.filter(u => {
-    const m = u.name.toLowerCase().includes(search.toLowerCase()) || u.phone.includes(search)
-    const f = filter === 'all' || u.status === filter
-    return m && f
-  })
+  // Recherche côté serveur, debouncée.
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    const t = setTimeout(() => {
+      getUsers({ limit: 50, search: search.trim() || undefined })
+        .then((res) => {
+          if (!alive) return
+          setUsers(res.data)
+          setTotal(res.meta.total)
+          setError(null)
+        })
+        .catch((e) => {
+          if (alive && !(e instanceof SessionExpiredError))
+            setError(e instanceof Error ? e.message : 'Erreur de chargement')
+        })
+        .finally(() => alive && setLoading(false))
+    }, 350)
+    return () => { alive = false; clearTimeout(t) }
+  }, [search])
+
+  // Filtre par statut, côté client, sur le statut mappé.
+  const filtered = users.filter((u) => filter === 'all' || USER_STATUS_BADGE[u.status] === filter)
+
+  const FILTERS: { key: string; label: string }[] = [
+    { key: 'all', label: 'Tous' },
+    { key: 'verified', label: 'Actifs' },
+    { key: 'suspended', label: 'Suspendus' },
+    { key: 'blocked', label: 'Bloqués' },
+  ]
 
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Utilisateurs</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{USERS.length} utilisateurs enregistrés</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} utilisateur{total > 1 ? 's' : ''} enregistré{total > 1 ? 's' : ''}</p>
         </div>
-        <button style={{ background: C.green, border: 'none', borderRadius: 10, padding: '10px 18px', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-          + Exporter CSV
-        </button>
       </div>
 
       {/* Filters */}
@@ -403,22 +499,22 @@ function UsersPage() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher un utilisateur…"
+            placeholder="Rechercher (nom ou téléphone)…"
             style={{ background: 'none', border: 'none', color: C.text, fontSize: 13, flex: 1, outline: 'none' }}
           />
         </div>
-        {['all', 'verified', 'pending', 'blocked', 'suspended'].map(f => (
+        {FILTERS.map(f => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
+            key={f.key}
+            onClick={() => setFilter(f.key)}
             style={{
-              fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: filter === f ? 700 : 500,
-              background: filter === f ? C.green : C.card,
-              border: `1px solid ${filter === f ? C.green : C.border}`,
-              color: filter === f ? '#fff' : C.textSoft,
+              fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: filter === f.key ? 700 : 500,
+              background: filter === f.key ? C.green : C.card,
+              border: `1px solid ${filter === f.key ? C.green : C.border}`,
+              color: filter === f.key ? '#fff' : C.textSoft,
             }}
           >
-            {f === 'all' ? 'Tous' : f.charAt(0).toUpperCase() + f.slice(1)}
+            {f.label}
           </button>
         ))}
       </div>
@@ -427,7 +523,7 @@ function UsersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
-              {['Utilisateur', 'Téléphone', 'Solde', 'Statut', 'KYC', 'Risque', 'Tx', 'Actions'].map(h => (
+              {['Utilisateur', 'Téléphone', 'Solde', 'Statut', 'KYC', 'Inscrit'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
             </tr>
@@ -438,37 +534,27 @@ function UsersPage() {
                 <td style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 16, background: C.green + '20', border: `2px solid ${C.green}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: C.green, flexShrink: 0 }}>
-                      {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {initials(u.fullName)}
                     </div>
                     <div>
-                      <div style={{ color: C.text, fontWeight: 600 }}>{u.name}</div>
-                      <div style={{ color: C.textMuted, fontSize: 11 }}>ID: {u.id}</div>
+                      <div style={{ color: C.text, fontWeight: 600 }}>{u.fullName ?? 'Sans nom'}</div>
+                      <div style={{ color: C.textMuted, fontSize: 11 }}>{u.email ?? `ID: ${u.id.slice(0, 8)}`}</div>
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '12px 14px', color: C.textSoft, fontFamily: 'monospace' }}>+237 {u.phone}</td>
-                <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{u.balance.toLocaleString('fr-FR')}</td>
-                <td style={{ padding: '12px 14px' }}><StatusBadge status={u.status} /></td>
-                <td style={{ padding: '12px 14px' }}><StatusBadge status={u.kyc} /></td>
-                <td style={{ padding: '12px 14px' }}><RiskBadge risk={u.risk} /></td>
-                <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{u.txCount}</td>
-                <td style={{ padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600 }}>Voir</button>
-                    {u.status === 'blocked' ? (
-                      <button style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
-                    ) : (
-                      <button style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
-                    )}
-                  </div>
-                </td>
+                <td style={{ padding: '12px 14px', color: C.textSoft, fontFamily: 'monospace' }}>{u.phone}</td>
+                <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{toFcfa(u.wallet?.balance ?? 0).toLocaleString('fr-FR')}</td>
+                <td style={{ padding: '12px 14px' }}><StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} /></td>
+                <td style={{ padding: '12px 14px' }}><StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></td>
+                <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(u.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {filtered.length === 0 && (
+        {!loading && !error && filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun utilisateur trouvé</div>
         )}
+        <StateRow loading={loading} error={error} />
       </div>
     </div>
   )
@@ -543,19 +629,37 @@ function KYCPage() {
 }
 
 function TransactionsPage() {
+  const [txs, setTxs] = useState<AdminTransaction[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [txFilter, setTxFilter] = useState('all')
-  const filtered = TRANSACTIONS.filter(t => txFilter === 'all' || t.type === txFilter)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    getTransactions({ limit: 50, type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter] })
+      .then((res) => {
+        if (!alive) return
+        setTxs(res.data)
+        setTotal(res.meta.total)
+        setError(null)
+      })
+      .catch((e) => {
+        if (alive && !(e instanceof SessionExpiredError))
+          setError(e instanceof Error ? e.message : 'Erreur de chargement')
+      })
+      .finally(() => alive && setLoading(false))
+    return () => { alive = false }
+  }, [txFilter])
 
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Transactions</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>10 720 transactions ce mois</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} transaction{total > 1 ? 's' : ''} au total</p>
         </div>
-        <button style={{ background: C.green, border: 'none', borderRadius: 10, padding: '10px 18px', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-          📥 Exporter CSV
-        </button>
       </div>
 
       {/* Type filters */}
@@ -580,29 +684,30 @@ function TransactionsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
-              {['Réf.', 'Type', 'De', 'À', 'Montant', 'Statut', 'Risque', 'Date', 'Actions'].map(h => (
+              {['Réf.', 'Type', 'De', 'À', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map(tx => (
+            {txs.map(tx => (
               <tr key={tx.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                <td style={{ padding: '11px 14px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.id}</td>
-                <td style={{ padding: '11px 14px' }}><TxTypeBadge type={tx.type} /></td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{tx.from}</td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{tx.to}</td>
-                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 700 }}>{fmt(tx.amount)}</td>
-                <td style={{ padding: '11px 14px' }}><StatusBadge status={tx.status} /></td>
-                <td style={{ padding: '11px 14px' }}><RiskBadge risk={tx.risk} /></td>
-                <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12 }}>{tx.date}</td>
-                <td style={{ padding: '11px 14px' }}>
-                  <button style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontWeight: 600 }}>Détail</button>
-                </td>
+                <td style={{ padding: '11px 14px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
+                <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
+                <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
+                <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
+                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 700 }}>{fmt(toFcfa(tx.amount))}</td>
+                <td style={{ padding: '11px 14px', color: C.textMuted }}>{fmt(toFcfa(tx.fee))}</td>
+                <td style={{ padding: '11px 14px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
+                <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        {!loading && !error && txs.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucune transaction</div>
+        )}
+        <StateRow loading={loading} error={error} />
       </div>
     </div>
   )
@@ -705,7 +810,25 @@ const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances']
 
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
+  const [authed, setAuthed] = useState(hasSession())
   const [activePage, setActivePage] = useState('dashboard')
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const handleLogout = useCallback(() => {
+    logout()
+    setAuthed(false)
+  }, [])
+
+  // Session expirée (refresh impossible) → retour au login.
+  useEffect(() => {
+    const onExpired = () => handleLogout()
+    window.addEventListener('cw-session-expired', onExpired)
+    return () => window.removeEventListener('cw-session-expired', onExpired)
+  }, [handleLogout])
+
+  if (!authed) {
+    return <LoginPage onSuccess={() => setAuthed(true)} />
+  }
 
   const renderPage = () => {
     switch (activePage) {
@@ -788,11 +911,15 @@ export default function App() {
             {NAV.find(n => n.id === activePage)?.label ?? 'Dashboard'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
               🔄 Actualiser
             </button>
-            <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
-              ⚙️ Paramètres
+            <button
+              onClick={handleLogout}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
+              ⎋ Déconnexion
             </button>
             <div style={{ width: 34, height: 34, borderRadius: 17, background: C.green + '20', border: `2px solid ${C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: C.green, cursor: 'pointer' }}>
               A
@@ -801,7 +928,7 @@ export default function App() {
         </div>
 
         {/* Page content */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div key={refreshKey} style={{ flex: 1, overflow: 'hidden' }}>
           {renderPage()}
         </div>
       </main>

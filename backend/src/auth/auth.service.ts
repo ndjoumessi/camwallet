@@ -14,6 +14,7 @@ import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { SetPinDto } from './dto/set-pin.dto';
 import { LoginDto } from './dto/login.dto';
+import { LoginAdminDto } from './dto/login-admin.dto';
 import { OtpPurpose } from '@prisma/client';
 
 const MAX_PIN_ATTEMPTS = 3;
@@ -124,6 +125,25 @@ export class AuthService {
     return this.generateTokens(user.id, user.role);
   }
 
+  // ─── Connexion administrateur (email + mot de passe) ──────────────────────
+  // L'admin n'est pas un compte User en base : ses identifiants vivent dans la
+  // config (ADMIN_EMAIL / ADMIN_PASSWORD). La JwtStrategy étant sans état, il
+  // suffit d'émettre un token portant le rôle ADMIN pour passer l'AdminGuard.
+  async loginAdmin(dto: LoginAdminDto) {
+    const adminEmail = this.config.get<string>('ADMIN_EMAIL');
+    const adminPassword = this.config.get<string>('ADMIN_PASSWORD');
+
+    const emailMatch = dto.email.toLowerCase() === (adminEmail ?? '').toLowerCase();
+    const passwordMatch = dto.password === adminPassword;
+
+    if (!emailMatch || !passwordMatch) {
+      throw new UnauthorizedException('Identifiants administrateur invalides');
+    }
+
+    this.logger.log(`Connexion admin : ${dto.email}`);
+    return this.generateTokens('admin', 'ADMIN');
+  }
+
   // ─── Refresh token ────────────────────────────────────────────────────────
   async refreshTokens(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -141,6 +161,10 @@ export class AuthService {
       });
     } catch {
       throw new UnauthorizedException('Refresh token invalide ou expiré');
+    }
+    // L'admin n'existe pas en base : on régénère directement ses tokens.
+    if (payload.role === 'ADMIN') {
+      return this.generateTokens('admin', 'ADMIN');
     }
     return this.refreshTokens(payload.sub);
   }
