@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
 import { Colors, Typography, Spacing } from './constants/theme';
 import SplashScreen from './screens/SplashScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
+import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import { useStore } from './store/useStore';
 
-type Phase = 'splash' | 'onboard' | 'app';
+type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
 
 const NAV_TABS = [
@@ -27,12 +29,39 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [activeTab, setActiveTab] = useState<Tab>('home');
 
+  const restoreSession = useStore((s) => s.restoreSession);
+  const logout = useStore((s) => s.logout);
+  const isAuthenticated = useStore((s) => s.isAuthenticated);
+
+  // Au démarrage : tente de restaurer une session existante (tokens SecureStore).
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  // Si la session est restaurée pendant l'onboarding/login, on entre dans l'app.
+  useEffect(() => {
+    if (isAuthenticated && (phase === 'login' || phase === 'onboard')) {
+      setPhase('app');
+    }
+  }, [isAuthenticated, phase]);
+
   if (phase === 'splash') {
-    return <SplashScreen onFinish={() => setPhase('onboard')} />;
+    // À la fin du splash : direct dans l'app si déjà authentifié, sinon onboarding.
+    return (
+      <SplashScreen
+        onFinish={() =>
+          setPhase(useStore.getState().isAuthenticated ? 'app' : 'onboard')
+        }
+      />
+    );
   }
 
   if (phase === 'onboard') {
-    return <OnboardingScreen onComplete={() => setPhase('app')} />;
+    return <OnboardingScreen onComplete={() => setPhase('login')} />;
+  }
+
+  if (phase === 'login') {
+    return <LoginScreen onSuccess={() => setPhase('app')} />;
   }
 
   return (
@@ -62,7 +91,13 @@ export default function App() {
         {activeTab === 'home' && <HomeScreen />}
         {activeTab === 'history' && <HistoryScreen />}
         {activeTab === 'profile' && (
-          <ProfileScreen onLogout={() => setPhase('onboard')} />
+          <ProfileScreen
+            onLogout={() => {
+              logout();
+              setActiveTab('home');
+              setPhase('login');
+            }}
+          />
         )}
       </View>
 
