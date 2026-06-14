@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -14,6 +15,9 @@ import { PrismaModule } from './prisma/prisma.module';
   imports: [
     // Configuration globale
     ConfigModule.forRoot({ isGlobal: true }),
+
+    // Tâches planifiées (expiration des retraits PENDING)
+    ScheduleModule.forRoot(),
 
     // Rate limiting
     ThrottlerModule.forRoot([{

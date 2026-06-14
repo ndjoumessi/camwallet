@@ -1,0 +1,54 @@
+# CamWallet — Infrastructure de développement local
+# Lancer avec : docker compose up -d   (ou `make db`)
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: camwallet_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: camwallet
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: camwallet_dev
+    ports:
+      # Port hôte 5433 (et non 5432) pour éviter tout conflit avec une
+      # installation PostgreSQL native déjà à l'écoute sur localhost:5432.
+      # Le port interne au conteneur reste 5432.
+      - "5433:5432"
+    volumes:
+      - camwallet_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camwallet -d camwallet_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - camwallet
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: camwallet_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@camwallet.cm
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - camwallet_pgadmin:/var/lib/pgadmin
+      - ./docker/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - camwallet
+
+volumes:
+  camwallet_pgdata:
+  camwallet_pgadmin:
+
+networks:
+  camwallet:
+    driver: bridge
