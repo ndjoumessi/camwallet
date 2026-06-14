@@ -7,7 +7,7 @@ import {
 import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError,
-  getStats, getUsers, getTransactions,
+  getStats, getUsers, getTransactions, getTimeseries,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
 } from './lib/api'
 
@@ -22,27 +22,6 @@ const C = {
   text: '#EEF2FF', textMuted: '#64748B', textSoft: '#94A3B8',
   white: '#FFFFFF',
 }
-
-// ── Mock Data ─────────────────────────────────────────────
-const VOLUME_DATA = [
-  { date: 'Jan', volume: 12500000, tx: 3240, users: 180 },
-  { date: 'Fév', volume: 18700000, tx: 4870, users: 310 },
-  { date: 'Mar', volume: 22300000, tx: 5920, users: 480 },
-  { date: 'Avr', volume: 19800000, tx: 5100, users: 520 },
-  { date: 'Mai', volume: 28400000, tx: 7340, users: 690 },
-  { date: 'Juin', volume: 34200000, tx: 8870, users: 840 },
-  { date: 'Juil', volume: 41500000, tx: 10720, users: 1020 },
-]
-
-const REVENUE_DATA = [
-  { date: 'Jan', commissions: 125000, retraits: 62000, abonnements: 40000 },
-  { date: 'Fév', commissions: 187000, retraits: 93500, abonnements: 60000 },
-  { date: 'Mar', commissions: 223000, retraits: 111500, abonnements: 80000 },
-  { date: 'Avr', commissions: 198000, retraits: 99000, abonnements: 80000 },
-  { date: 'Mai', commissions: 284000, retraits: 142000, abonnements: 100000 },
-  { date: 'Juin', commissions: 342000, retraits: 171000, abonnements: 120000 },
-  { date: 'Juil', commissions: 415000, retraits: 207500, abonnements: 140000 },
-]
 
 // ── Formatters ────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString('fr-FR') + ' FCFA'
@@ -226,6 +205,22 @@ function DashboardPage() {
   )
   const recent = recentData?.data ?? []
 
+  // Séries temporelles réelles (volume, frais, tx, users) selon la période.
+  const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
+  const { data: ts } = useFetch(() => getTimeseries(period), [period])
+  const chart = (ts?.series ?? []).map((p) => ({
+    date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
+    volume: toFcfa(p.volume),
+    fees: toFcfa(p.fees),
+    tx: p.transactions,
+    users: p.users,
+  }))
+  const PERIODS: { key: '7d' | '30d' | '90d'; label: string }[] = [
+    { key: '7d', label: '7 j' },
+    { key: '30d', label: '30 j' },
+    { key: '90d', label: '90 j' },
+  ]
+
   const donut = (stats?.transactions.byType ?? []).map((t) => ({
     name: TX_TYPE_LABEL[t.type] ?? t.type,
     value: t.count,
@@ -262,13 +257,26 @@ function DashboardPage() {
         {/* Volume area chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions <span style={{ color: C.textMuted, fontWeight: 500, fontSize: 11 }}>· démo</span></h3>
-            <select style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMuted, fontSize: 12, padding: '4px 8px', cursor: 'pointer' }}>
-              <option>7 derniers mois</option>
-            </select>
+            <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions</h3>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {PERIODS.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setPeriod(p.key)}
+                  style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: period === p.key ? 700 : 500,
+                    background: period === p.key ? C.green : C.surface,
+                    border: `1px solid ${period === p.key ? C.green : C.border}`,
+                    color: period === p.key ? '#fff' : C.textMuted,
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={VOLUME_DATA}>
+            <AreaChart data={chart}>
               <defs>
                 <linearGradient id="gradVol" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={C.green} stopOpacity={0.3} />
@@ -311,25 +319,23 @@ function DashboardPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
         {/* Revenue bar */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus par source <span style={{ color: C.textMuted, fontWeight: 500, fontSize: 11 }}>· démo</span></h3>
+          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus (frais perçus) par jour</h3>
           <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={REVENUE_DATA} barSize={10}>
+            <BarChart data={chart} barSize={10}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
               <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} />
               <YAxis stroke={C.textMuted} fontSize={10} tickFormatter={v => (v / 1000).toFixed(0) + 'k'} />
               <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="commissions" fill={C.green} radius={[3, 3, 0, 0]} name="Commissions" />
-              <Bar dataKey="retraits" fill={C.blue} radius={[3, 3, 0, 0]} name="Retraits" />
-              <Bar dataKey="abonnements" fill={C.yellow} radius={[3, 3, 0, 0]} name="Abonnements" />
+              <Bar dataKey="fees" fill={C.green} radius={[3, 3, 0, 0]} name="Frais" />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* User growth */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Croissance utilisateurs <span style={{ color: C.textMuted, fontWeight: 500, fontSize: 11 }}>· démo</span></h3>
+          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Activité (utilisateurs &amp; transactions)</h3>
           <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={VOLUME_DATA}>
+            <LineChart data={chart}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
               <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} />
               <YAxis stroke={C.textMuted} fontSize={10} />

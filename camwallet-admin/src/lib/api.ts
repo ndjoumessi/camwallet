@@ -193,6 +193,22 @@ export const logout = () => clearTokens()
 
 export const getStats = () => request<AdminStats>('/admin/stats')
 
+export interface TimeseriesPoint {
+  date: string // YYYY-MM-DD
+  volume: number // centimes
+  fees: number // centimes
+  transactions: number
+  users: number
+}
+export interface AdminTimeseries {
+  period: string
+  days: number
+  series: TimeseriesPoint[]
+}
+
+export const getTimeseries = (period: '7d' | '30d' | '90d') =>
+  request<AdminTimeseries>(`/admin/stats/timeseries?period=${period}`)
+
 // Construit une query string en ignorant les valeurs vides/undefined.
 function buildQuery(params: Record<string, string | number | undefined>): string {
   const q = new URLSearchParams()
