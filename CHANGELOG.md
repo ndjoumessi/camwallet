@@ -5,6 +5,51 @@ Toutes les évolutions notables de CamWallet sont documentées dans ce fichier.
 Le format s'appuie sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et le projet suit le [versionnement sémantique](https://semver.org/lang/fr/).
 
+## [1.4.0] — 2026-06-14
+
+Refonte UI/UX complète de l'application mobile et du tableau de bord admin.
+
+### Ajouté
+
+#### Mobile
+- **Design system production** (`mobile/app/components/ui.tsx`) : composants `Button`, `IconButton`, `Input`, `Badge`, `Card`, `Skeleton`, `Toast` avec variantes, tailles et micro-animations (spring 200/18, skeleton pulse 700 ms).
+- **Constantes de mapping transaction** (`mobile/app/constants/txMeta.ts`) : source unique de vérité pour label, icône, couleur et style de badge de chaque type (`received`, `recharge`, `sent`, `withdrawal`, `refund`, `qr_payment`).
+- Gestion du type `qr_payment` (API `QR_PAYMENT`) et `refund` (API `REFUND`) dans le store.
+- Auto-formatage JJ/MM/AAAA de la date de naissance à la saisie (clavier numérique, conversion transparente vers l'API).
+
+#### Admin
+- Icônes Lucide React sur toute l'interface.
+- Système de toasts (`ToastContext`) pour feedback des actions (blocage, KYC…).
+- Cartes KPI avec dégradé, icône colorée et flèche de tendance animée.
+- Tri côté client sur la table Utilisateurs.
+
+### Modifié
+
+#### Mobile
+- Toutes les emojis utilisées comme icônes → `@expo/vector-icons` (Ionicons).
+- `SafeAreaView` de `react-native-safe-area-context` sur tous les écrans et modals.
+- Animations d'entrée spring (damping 18, stiffness 200) sur les 5 modals.
+- Skeletons de chargement sur `ProfileScreen`.
+- `HistoryScreen` : badges opaques via composant `Badge`, pills redessinées (fond transparent → vert actif, `borderRadius` 18 px, ordre Tout · Reçus · Envois · Recharges · Retraits).
+- `HomeScreen` : badges de type sur chaque ligne de transaction récente.
+- `ProfileScreen` : date de naissance en JJ/MM/AAAA, numéro sans doublon de préfixe.
+- Couleurs de montants sémantiques : entrées vert, envois gris, retraits orange.
+
+#### Admin
+- Sidebar : indicateur actif (barre verte 3 px), rail compact ≤ 1024 px.
+- Tables : hover sur les lignes, scroll horizontal mobile, indicateurs de tri.
+- Responsive : sidebar en rail à ≤ 1024 px, padding réduit à ≤ 680 px.
+
+### Corrigé
+
+#### Mobile
+- Pills de filtre clippées en bas (`paddingVertical` manquant sur `contentContainerStyle`).
+- Badge "Recharge" affichant un libellé incorrect (refactoring vers `TX_META`).
+- Double préfixe `+237 +237…` sur le numéro de téléphone.
+- Hauteur des pills non uniforme → hauteur fixe 36 px.
+
+[1.4.0]: https://github.com/ndjoumessi/camwallet/releases/tag/v1.4.0
+
 ## [1.2.0] — 2026-06-14
 
 Profil utilisateur enrichi sur les trois couches, plus l'outillage de dev.

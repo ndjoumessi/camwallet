@@ -383,7 +383,7 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
         <Text style={styles.logoutText}>Se déconnecter</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v1.2.0 · Marché Cameroun</Text>
+      <Text style={styles.version}>CamWallet v1.4.0 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
