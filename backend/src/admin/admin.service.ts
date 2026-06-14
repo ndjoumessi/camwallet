@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionStatus, TransactionType } from '@prisma/client';
+import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -70,16 +70,16 @@ export class AdminService {
   }
 
   // ─── Liste paginée des utilisateurs ─────────────────────────────────────────
-  async getUsers(page = 1, limit = 20, search?: string) {
+  async getUsers(page = 1, limit = 20, search?: string, status?: UserStatus) {
     const skip = (page - 1) * limit;
-    const where = search
-      ? {
-          OR: [
-            { phone: { contains: search } },
-            { fullName: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { phone: { contains: search } },
+        { fullName: { contains: search, mode: 'insensitive' as const } },
+      ];
+    }
+    if (status) where.status = status;
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({

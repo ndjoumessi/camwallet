@@ -6,6 +6,7 @@ import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { SetPinDto } from './dto/set-pin.dto';
 import { LoginDto } from './dto/login.dto';
+import { LoginAdminDto } from './dto/login-admin.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -40,6 +41,14 @@ export class AuthController {
   @ApiOperation({ summary: 'Connexion avec numéro + PIN' })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('login-admin')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'Connexion administrateur (email + mot de passe)' })
+  loginAdmin(@Body() dto: LoginAdminDto) {
+    return this.authService.loginAdmin(dto);
   }
 
   @Post('refresh')

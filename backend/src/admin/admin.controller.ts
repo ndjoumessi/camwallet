@@ -3,7 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './guards/admin.guard';
 import { AdminService } from './admin.service';
-import { TransactionStatus, TransactionType } from '@prisma/client';
+import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -24,8 +24,9 @@ export class AdminController {
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('search') search?: string,
+    @Query('status') status?: UserStatus,
   ) {
-    return this.adminService.getUsers(+page, +limit, search);
+    return this.adminService.getUsers(+page, +limit, search, status);
   }
 
   @Get('transactions')
