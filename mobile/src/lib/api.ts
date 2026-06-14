@@ -228,6 +228,9 @@ export const authApi = {
 
 export const userApi = {
   getMe: () => api.get<MeResponse>('/users/me').then((r) => r.data),
+
+  registerPushToken: (pushToken: string) =>
+    api.post('/users/push-token', { pushToken }).then((r) => r.data),
 };
 
 export const walletApi = {

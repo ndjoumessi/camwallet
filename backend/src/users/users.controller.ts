@@ -1,8 +1,9 @@
-import { Controller, Get, Patch, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { PushTokenDto } from './dto/push-token.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -21,5 +22,12 @@ export class UsersController {
   @ApiOperation({ summary: 'Mise à jour du profil (nom, email)' })
   updateProfile(@Request() req: any, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(req.user.id, dto);
+  }
+
+  @Post('push-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Enregistre le jeton de notification push (Expo)' })
+  setPushToken(@Request() req: any, @Body() dto: PushTokenDto) {
+    return this.usersService.setPushToken(req.user.id, dto.pushToken);
   }
 }

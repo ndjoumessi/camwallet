@@ -56,4 +56,13 @@ export class UsersService {
       select: SAFE_USER_SELECT,
     });
   }
+
+  // Enregistre le jeton push Expo de l'utilisateur (appelé après le login mobile).
+  async setPushToken(userId: string, pushToken: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { pushToken },
+    });
+    return { ok: true };
+  }
 }

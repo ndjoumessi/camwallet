@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import HomeScreen from './screens/HomeScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import { useStore } from './store/useStore';
+import { registerForPushNotifications } from '../src/lib/notifications';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
@@ -32,6 +33,16 @@ export default function App() {
   const restoreSession = useStore((s) => s.restoreSession);
   const logout = useStore((s) => s.logout);
   const isAuthenticated = useStore((s) => s.isAuthenticated);
+  const pushRegistered = useRef(false);
+
+  // Une fois authentifié et dans l'app : enregistre le jeton push (une seule fois).
+  useEffect(() => {
+    if (phase === 'app' && isAuthenticated && !pushRegistered.current) {
+      pushRegistered.current = true;
+      registerForPushNotifications();
+    }
+    if (!isAuthenticated) pushRegistered.current = false; // ré-enregistrer au prochain login
+  }, [phase, isAuthenticated]);
 
   // Au démarrage : tente de restaurer une session existante (tokens SecureStore).
   useEffect(() => {
