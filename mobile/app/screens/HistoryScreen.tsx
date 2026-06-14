@@ -6,8 +6,13 @@ import {
   ScrollView,
   Pressable,
   TextInput,
+  Alert,
+  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Badge, IconButton } from '../components/ui';
@@ -17,10 +22,67 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 const FILTERS = ['Tout', 'Reçus', 'Envois', 'Recharges', 'Retraits'];
 
+function buildPdfHtml(
+  transactions: ReturnType<typeof useStore.getState>['transactions'],
+  filter: string,
+  search: string,
+) {
+  const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
+  const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const total = transactions.reduce((s, tx) => s + tx.amount, 0);
+  const rows = transactions
+    .map(
+      (tx) => `
+    <tr>
+      <td>${tx.date}</td>
+      <td>${tx.name}</td>
+      <td>${txMeta(tx.type).label}</td>
+      <td style="color:${tx.amount >= 0 ? '#00C896' : '#FF4D6D'};font-weight:700">
+        ${tx.amount >= 0 ? '+' : ''}${fmt(tx.amount)}
+      </td>
+    </tr>`,
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  body { font-family: Arial, sans-serif; margin: 32px; color: #1a1a2e; }
+  .logo { font-size: 28px; font-weight: 900; color: #00C896; }
+  .logo span { color: #1a1a2e; }
+  .meta { margin: 16px 0 24px; color: #555; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #00C896; color: #fff; padding: 8px 12px; text-align: left; }
+  td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  .total { text-align: right; margin-top: 20px; font-size: 15px; font-weight: 700; }
+  .footer { margin-top: 40px; font-size: 11px; color: #aaa; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="logo">Cam<span>Wallet</span></div>
+  <div class="meta">
+    <strong>Relevé de transactions</strong><br/>
+    Filtre : ${filter}${search ? ` · Recherche : "${search}"` : ''}<br/>
+    Généré le ${dateStr}
+  </div>
+  <table>
+    <thead><tr><th>Date</th><th>Opération</th><th>Type</th><th>Montant</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="total">Total net : ${total >= 0 ? '+' : ''}${fmt(total)}</div>
+  <div class="footer">CamWallet · Document généré automatiquement · Non contractuel</div>
+</body>
+</html>`;
+}
+
 export default function HistoryScreen() {
   const { transactions } = useStore();
   const [activeFilter, setActiveFilter] = useState('Tout');
   const [search, setSearch] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   const filtered = transactions.filter((tx) => {
     const matchFilter =
@@ -33,12 +95,39 @@ export default function HistoryScreen() {
     return matchFilter && matchSearch;
   });
 
+  const exportPdf = async () => {
+    if (filtered.length === 0) {
+      Alert.alert('Aucune transaction', 'Aucune transaction à exporter pour ce filtre.');
+      return;
+    }
+    setExporting(true);
+    try {
+      const html = buildPdfHtml(filtered, activeFilter, search);
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Exporter le relevé CamWallet',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('PDF généré', `Fichier enregistré : ${uri}`);
+      }
+    } catch (e: any) {
+      Alert.alert('Erreur', e?.message ?? 'Impossible de générer le PDF');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
 
   return (
     <View style={styles.container}>
-      {/* Search */}
-      <View style={styles.searchRow}>
+      {/* Barre supérieure : recherche + export */}
+      <View style={styles.topRow}>
+        <View style={[styles.searchRow, { flex: 1 }]}>
         <Ionicons name="search" size={18} color={Colors.textMuted} />
         <TextInput
           style={styles.searchInput}
@@ -56,6 +145,21 @@ export default function HistoryScreen() {
             color={Colors.textMuted}
           />
         )}
+        </View>
+        <TouchableOpacity
+          style={styles.exportBtn}
+          onPress={exportPdf}
+          disabled={exporting}
+          accessibilityRole="button"
+          accessibilityLabel="Exporter en PDF"
+        >
+          {exporting ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <Ionicons name="download-outline" size={18} color={Colors.primary} />
+          )}
+          <Text style={styles.exportBtnText}>{exporting ? '...' : 'PDF'}</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Filter chips */}
@@ -128,12 +232,23 @@ export default function HistoryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
+  topRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    marginHorizontal: Spacing.lg, marginTop: Spacing.lg, marginBottom: 0,
+  },
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.md, margin: Spacing.lg,
+    borderRadius: BorderRadius.md, marginBottom: Spacing.lg,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
   },
+  exportBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primary + '40',
+    borderRadius: BorderRadius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    minHeight: 44, marginBottom: Spacing.lg,
+  },
+  exportBtnText: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.bold },
   searchInput: { flex: 1, color: Colors.text, fontSize: Typography.base, minHeight: 40 },
   pressed: { opacity: 0.7 },
   filterRow: { marginBottom: Spacing.sm },
