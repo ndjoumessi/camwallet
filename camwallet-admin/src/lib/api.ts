@@ -284,3 +284,101 @@ export interface AdminUserDetail {
 
 export const getUserDetail = (id: string) =>
   request<AdminUserDetail>(`/admin/users/${id}`)
+
+// ── ANIF ──────────────────────────────────────────────────
+
+export interface AnifHighValueTx {
+  id: string
+  amount: number
+  createdAt: string
+  sender: { fullName: string | null; phone: string } | null
+  receiver: { fullName: string | null; phone: string } | null
+  type: string
+  status: string
+}
+
+export interface AnifFrequentSender {
+  senderId: string
+  count: number
+  totalAmount: number
+  phone: string
+  fullName: string | null
+}
+
+export interface AnifCase {
+  id: string
+  action: string
+  details: string | null
+  createdAt: string
+  user: { fullName: string | null; phone: string } | null
+}
+
+export interface AnifAlertsResponse {
+  highValue: AnifHighValueTx[]
+  frequentSenders: AnifFrequentSender[]
+  cases: AnifCase[]
+}
+
+export const getAnifAlerts = () =>
+  request<AnifAlertsResponse>('/admin/anif/alerts')
+
+export const openAnifCase = (transactionId: string, reason: string) =>
+  request<{ ok: boolean }>('/admin/anif/cases', {
+    method: 'POST',
+    body: JSON.stringify({ transactionId, reason }),
+  })
+
+// ── Opérations OM/MoMo ────────────────────────────────────
+
+export interface AdminOperation {
+  id: string
+  type: string
+  amount: number
+  fee: number
+  status: string
+  operatorRef: string | null
+  operator: string | null
+  createdAt: string
+  sender: { fullName: string | null; phone: string } | null
+  retryCount: number
+}
+
+export interface OperationsResponse {
+  data: AdminOperation[]
+  total: number
+  page: number
+  limit: number
+  stats: {
+    rechargeCount: number
+    rechargeTotal: number
+    withdrawalCount: number
+    withdrawalTotal: number
+  }
+}
+
+export const getOperations = (page = 1, limit = 20, operator?: string) =>
+  request<OperationsResponse>(
+    '/admin/operations' + buildQuery({ page, limit, operator }),
+  )
+
+export const retryOperation = (id: string) =>
+  request<{ ok: boolean }>(`/admin/operations/${id}/retry`, { method: 'POST' })
+
+// ── Santé des intégrations ────────────────────────────────
+
+export interface IntegrationStatus {
+  name: string
+  status: 'UP' | 'DOWN' | 'UNKNOWN' | 'SIMULATED'
+  txCount24h: number
+  pendingWebhooks?: number
+  stalePending?: number
+  note?: string
+}
+
+export interface HealthIntegrationsResponse {
+  integrations: IntegrationStatus[]
+  checkedAt: string
+}
+
+export const getHealthIntegrations = () =>
+  request<HealthIntegrationsResponse>('/admin/health/integrations')

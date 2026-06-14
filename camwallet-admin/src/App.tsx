@@ -9,6 +9,7 @@ import {
   Landmark, TrendingUp, RefreshCw, LogOut, Search, Clock, CheckCircle2, XCircle,
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
+  ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -17,6 +18,9 @@ import {
   getStats, getUsers, getTransactions, getTimeseries,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
+  getAnifAlerts, openAnifCase,
+  getOperations, retryOperation,
+  getHealthIntegrations,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -440,6 +444,58 @@ function DashboardPage() {
           <StateRow loading={recentLoading} error={recentError} empty={!recentLoading && !recentError ? 'Aucune transaction' : undefined} />
         )}
       </div>
+
+      {/* Widget santé intégrations */}
+      <HealthWidget />
+    </div>
+  )
+}
+
+function HealthWidget() {
+  const { data, loading, error } = useFetch(getHealthIntegrations, [])
+  const integrations = data?.integrations ?? []
+
+  const dot = (status: string) => {
+    if (status === 'UP') return C.green
+    if (status === 'DOWN') return C.red
+    if (status === 'SIMULATED') return C.yellow
+    return C.textMuted
+  }
+  const label = (status: string) => {
+    if (status === 'UP') return 'Opérationnel'
+    if (status === 'DOWN') return 'Hors ligne'
+    if (status === 'SIMULATED') return 'Simulé'
+    return 'Inconnu'
+  }
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginTop: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Activity size={16} color={C.green} />
+        <span style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>Santé des intégrations</span>
+        {data?.checkedAt && (
+          <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 'auto' }}>
+            Vérifié le {fmtDate(data.checkedAt)}
+          </span>
+        )}
+      </div>
+      {loading && <StateRow loading error={null} />}
+      {error && <div style={{ color: C.red, fontSize: 12 }}>{error}</div>}
+      {integrations.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          {integrations.map(i => (
+            <div key={i.name} style={{ background: C.surface, border: `1px solid ${dot(i.status)}30`, borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, background: dot(i.status), flexShrink: 0 }} />
+                <span style={{ fontWeight: 700, color: C.text, fontSize: 13 }}>{i.name}</span>
+              </div>
+              <div style={{ fontSize: 12, color: dot(i.status), fontWeight: 600, marginBottom: 4 }}>{label(i.status)}</div>
+              <div style={{ fontSize: 11, color: C.textMuted }}>{i.txCount24h} tx / 24h</div>
+              {i.note && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, fontStyle: 'italic' }}>{i.note}</div>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1081,6 +1137,262 @@ function FinancePage() {
   )
 }
 
+// ── Page : Recharges & Retraits OM/MoMo ──────────────────
+function OperationsPage() {
+  const [page, setPage] = useState(1)
+  const [operator, setOperator] = useState('')
+  const showToast = useContext(ToastContext)
+  const { data, loading, error, refetch } = useFetch(
+    () => getOperations(page, 20, operator || undefined),
+    [page, operator],
+  )
+
+  const handleRetry = async (id: string) => {
+    try {
+      await retryOperation(id)
+      showToast('Opération relancée')
+      refetch()
+    } catch {
+      showToast('Échec de la relance', 'error')
+    }
+  }
+
+  const ops = data?.data ?? []
+  const stats = data?.stats
+
+  const statusColor = (s: string) =>
+    s === 'COMPLETED' ? C.green : s === 'PENDING' || s === 'PROCESSING' ? C.yellow : C.red
+
+  return (
+    <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Recharges', value: toFcfa(stats?.rechargeTotal ?? 0), sub: `${stats?.rechargeCount ?? 0} op.`, color: C.green },
+          { label: 'Retraits', value: toFcfa(stats?.withdrawalTotal ?? 0), sub: `${stats?.withdrawalCount ?? 0} op.`, color: C.purple },
+        ].map(k => (
+          <div key={k.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 20px', minWidth: 160 }}>
+            <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', fontWeight: 600, marginBottom: 4 }}>{k.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{fmt(k.value)}</div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{k.sub}</div>
+          </div>
+        ))}
+        <div style={{ flex: 1 }} />
+        <select
+          value={operator}
+          onChange={e => { setOperator(e.target.value); setPage(1) }}
+          style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }}
+        >
+          <option value="">Tous les opérateurs</option>
+          <option value="ORANGE_MONEY">Orange Money</option>
+          <option value="MTN_MOMO">MTN MoMo</option>
+        </select>
+      </div>
+
+      <StateRow loading={loading} error={error} empty={ops.length === 0 ? 'Aucune opération' : undefined} />
+
+      {ops.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+              {['Date', 'Type', 'Utilisateur', 'Montant', 'Opérateur', 'Statut', 'Ref. opérateur', 'Action'].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.textMuted, fontWeight: 600 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ops.map(op => (
+              <tr key={op.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
+                <td style={{ padding: '9px 10px', color: C.textMuted }}>{fmtDate(op.createdAt)}</td>
+                <td style={{ padding: '9px 10px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: op.type === 'RECHARGE' ? C.yellow + '20' : C.purple + '20', color: op.type === 'RECHARGE' ? C.yellow : C.purple, padding: '2px 8px', borderRadius: 6 }}>
+                    {op.type === 'RECHARGE' ? 'Recharge' : 'Retrait'}
+                  </span>
+                </td>
+                <td style={{ padding: '9px 10px', color: C.text }}>{partyLabel(op.sender, '—')}</td>
+                <td style={{ padding: '9px 10px', fontWeight: 700, color: C.text }}>{fmt(toFcfa(op.amount))}</td>
+                <td style={{ padding: '9px 10px', color: C.textMuted }}>{op.operator ?? '—'}</td>
+                <td style={{ padding: '9px 10px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: statusColor(op.status) }}>{op.status}</span>
+                </td>
+                <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11 }}>{op.operatorRef ?? '—'}</td>
+                <td style={{ padding: '9px 10px' }}>
+                  {op.status === 'PENDING' && (
+                    <button
+                      onClick={() => handleRetry(op.id)}
+                      style={{ fontSize: 11, background: C.yellow + '20', color: C.yellow, border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {(data?.total ?? 0) > 20 && (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+          <button className="cw-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Préc.</button>
+          <span style={{ color: C.textMuted, fontSize: 13, alignSelf: 'center' }}>Page {page}</span>
+          <button className="cw-btn" disabled={page * 20 >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Suiv.</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Page : Conformité ANIF ────────────────────────────────
+function ANIFPage() {
+  const { data, loading, error, refetch } = useFetch(getAnifAlerts, [])
+  const showToast = useContext(ToastContext)
+  const [openingCase, setOpeningCase] = useState<string | null>(null)
+  const [caseReason, setCaseReason] = useState('')
+
+  const handleOpenCase = async (txId: string) => {
+    if (!caseReason.trim()) {
+      showToast('Saisissez un motif', 'error')
+      return
+    }
+    try {
+      await openAnifCase(txId, caseReason)
+      showToast('Dossier ANIF ouvert')
+      setOpeningCase(null)
+      setCaseReason('')
+      refetch()
+    } catch {
+      showToast('Échec ouverture dossier', 'error')
+    }
+  }
+
+  const highValue = data?.highValue ?? []
+  const frequent = data?.frequentSenders ?? []
+  const cases = data?.cases ?? []
+
+  const THRESHOLD_FCFA = 500_000
+
+  return (
+    <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
+      {/* En-tête */}
+      <div style={{ background: C.red + '10', border: `1px solid ${C.red}30`, borderRadius: 12, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <ShieldAlert size={20} color={C.red} />
+        <div>
+          <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Conformité ANIF — Lutte anti-blanchiment</div>
+          <div style={{ color: C.textMuted, fontSize: 12 }}>Seuil de déclaration : {THRESHOLD_FCFA.toLocaleString('fr-FR')} FCFA · Données des 30 derniers jours</div>
+        </div>
+      </div>
+
+      <StateRow loading={loading} error={error} />
+
+      {/* Transactions à montant élevé */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
+          Transactions &gt; {THRESHOLD_FCFA.toLocaleString('fr-FR')} FCFA ({highValue.length})
+        </div>
+        {highValue.length === 0 && !loading ? (
+          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction au-dessus du seuil.</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                {['Date', 'Expéditeur', 'Bénéficiaire', 'Montant', 'Type', 'Statut', 'Action'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '7px 10px', color: C.textMuted, fontWeight: 600 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {highValue.map(tx => (
+                <tr key={tx.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
+                  <td style={{ padding: '8px 10px', color: C.textMuted }}>{fmtDate(tx.createdAt)}</td>
+                  <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.sender, '—')}</td>
+                  <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.receiver, '—')}</td>
+                  <td style={{ padding: '8px 10px', fontWeight: 800, color: C.red }}>{fmt(toFcfa(tx.amount))}</td>
+                  <td style={{ padding: '8px 10px', color: C.textMuted }}>{tx.type}</td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <span style={{ color: tx.status === 'COMPLETED' ? C.green : C.yellow, fontWeight: 600, fontSize: 11 }}>{tx.status}</span>
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    {openingCase === tx.id ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          autoFocus
+                          value={caseReason}
+                          onChange={e => setCaseReason(e.target.value)}
+                          placeholder="Motif..."
+                          style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12 }}
+                        />
+                        <button onClick={() => handleOpenCase(tx.id)} style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>OK</button>
+                        <button onClick={() => setOpeningCase(null)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setOpeningCase(tx.id)}
+                        style={{ fontSize: 11, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+                      >
+                        Ouvrir dossier
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Émetteurs fréquents */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
+          Émetteurs fréquents (&gt; 10 tx / 24h) ({frequent.length})
+        </div>
+        {frequent.length === 0 && !loading ? (
+          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun comportement anormal détecté.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {frequent.map(s => (
+              <div key={s.senderId} style={{ background: C.card, border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16 }}>
+                <AlertTriangle size={18} color={C.yellow} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: C.text, fontWeight: 700 }}>{s.fullName ?? s.phone}</div>
+                  <div style={{ color: C.textMuted, fontSize: 12 }}>{s.phone}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: C.yellow, fontWeight: 800 }}>{s.count} transactions / 24h</div>
+                  <div style={{ color: C.textMuted, fontSize: 12 }}>Total : {fmt(toFcfa(s.totalAmount))}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dossiers ouverts */}
+      <div>
+        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
+          Dossiers d'enquête ouverts ({cases.length})
+        </div>
+        {cases.length === 0 && !loading ? (
+          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier ouvert.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {cases.map(c => (
+              <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{c.action}</div>
+                    <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{c.details}</div>
+                  </div>
+                  <div style={{ color: C.textMuted, fontSize: 11 }}>{fmtDate(c.createdAt)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Sidebar nav items ─────────────────────────────────────
 const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid, group: 'Vue générale' },
@@ -1089,9 +1401,11 @@ const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?:
   { id: 'kyc', label: 'Vérification KYC', icon: ClipboardCheck, group: 'Utilisateurs' },
   { id: 'transactions', label: 'Transactions', icon: Zap, group: 'Finances' },
   { id: 'finance', label: 'Finances & Revenus', icon: Wallet, group: 'Finances' },
+  { id: 'operations', label: 'Recharges & Retraits', icon: ArrowLeftRight, group: 'Finances' },
+  { id: 'anif', label: 'Conformité ANIF', icon: ShieldAlert, group: 'Conformité' },
 ]
 
-const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances']
+const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances', 'Conformité']
 
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
@@ -1131,6 +1445,8 @@ export default function App() {
       case 'kyc': return <KYCPage />
       case 'transactions': return <TransactionsPage />
       case 'finance': return <FinancePage />
+      case 'operations': return <OperationsPage />
+      case 'anif': return <ANIFPage />
       default: return <DashboardPage />
     }
   }
