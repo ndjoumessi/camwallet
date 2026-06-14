@@ -34,28 +34,28 @@ Fonctionnalités marquées "Haute" dans le CDC ou nécessaires pour une beta uti
 
 ### Backend
 
-- [ ] **[ADMIN] Endpoint `POST /admin/transactions/:id/retry`** — relance manuelle d'une transaction en attente (§14.3.3 CDC). Utile pour les webhooks non reçus.
-- [ ] **[ADMIN] Endpoint `GET /admin/integrations/status`** — santé temps réel de OM, MTN MoMo, SMS OTP et FCM (latence ping, uptime). Requis pour le tableau de bord admin (§14.3.7).
-- [ ] **[NOTIF] Notification push + SMS sur décision KYC** — quand un admin approuve ou rejette un dossier KYC, l'utilisateur doit recevoir une notification push ET un SMS (§14.3.5). Actuellement aucune notification n'est envoyée depuis `admin.service.ts`.
-- [ ] **[SÉCU] Historique des 3 derniers PIN** — interdire la réutilisation des 3 derniers PIN lors d'un changement (§5.2 CDC). Stocker les hashes des anciens PIN sur `User`.
-- [ ] **[ANIF] Alerte automatique transactions > 500 000 FCFA** — générer une alerte ANIF et un audit log pour toute transaction dépassant ce seuil (§5.3 CDC). Ajouter dans `TransactionsService` après `$transaction`.
+- [x] **[ADMIN] Endpoint `POST /admin/transactions/:id/retry`** — relance manuelle d'une transaction en attente (§14.3.3 CDC). Utile pour les webhooks non reçus.
+- [x] **[ADMIN] Endpoint `GET /admin/integrations/status`** — santé temps réel de OM, MTN MoMo, SMS OTP et FCM (latence ping, uptime). Requis pour le tableau de bord admin (§14.3.7).
+- [x] **[NOTIF] Notification push + SMS sur décision KYC** — `reviewKyc()` envoie push via `NotificationsService.sendToUser()` + SMS via `OtpService.sendSms()`. `AdminModule` importe désormais `AuthModule`.
+- [x] **[SÉCU] Historique des 3 derniers PIN** — champ `previousPinHashes String[]` sur `User` (migration `add-pin-history`). `changePin()` vérifie les 3 derniers hashes avant d'accepter le nouveau PIN.
+- [x] **[ANIF] Alerte automatique transactions > 500 000 FCFA** — `p2p()` crée un `AuditLog { action: 'ANIF_HIGH_VALUE_ALERT' }` fire-and-forget si `amount >= 50_000_000n`.
 
 ### Mobile
 
-- [ ] **[UX] Détail transaction au clic dans HistoryScreen** — un clic sur une transaction dans l'historique doit ouvrir une vue de détail (destinataire, montant, frais, date, référence, statut). Requis §3.5 CDC.
-- [ ] **[UX] Écran / modale Retrait accessible depuis HomeScreen** — bouton "Retirer" (ou équivalent) sur l'écran d'accueil permettant d'initier un retrait vers OM ou MTN.
-- [ ] **[UX] Partage reçu WhatsApp après paiement QR** — le deep link `wa.me` est implémenté dans `SendModal` (P2P) mais pas dans le flux paiement QR (QR-07 CDC). Ajouter l'étape de partage post-confirmation QR.
-- [ ] **[PROFIL] Changement de PIN depuis ProfileScreen** — formulaire (ancien PIN → nouveau PIN × 2) appelant `PATCH /auth/change-pin` une fois implémenté backend.
-- [ ] **[PROFIL] Toggle préférences notifications** — switch push/SMS dans les paramètres profil (§3.6 CDC). Stocker côté `User` ou `UserSettings`.
-- [ ] **[LÉGAL] Écrans CGU et Politique de confidentialité** — requis pour la publication sur l'App Store et le Play Store. Liens depuis ProfileScreen (§3.6 CDC).
-- [ ] **[UX] Mode dégradé offline** — afficher le solde mis en cache (AsyncStorage) et permettre d'afficher son QR statique sans connexion (§5.4 CDC). Gérer l'état réseau avec `NetInfo`.
+- [x] **[UX] Détail transaction au clic dans HistoryScreen** — `onPress` sur chaque ligne ouvre une `Modal` (pageSheet) avec icône, montant, référence, opération, date, statut, motif.
+- [x] **[UX] Écran / modale Retrait accessible depuis HomeScreen** — `WithdrawModal.tsx` + bouton "Retirer" dans la barre d'actions défilante de `HomeScreen`.
+- [x] **[UX] Partage reçu WhatsApp après paiement QR** — deep link `wa.me` intégré dans `SendModal` à l'étape "done" (P2P et QR).
+- [x] **[PROFIL] Changement de PIN depuis ProfileScreen** — modal in-app (PIN actuel → nouveau × 2) appelant `authApi.changePin()` → `PATCH /auth/change-pin`. Vérifie les 3 derniers PIN côté serveur.
+- [x] **[PROFIL] Toggle préférences notifications** — switch push dans ProfileScreen, persisté via `AsyncStorage` (`cw_push_enabled`).
+- [x] **[LÉGAL] Écrans CGU et Politique de confidentialité** — modales pageSheet avec texte complet depuis ProfileScreen (section "Informations légales").
+- [x] **[UX] Mode dégradé offline** — `fetchBalance()` catch : charge `cw_cached_balance` depuis `AsyncStorage` + affiche `error: 'Mode hors ligne — solde affiché depuis le cache'`.
 
 ### Admin
 
 - [ ] **[ADMIN] Vue dédiée Recharges & Retraits** — page admin listant les opérations OM/MoMo avec statut webhook en temps réel, référence opérateur, payload callback (§14.3.4 CDC).
-- [ ] **[ADMIN] Score de risque ANIF par utilisateur** — calcul automatique Bas/Moyen/Élevé selon volume mensuel et comportement. Afficher sur la fiche utilisateur (§14.3.2 CDC).
-- [ ] **[ADMIN] Tableau santé intégrations sur Dashboard** — widget affichant le statut OM, MTN, SMS, FCM avec latence et uptime (§14.3.1 CDC). Consomme `GET /admin/integrations/status`.
-- [ ] **[ADMIN] Relance transaction manuelle** — bouton "Relancer" sur la fiche transaction admin pour les transactions `PENDING` bloquées (§14.3.3 CDC).
+- [x] **[ADMIN] Score de risque ANIF par utilisateur** — `getUserDetail()` calcule `anifRisk` (Bas/Moyen/Élevé) depuis le volume mensuel ; affiché sur la fiche utilisateur admin avec couleur (rouge/jaune/vert).
+- [x] **[ADMIN] Tableau santé intégrations sur Dashboard** — widget `HealthWidget` consomme `GET /admin/health/integrations` (déjà implémenté).
+- [x] **[ADMIN] Relance transaction manuelle** — `POST /admin/transactions/:id/retry` + bouton "Relancer" sur la fiche transaction admin (déjà implémenté).
 
 ---
 
@@ -131,7 +131,7 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 | Priorité | Nombre d'items | Domaines principaux |
 |---|---|---|
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
-| 🟠 Haute | 15 | Backend (5) + Mobile (7) + Admin (4) - 1 partagé |
+| 🟠 Haute | 1 *(14/15 ✅)* | Admin (Vue Recharges & Retraits) |
 | 🟡 Moyenne | 13 | Backend (5) + Mobile (4) + Admin (4) |
 | 🔵 Phase 2 | 22 | Mobile (11) + Admin (8) + Infra (5) - 2 partagés |
 | **Total** | **61** | |

@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { OtpService } from '../auth/otp.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -8,9 +10,16 @@ import {
 } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
 
+const ANIF_RISK_HIGH = 50_000_000n;  // 500 000 FCFA en centimes
+const ANIF_RISK_MED  = 5_000_000n;   //  50 000 FCFA en centimes
+
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+    private otpService: OtpService,
+  ) {}
 
   // ─── Statistiques globales ──────────────────────────────────────────────────
   async getStats() {
@@ -307,6 +316,21 @@ export class AdminService {
     await this.writeAudit(adminId, `KYC_${dto.decision}`, `User:${userId}`, {
       note: dto.note,
     });
+
+    // Notification push + SMS — fire-and-forget
+    const approved = newStatus === KycStatus.APPROVED;
+    const pushTitle = approved ? 'KYC approuvé ✓' : 'KYC rejeté';
+    const pushBody = approved
+      ? 'Votre identité a été vérifiée. Votre compte est maintenant complet.'
+      : `Votre dossier KYC a été rejeté.${dto.note ? ' Motif : ' + dto.note : ''}`;
+    void this.notifications.sendToUser(userId, pushTitle, pushBody, { type: 'KYC', status: newStatus });
+
+    const smsMsg = approved
+      ? 'CamWallet: Votre KYC est approuvé ! Votre compte est maintenant vérifié.'
+      : 'CamWallet: Votre dossier KYC a été rejeté. Reconnectez-vous pour plus d\'infos.';
+    const smsUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+    if (smsUser) void this.otpService.sendSms(smsUser.phone, smsMsg);
+
     return user;
   }
 
@@ -454,7 +478,8 @@ export class AdminService {
     });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    const [transactions, audit, sent, received] = await Promise.all([
+    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const [transactions, audit, sent, received, monthlyVolume] = await Promise.all([
       this.prisma.transaction.findMany({
         where: { OR: [{ senderId: id }, { receiverId: id }] },
         orderBy: { createdAt: 'desc' },
@@ -486,7 +511,21 @@ export class AdminService {
         _sum: { amount: true },
         where: { receiverId: id, status: TransactionStatus.COMPLETED },
       }),
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: {
+          OR: [{ senderId: id }, { receiverId: id }],
+          status: TransactionStatus.COMPLETED,
+          createdAt: { gte: d30 },
+        },
+      }),
     ]);
+
+    const monthlyVol = monthlyVolume._sum.amount ?? 0n;
+    const anifRisk =
+      monthlyVol >= ANIF_RISK_HIGH ? 'Élevé'
+      : monthlyVol >= ANIF_RISK_MED ? 'Moyen'
+      : 'Bas';
 
     return {
       user,
@@ -496,6 +535,8 @@ export class AdminService {
         transactionsCount: sent._count._all + received._count._all,
         totalSent: sent._sum.amount ?? 0n,
         totalReceived: received._sum.amount ?? 0n,
+        monthlyVolume: monthlyVol,
+        anifRisk,
       },
     };
   }

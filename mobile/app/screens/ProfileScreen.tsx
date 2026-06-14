@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Badge, Skeleton } from '../components/ui';
 import { userApi, authApi, MeResponse } from '../../src/lib/api';
@@ -26,6 +27,7 @@ import KycModal from './modals/KycModal';
 import { useTheme } from '../context/ThemeContext';
 
 const BIO_KEY = 'cw_biometric_enabled';
+const PUSH_KEY = 'cw_push_enabled';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -85,6 +87,18 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [deletePin, setDeletePin] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  // Changement de PIN
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinForm, setPinForm] = useState({ current: '', next: '', confirm: '' });
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  // Notifications push
+  const [pushEnabled, setPushEnabled] = useState(true);
+
+  // Écrans légaux
+  const [legalScreen, setLegalScreen] = useState<'cgu' | 'privacy' | null>(null);
+
   const load = useCallback(() => {
     setLoading(true);
     userApi
@@ -97,6 +111,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     AsyncStorage.getItem(BIO_KEY).then((v) => setBiometric(v === '1'));
+    AsyncStorage.getItem(PUSH_KEY).then((v) => setPushEnabled(v !== '0'));
   }, []);
 
   const openEdit = () => {
@@ -152,27 +167,39 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     }
   };
 
-  const changePin = () => {
-    const phone = me?.phone;
-    if (!phone) return;
-    Alert.alert(
-      'Changer le PIN',
-      'Un code OTP vous sera envoyé par SMS pour sécuriser le changement.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Envoyer le code',
-          onPress: async () => {
-            try {
-              await authApi.requestPinReset(phone);
-              Alert.alert('Code envoyé', 'Saisissez le code OTP reçu par SMS pour définir un nouveau PIN.');
-            } catch (e: any) {
-              Alert.alert('Erreur', e?.response?.data?.message ?? "Échec de l'envoi");
-            }
-          },
-        },
-      ],
-    );
+  const openPinModal = () => {
+    setPinForm({ current: '', next: '', confirm: '' });
+    setPinError(null);
+    setPinModalOpen(true);
+  };
+
+  const handleChangePin = async () => {
+    const { current, next, confirm } = pinForm;
+    if (current.length !== 6 || next.length !== 6 || confirm.length !== 6) {
+      setPinError('Tous les champs doivent contenir 6 chiffres.');
+      return;
+    }
+    if (next !== confirm) {
+      setPinError('Les deux nouveaux PIN ne correspondent pas.');
+      return;
+    }
+    setPinSaving(true);
+    setPinError(null);
+    try {
+      await authApi.changePin(current, next);
+      setPinModalOpen(false);
+      Alert.alert('PIN modifié', 'Votre PIN a été changé. Reconnectez-vous.');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur inconnue';
+      setPinError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const togglePushNotif = async (value: boolean) => {
+    setPushEnabled(value);
+    await AsyncStorage.setItem(PUSH_KEY, value ? '1' : '0');
   };
 
   const toggleBiometric = async (value: boolean) => {
@@ -406,7 +433,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
             <Text style={styles.groupLabel}>Sécurité</Text>
             <Pressable
               style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
-              onPress={changePin}
+              onPress={openPinModal}
               accessibilityRole="button"
               accessibilityLabel="Changer le PIN"
             >
@@ -415,7 +442,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
               </View>
               <View style={styles.menuItemInfo}>
                 <Text style={styles.menuItemLabel}>Changer le PIN</Text>
-                <Text style={styles.menuItemDesc}>Code OTP requis</Text>
+                <Text style={styles.menuItemDesc}>Ancien PIN requis</Text>
               </View>
               <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
             </Pressable>
@@ -451,6 +478,57 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 accessibilityLabel="Basculer le mode nuit"
               />
             </View>
+            <View style={styles.menuItem}>
+              <View style={styles.menuItemIcon}>
+                <Ionicons name="notifications-outline" size={20} color={Colors.text} />
+              </View>
+              <View style={styles.menuItemInfo}>
+                <Text style={styles.menuItemLabel}>Notifications push</Text>
+                <Text style={styles.menuItemDesc}>Alertes transactions en temps réel</Text>
+              </View>
+              <Switch
+                value={pushEnabled}
+                onValueChange={togglePushNotif}
+                trackColor={{ false: Colors.border, true: Colors.primary }}
+                thumbColor="#fff"
+                accessibilityLabel="Activer les notifications push"
+              />
+            </View>
+          </View>
+
+          {/* Informations légales */}
+          <View style={styles.menuGroup}>
+            <Text style={styles.groupLabel}>Informations légales</Text>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+              onPress={() => setLegalScreen('cgu')}
+              accessibilityRole="button"
+              accessibilityLabel="Conditions générales d'utilisation"
+            >
+              <View style={[styles.menuItemIcon, { backgroundColor: Colors.infoBg }]}>
+                <Ionicons name="document-text-outline" size={20} color={Colors.blue} />
+              </View>
+              <View style={styles.menuItemInfo}>
+                <Text style={styles.menuItemLabel}>Conditions d'utilisation</Text>
+                <Text style={styles.menuItemDesc}>CGU CamWallet</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+              onPress={() => setLegalScreen('privacy')}
+              accessibilityRole="button"
+              accessibilityLabel="Politique de confidentialité"
+            >
+              <View style={[styles.menuItemIcon, { backgroundColor: Colors.infoBg }]}>
+                <Ionicons name="shield-checkmark-outline" size={20} color={Colors.blue} />
+              </View>
+              <View style={styles.menuItemInfo}>
+                <Text style={styles.menuItemLabel}>Politique de confidentialité</Text>
+                <Text style={styles.menuItemDesc}>Vos données personnelles</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
+            </Pressable>
           </View>
         </>
       )}
@@ -477,11 +555,108 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>Supprimer mon compte</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v1.5.0 · Marché Cameroun</Text>
+      <Text style={styles.version}>CamWallet v1.5.1 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
     </ScrollView>
+
+    {/* Modal : Changement de PIN */}
+    <Modal visible={pinModalOpen} transparent animationType="slide" onRequestClose={() => setPinModalOpen(false)}>
+      <View style={styles.deleteOverlay}>
+        <View style={[styles.deleteModalCard, { gap: Spacing.md }]}>
+          <Ionicons name="lock-closed-outline" size={32} color={Colors.primary} />
+          <Text style={styles.deleteModalTitle}>Changer le PIN</Text>
+          {([
+            { key: 'current', label: 'PIN actuel' },
+            { key: 'next', label: 'Nouveau PIN' },
+            { key: 'confirm', label: 'Confirmer le nouveau PIN' },
+          ] as const).map(({ key, label }) => (
+            <View key={key} style={{ width: '100%' }}>
+              <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>{label}</Text>
+              <TextInput
+                style={styles.pinInput}
+                value={pinForm[key]}
+                onChangeText={(v) => setPinForm((f) => ({ ...f, [key]: v.replace(/\D/g, '').slice(0, 6) }))}
+                placeholder="• • • • • •"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="numeric"
+                secureTextEntry
+                maxLength={6}
+                accessibilityLabel={label}
+              />
+            </View>
+          ))}
+          {pinError && <Text style={{ color: Colors.red, fontSize: Typography.xs, textAlign: 'center' }}>{pinError}</Text>}
+          <TouchableOpacity
+            style={[styles.deleteProceedBtn, { backgroundColor: Colors.primary }, pinSaving && { opacity: 0.6 }]}
+            onPress={handleChangePin}
+            disabled={pinSaving}
+          >
+            <Text style={styles.deleteProceedText}>{pinSaving ? 'Modification…' : 'Confirmer'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setPinModalOpen(false)}>
+            <Text style={styles.deleteCancelText}>Annuler</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+
+    {/* Modal : Écrans légaux (CGU + Confidentialité) */}
+    <Modal visible={!!legalScreen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setLegalScreen(null)}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.surface }} edges={['top']}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+          <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold }}>
+            {legalScreen === 'cgu' ? "Conditions d'utilisation" : 'Politique de confidentialité'}
+          </Text>
+          <Pressable onPress={() => setLegalScreen(null)} accessibilityRole="button" accessibilityLabel="Fermer">
+            <Ionicons name="close" size={24} color={Colors.text} />
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: Spacing.xl, paddingBottom: 80 }}>
+          {legalScreen === 'cgu' ? (
+            <>
+              <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold, marginBottom: Spacing.md }}>Conditions Générales d'Utilisation</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: Typography.xs, marginBottom: Spacing.xl }}>Dernière mise à jour : juin 2026</Text>
+              {[
+                ['1. Objet', "CamWallet est un service de paiement par QR-code destiné au marché camerounais. Le Crédit QR est un solde interne prépayé, distinct d'un compte bancaire."],
+                ['2. Conditions d\'accès', "L'accès est réservé aux personnes physiques résidant au Cameroun, majeures ou munies d'une autorisation parentale. L'inscription requiert un numéro de téléphone valide (+237)."],
+                ['3. Utilisation du service', "Le service permet le transfert P2P, le paiement QR chez les commerçants partenaires, la recharge et le retrait via Orange Money ou MTN Mobile Money."],
+                ['4. Sécurité', "Vous êtes responsable de la confidentialité de votre PIN à 6 chiffres. En cas de perte de téléphone, contactez immédiatement le support pour bloquer votre compte."],
+                ['5. Limites financières', "Limites par transaction : 500 000 FCFA. Limites journalières définies par les opérateurs partenaires. CamWallet se réserve le droit de modifier ces limites."],
+                ['6. Responsabilité', "CamWallet ne peut être tenu responsable des interruptions de service des opérateurs tiers (Orange Money, MTN MoMo) ou de force majeure."],
+                ['7. Résiliation', "Vous pouvez supprimer votre compte depuis l'onglet Profil. Le solde restant sera perdu si non retiré préalablement."],
+                ['8. Contact', "Support : support@camwallet.cm · WhatsApp : +237 600 000 000"],
+              ].map(([title, body]) => (
+                <View key={title as string} style={{ marginBottom: Spacing.xl }}>
+                  <Text style={{ color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold, marginBottom: Spacing.sm }}>{title}</Text>
+                  <Text style={{ color: Colors.textSoft, fontSize: Typography.sm, lineHeight: 22 }}>{body}</Text>
+                </View>
+              ))}
+            </>
+          ) : (
+            <>
+              <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold, marginBottom: Spacing.md }}>Politique de confidentialité</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: Typography.xs, marginBottom: Spacing.xl }}>Dernière mise à jour : juin 2026</Text>
+              {[
+                ['Données collectées', "Nom complet, numéro de téléphone, date de naissance, ville, adresse e-mail (optionnelle), photo de profil, documents KYC (CNI recto-verso + selfie)."],
+                ['Finalité', "Vérification d'identité (KYC), prévention de la fraude, conformité ANIF/COBAC, fourniture du service de paiement, notifications transactionnelles."],
+                ['Conservation', "Vos données sont conservées 5 ans après la clôture du compte, conformément aux obligations légales camerounaises."],
+                ['Partage', "Nous ne vendons jamais vos données. Elles peuvent être partagées avec les autorités réglementaires (ANIF) en cas d'obligation légale."],
+                ['Vos droits', "Accès, rectification, suppression de vos données : envoyez votre demande à privacy@camwallet.cm. Délai de réponse : 30 jours."],
+                ['Sécurité', "Données chiffrées en transit (TLS 1.3) et au repos. PIN stocké sous forme de hash bcrypt (coût 12). Tokens JWT avec expiration courte."],
+                ['Contact DPO', "Délégué à la Protection des Données : dpo@camwallet.cm"],
+              ].map(([title, body]) => (
+                <View key={title as string} style={{ marginBottom: Spacing.xl }}>
+                  <Text style={{ color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold, marginBottom: Spacing.sm }}>{title}</Text>
+                  <Text style={{ color: Colors.textSoft, fontSize: Typography.sm, lineHeight: 22 }}>{body}</Text>
+                </View>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
 
     {/* Modal 1 : première confirmation */}
     <Modal visible={deleteStep === 'confirm'} transparent animationType="fade" onRequestClose={() => setDeleteStep('idle')}>

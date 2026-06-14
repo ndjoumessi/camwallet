@@ -26,11 +26,12 @@ model User {
   kycStatus   KycStatus  @default(PENDING)
 
   // Sécurité
-  pinAttempts     Int       @default(0)
-  lockedUntil     DateTime?
-  lastLoginAt     DateTime?
-  lastLoginIp     String?
-  tokenVersion    Int       @default(0) // Incrémenté à chaque logout — invalide les refresh tokens émis avant
+  pinAttempts          Int       @default(0)
+  lockedUntil          DateTime?
+  lastLoginAt          DateTime?
+  lastLoginIp          String?
+  tokenVersion         Int       @default(0) // Incrémenté à chaque logout — invalide les refresh tokens émis avant
+  previousPinHashes    String[]  @default([]) // Hashes des 3 derniers PIN (réutilisation interdite)
 
   // Notifications push (jeton Expo)
   pushToken       String?

@@ -9,14 +9,16 @@ import {
   Alert,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Badge, IconButton } from '../components/ui';
-import { useStore } from '../store/useStore';
+import { useStore, Transaction } from '../store/useStore';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -83,6 +85,7 @@ export default function HistoryScreen() {
   const [activeFilter, setActiveFilter] = useState('Tout');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   const filtered = transactions.filter((tx) => {
     const matchFilter =
@@ -201,6 +204,7 @@ export default function HistoryScreen() {
             <Pressable
               key={tx.id}
               style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
+              onPress={() => setSelectedTx(tx)}
               accessibilityRole="button"
               accessibilityLabel={`${txMeta(tx.type).label} ${tx.name}, ${fmt(tx.amount)}`}
             >
@@ -226,6 +230,54 @@ export default function HistoryScreen() {
         )}
         <View style={{ height: 80 }} />
       </ScrollView>
+
+      {/* Modale de détail transaction */}
+      <Modal
+        visible={!!selectedTx}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSelectedTx(null)}
+      >
+        {selectedTx && (
+          <SafeAreaView style={styles.detailSheet} edges={['top']}>
+            <View style={styles.detailHeader}>
+              <Text style={styles.detailTitle}>Détail transaction</Text>
+              <IconButton icon="close" onPress={() => setSelectedTx(null)} accessibilityLabel="Fermer" />
+            </View>
+
+            <ScrollView contentContainerStyle={styles.detailBody}>
+              {/* Icône + montant */}
+              <View style={styles.detailHero}>
+                <View style={[styles.detailIcon, { backgroundColor: txMeta(selectedTx.type).amountColor + '22' }]}>
+                  <Ionicons name={txMeta(selectedTx.type).icon as IoniconName} size={32} color={txMeta(selectedTx.type).amountColor} />
+                </View>
+                <Text style={[styles.detailAmount, { color: txMeta(selectedTx.type).amountColor }]}>
+                  {selectedTx.amount > 0 ? '+' : ''}{fmt(selectedTx.amount)}
+                </Text>
+                <Badge
+                  label={txMeta(selectedTx.type).label}
+                  color={txMeta(selectedTx.type).badgeText}
+                  bg={txMeta(selectedTx.type).badgeBg}
+                />
+              </View>
+
+              {/* Lignes de détail */}
+              {[
+                { label: 'Référence', value: selectedTx.ref || '—' },
+                { label: 'Opération', value: selectedTx.name },
+                { label: 'Date', value: selectedTx.date },
+                { label: 'Statut', value: selectedTx.status === 'success' ? 'Effectuée' : selectedTx.status === 'pending' ? 'En cours' : 'Échouée' },
+                selectedTx.motif ? { label: 'Motif', value: selectedTx.motif } : null,
+              ].filter(Boolean).map((row: any) => (
+                <View key={row.label} style={styles.detailRow}>
+                  <Text style={styles.detailRowLabel}>{row.label}</Text>
+                  <Text style={styles.detailRowValue} selectable>{row.value}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </SafeAreaView>
+        )}
+      </Modal>
     </View>
   );
 }
@@ -282,4 +334,25 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: Typography.base, fontWeight: Typography.bold },
   empty: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
+
+  // Modale détail
+  detailSheet: { flex: 1, backgroundColor: Colors.surface },
+  detailHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  detailTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
+  detailBody: { padding: Spacing.xl, gap: Spacing.md },
+  detailHero: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.md },
+  detailIcon: {
+    width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center',
+  },
+  detailAmount: { fontSize: 36, fontWeight: Typography.black },
+  detailRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, padding: Spacing.md,
+  },
+  detailRowLabel: { color: Colors.textMuted, fontSize: Typography.sm, flex: 1 },
+  detailRowValue: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold, flex: 2, textAlign: 'right' },
 });

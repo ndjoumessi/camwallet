@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { format } from 'date-fns';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   authApi,
   userApi,
@@ -302,9 +303,23 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchBalance: async () => {
-    const b = await walletApi.getBalance();
-    const fcfa = toFcfa(b.balance);
-    set((s) => ({ balance: fcfa, user: { ...s.user, balance: fcfa } }));
+    try {
+      const b = await walletApi.getBalance();
+      const fcfa = toFcfa(b.balance);
+      set((s) => ({ balance: fcfa, user: { ...s.user, balance: fcfa } }));
+      void AsyncStorage.setItem('cw_cached_balance', String(fcfa));
+    } catch (e) {
+      // Mode hors ligne : charger le solde mis en cache
+      const cached = await AsyncStorage.getItem('cw_cached_balance');
+      if (cached !== null) {
+        const fcfa = Number(cached);
+        set((s) => ({
+          balance: fcfa,
+          user: { ...s.user, balance: fcfa },
+          error: 'Mode hors ligne — solde affiché depuis le cache',
+        }));
+      }
+    }
   },
 
   fetchHistory: async () => {

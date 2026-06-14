@@ -77,6 +77,23 @@ export class TransactionsService {
       from: sender?.fullName,
     });
 
+    // Alerte ANIF automatique pour les transactions > 500 000 FCFA (§5.3 CDC)
+    if (amount >= 50_000_000n) {
+      void this.prisma.auditLog.create({
+        data: {
+          userId: null,
+          action: 'ANIF_HIGH_VALUE_ALERT',
+          resource: `Transaction:${transaction.id}`,
+          metadata: {
+            amount: amount.toString(),
+            senderId,
+            receiverId: receiver.id,
+            threshold: '50000000',
+          },
+        },
+      });
+    }
+
     return transaction;
   }
 

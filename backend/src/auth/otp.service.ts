@@ -85,7 +85,7 @@ export class OtpService {
   }
 
   // ─── SMS via AfricasTalking API ───────────────────────────────────────────
-  private async sendSms(phone: string, message: string): Promise<void> {
+  async sendSms(phone: string, message: string): Promise<void> {
     const apiKey = this.config.get('AT_API_KEY');
     const username = this.config.get('AT_USERNAME');
 

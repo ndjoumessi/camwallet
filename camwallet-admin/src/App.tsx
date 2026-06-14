@@ -650,6 +650,16 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
               <div>{label('Transactions')}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
               <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.totalSent))}</span></div>
               <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.totalReceived))}</span></div>
+              {data.stats.monthlyVolume !== undefined && (
+                <div>{label('Volume 30j')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.monthlyVolume))}</span></div>
+              )}
+              {data.stats.anifRisk && (
+                <div>{label('Score ANIF')}<span style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: data.stats.anifRisk === 'Élevé' ? C.red : data.stats.anifRisk === 'Moyen' ? C.yellow : C.green,
+                }}>{data.stats.anifRisk}</span></div>
+              )}
             </div>
 
             {/* Actions */}

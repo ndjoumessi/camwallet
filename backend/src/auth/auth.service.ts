@@ -249,11 +249,21 @@ export class AuthService {
     const pinValid = await bcrypt.compare(currentPin, user.pinHash);
     if (!pinValid) throw new UnauthorizedException('PIN actuel incorrect');
 
+    // Vérifier que le nouveau PIN n'est pas parmi les 3 derniers utilisés
+    const hashesToCheck = [user.pinHash, ...user.previousPinHashes];
+    for (const oldHash of hashesToCheck) {
+      if (await bcrypt.compare(newPin, oldHash)) {
+        throw new BadRequestException('Ce PIN a déjà été utilisé récemment. Choisissez un PIN différent.');
+      }
+    }
+
     const newPinHash = await bcrypt.hash(newPin, 12);
-    // Incrémente tokenVersion → invalide toutes les sessions en cours (sécurité)
+    // Conserver les 2 anciens hashes + l'actuel = 3 entrées dans l'historique
+    const previousPinHashes = [user.pinHash, ...user.previousPinHashes].slice(0, 3);
+
     await this.prisma.user.update({
       where: { id: userId },
-      data: { pinHash: newPinHash, tokenVersion: { increment: 1 } },
+      data: { pinHash: newPinHash, tokenVersion: { increment: 1 }, previousPinHashes },
     });
 
     return { message: 'PIN modifié avec succès — reconnectez-vous' };
