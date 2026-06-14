@@ -3,10 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
+  Pressable,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { IconButton } from './components/ui';
 import { Colors, Typography, Spacing } from './constants/theme';
 import SplashScreen from './screens/SplashScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -20,10 +22,10 @@ import { registerForPushNotifications } from '../src/lib/notifications';
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
 
-const NAV_TABS = [
-  { id: 'home' as Tab, icon: '⊞', label: 'Accueil' },
-  { id: 'history' as Tab, icon: '≡', label: 'Historique' },
-  { id: 'profile' as Tab, icon: '◉', label: 'Profil' },
+const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap; label: string }[] = [
+  { id: 'home', icon: 'home-outline', iconActive: 'home', label: 'Accueil' },
+  { id: 'history', icon: 'time-outline', iconActive: 'time', label: 'Historique' },
+  { id: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profil' },
 ];
 
 export default function App() {
@@ -76,7 +78,7 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
 
       {/* Top bar */}
@@ -90,10 +92,15 @@ export default function App() {
           </Text>
         </View>
         <View style={styles.topBarRight}>
-          <TouchableOpacity style={styles.notifBtn}>
-            <Text style={styles.notifIcon}>🔔</Text>
-            <View style={styles.notifDot} />
-          </TouchableOpacity>
+          <View>
+            <IconButton
+              icon="notifications-outline"
+              onPress={() => {}}
+              accessibilityLabel="Notifications"
+              color={Colors.textSoft}
+            />
+            <View style={styles.notifDot} pointerEvents="none" />
+          </View>
         </View>
       </View>
 
@@ -117,23 +124,24 @@ export default function App() {
         {NAV_TABS.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
-            <TouchableOpacity
+            <Pressable
               key={tab.id}
-              style={styles.navBtn}
+              style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.6 }]}
               onPress={() => setActiveTab(tab.id)}
-              activeOpacity={0.7}
               accessibilityRole="tab"
               accessibilityLabel={tab.label}
               accessibilityState={{ selected: isActive }}
             >
-              <Text style={[styles.navIcon, isActive && styles.navIconActive]}>
-                {tab.icon}
-              </Text>
+              <Ionicons
+                name={isActive ? tab.iconActive : tab.icon}
+                size={22}
+                color={isActive ? Colors.primary : Colors.textMuted}
+              />
               <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
                 {tab.label}
               </Text>
               {isActive && <View style={styles.navDot} />}
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -160,10 +168,8 @@ const styles = StyleSheet.create({
   topBarTitle: { fontSize: Typography.lg, fontWeight: Typography.black, color: Colors.text },
   topBarTitleGreen: { color: Colors.primary },
   topBarRight: { flexDirection: 'row', gap: Spacing.md },
-  notifBtn: { position: 'relative', padding: 4 },
-  notifIcon: { fontSize: 22 },
   notifDot: {
-    position: 'absolute', top: 4, right: 4,
+    position: 'absolute', top: 9, right: 9,
     width: 8, height: 8, borderRadius: 4,
     backgroundColor: Colors.red, borderWidth: 1.5, borderColor: Colors.bg,
   },
@@ -179,10 +185,9 @@ const styles = StyleSheet.create({
   },
   navBtn: {
     flex: 1, alignItems: 'center', gap: 4,
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    minHeight: 48,
   },
-  navIcon: { fontSize: 22, color: Colors.textMuted },
-  navIconActive: { color: Colors.primary },
   navLabel: { fontSize: Typography.xs, color: Colors.textMuted, fontWeight: Typography.medium },
   navLabelActive: { color: Colors.primary, fontWeight: Typography.bold },
   navDot: {

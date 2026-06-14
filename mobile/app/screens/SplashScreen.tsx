@@ -97,7 +97,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
         <Text style={styles.title}>
           Cam<Text style={styles.titleGreen}>Wallet</Text>
         </Text>
-        <Text style={styles.subtitle}>Votre portefeuille numérique 🇨🇲</Text>
+        <Text style={styles.subtitle}>Votre portefeuille numérique</Text>
       </Animated.View>
 
       {/* Spinner */}

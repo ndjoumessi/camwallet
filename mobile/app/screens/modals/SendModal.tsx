@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,10 @@ import {
   Animated,
   Linking,
 } from 'react-native';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { Avatar, Button } from '../../components/ui';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
+import { Avatar, Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 
 interface SendModalProps {
@@ -68,6 +70,25 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
 
   const handleClose = () => { reset(); onClose(); };
 
+  // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(enter, {
+        toValue: 1,
+        damping: Animation.spring.damping,
+        stiffness: Animation.spring.stiffness,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      enter.setValue(0);
+    }
+  }, [visible, enter]);
+  const animStyle = {
+    opacity: enter,
+    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+  };
+
   const triggerShake = () => {
     Animated.sequence([
       Animated.timing(shake, { toValue: 10, duration: 60, useNativeDriver: true }),
@@ -119,7 +140,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     `💳 *Frais :* ${FRAIS} FCFA\n` +
     `💵 *Total débité :* ${(amt + FRAIS).toLocaleString('fr-FR')} FCFA\n` +
     `${motif ? `📝 *Motif :* ${motif}\n` : ''}` +
-    `🔖 *Réf :* ${ref}\n📅 *Date :* ${dateStr}\n━━━━━━━━━━━━━━━━━━\n_CamWallet 🇨🇲_`
+    `🔖 *Réf :* ${ref}\n📅 *Date :* ${dateStr}\n━━━━━━━━━━━━━━━━━━\n_CamWallet — Cameroun_`
   );
 
   const renderStep = () => {
@@ -134,13 +155,15 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 style={styles.contactRow}
                 onPress={() => { setSelectedContact(c); setStep('amount'); }}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${c.name}, +237 ${c.phone}`}
               >
                 <Avatar initials={c.avatar} size={44} color={c.color} bg={c.color + '20'} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.contactName}>{c.name}</Text>
                   <Text style={styles.contactPhone}>+237 {c.phone}</Text>
                 </View>
-                <Text style={{ color: Colors.textMuted }}>›</Text>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -182,6 +205,9 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                   key={q}
                   style={styles.quickBtn}
                   onPress={() => setAmount(q.toString())}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${q.toLocaleString('fr-FR')} FCFA`}
                 >
                   <Text style={styles.quickBtnText}>{(q / 1000).toLocaleString('fr-FR')}k</Text>
                 </TouchableOpacity>
@@ -221,7 +247,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               </View>
             )}
 
-            <Button label="Continuer" onPress={() => setStep('pin')} disabled={!canSend} />
+            <Button label="Continuer" icon="arrow-forward" onPress={() => setStep('pin')} disabled={!canSend} fullWidth />
           </ScrollView>
         );
 
@@ -256,21 +282,30 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
             </Text>
 
             <View style={styles.pinGrid}>
-              {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={[styles.pinKey, k === '' && styles.pinKeyEmpty]}
-                  onPress={() => {
-                    if (k === '') return;
-                    if (k === '⌫') setPin(p => p.slice(0, -1));
-                    else handlePin(k);
-                  }}
-                  disabled={k === ''}
-                  activeOpacity={0.7}
-                >
-                  {k !== '' && <Text style={styles.pinKeyText}>{k}</Text>}
-                </TouchableOpacity>
-              ))}
+              {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k, i) => {
+                const isBackspace = k === '⌫';
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.pinKey, k === '' && styles.pinKeyEmpty]}
+                    onPress={() => {
+                      if (k === '') return;
+                      if (isBackspace) setPin(p => p.slice(0, -1));
+                      else handlePin(k);
+                    }}
+                    disabled={k === ''}
+                    activeOpacity={0.7}
+                    accessibilityRole={k === '' ? undefined : 'button'}
+                    accessibilityLabel={k === '' ? undefined : isBackspace ? 'Supprimer' : k}
+                  >
+                    {isBackspace ? (
+                      <Ionicons name="backspace-outline" size={24} color={Colors.text} />
+                    ) : k !== '' ? (
+                      <Text style={styles.pinKeyText}>{k}</Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         );
@@ -279,7 +314,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
         return (
           <View style={styles.doneContainer}>
             <View style={styles.successIcon}>
-              <Text style={{ fontSize: 40 }}>✅</Text>
+              <Ionicons name="checkmark-circle" size={48} color={Colors.primary} />
             </View>
             <Text style={styles.doneTitle}>Transfert réussi !</Text>
             <Text style={styles.doneSubtitle}>
@@ -310,11 +345,15 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
             <TouchableOpacity
               style={styles.waBtn}
               onPress={() => Linking.openURL(`https://wa.me/?text=${waText}`)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Partager via WhatsApp"
             >
-              <Text style={styles.waBtnText}>📱 Partager via WhatsApp</Text>
+              <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+              <Text style={styles.waBtnText}>Partager via WhatsApp</Text>
             </TouchableOpacity>
 
-            <Button label="Terminer" onPress={() => { onSuccess(`✓ ${amt.toLocaleString('fr-FR')} FCFA envoyés !`); handleClose(); }} style={{ marginTop: Spacing.md }} />
+            <Button label="Terminer" icon="checkmark-circle" onPress={() => { onSuccess(`${amt.toLocaleString('fr-FR')} FCFA envoyés !`); handleClose(); }} fullWidth style={{ marginTop: Spacing.md }} />
           </View>
         );
     }
@@ -322,38 +361,42 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
-      <View style={styles.sheet}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>
-            {step === 'contact' ? 'Envoyer de l\'argent'
-              : step === 'amount' ? 'Montant'
-              : step === 'pin' ? 'Confirmer'
-              : 'Succès'}
-          </Text>
-          <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.sheet} edges={['top']}>
+        <Animated.View style={[styles.flex, animStyle]}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>
+              {step === 'contact' ? 'Envoyer de l\'argent'
+                : step === 'amount' ? 'Montant'
+                : step === 'pin' ? 'Confirmer'
+                : 'Succès'}
+            </Text>
+            <IconButton icon="close" onPress={handleClose} accessibilityLabel="Fermer" />
+          </View>
 
-        {/* Back button */}
-        {(step === 'amount' || step === 'pin') && (
-          <TouchableOpacity
-            onPress={() => step === 'amount' ? setStep('contact') : setStep('amount')}
-            style={styles.backBtn}
-          >
-            <Text style={styles.backBtnText}>← Retour</Text>
-          </TouchableOpacity>
-        )}
+          {/* Back button */}
+          {(step === 'amount' || step === 'pin') && (
+            <View style={styles.backRow}>
+              <IconButton
+                icon="arrow-back"
+                onPress={() => step === 'amount' ? setStep('contact') : setStep('amount')}
+                accessibilityLabel="Retour"
+                size={20}
+              />
+              <Text style={styles.backLabel}>Retour</Text>
+            </View>
+          )}
 
-        {renderStep()}
-      </View>
+          {renderStep()}
+        </Animated.View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: Colors.surface },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -363,14 +406,8 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  closeBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.card,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  closeBtnText: { color: Colors.textSoft, fontSize: Typography.base },
-  backBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
-  backBtnText: { color: Colors.textMuted, fontSize: Typography.base },
+  backRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
+  backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
   sectionLabel: {
     color: Colors.textMuted, fontSize: Typography.xs,
@@ -449,9 +486,10 @@ const styles = StyleSheet.create({
   receiptLabel: { color: Colors.textMuted, fontSize: Typography.sm },
   receiptValue: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold, maxWidth: '60%', textAlign: 'right' },
   waBtn: {
+    flexDirection: 'row', gap: Spacing.sm,
     backgroundColor: '#25D366' + '20', borderWidth: 1, borderColor: '#25D366' + '50',
     borderRadius: BorderRadius.md, padding: Spacing.md, marginTop: Spacing.xl,
-    width: '100%', alignItems: 'center',
+    width: '100%', alignItems: 'center', justifyContent: 'center', minHeight: 48,
   },
   waBtnText: { color: '#25D366', fontWeight: Typography.bold },
 });

@@ -6,10 +6,10 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   StatusBar,
-  TouchableOpacity,
+  Pressable,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Button } from '../components/ui';
 import { useStore } from '../store/useStore';
@@ -39,7 +39,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -108,16 +108,17 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
           />
 
           {onRegister ? (
-            <TouchableOpacity
+            <Pressable
               onPress={onRegister}
-              style={styles.registerLink}
+              style={({ pressed }) => [styles.registerLink, pressed && styles.pressed]}
               accessibilityRole="button"
+              accessibilityLabel="Créer un compte"
             >
               <Text style={styles.registerText}>
                 Pas encore de compte ?{' '}
                 <Text style={styles.registerTextGreen}>Créer un compte</Text>
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ) : null}
 
           <Text style={styles.hint}>Test : +237677000001 · PIN 123456</Text>
@@ -200,7 +201,8 @@ const styles = StyleSheet.create({
   },
   submit: { marginTop: Spacing.sm },
 
-  registerLink: { alignItems: 'center', marginTop: Spacing.xl },
+  pressed: { opacity: 0.7 },
+  registerLink: { alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: Spacing.xl },
   registerText: { color: Colors.textSoft, fontSize: Typography.base },
   registerTextGreen: { color: Colors.primary, fontWeight: Typography.bold },
 

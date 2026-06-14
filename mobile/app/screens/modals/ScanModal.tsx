@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { Button } from '../../components/ui';
+import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
+import { Button, IconButton } from '../../components/ui';
 
 // Destinataire décodé depuis un QR Code CamWallet.
 export interface ScannedRecipient {
@@ -99,26 +101,51 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
   const scanLineTranslate = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
   const granted = permission?.granted ?? false;
 
+  // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(enter, {
+        toValue: 1,
+        damping: Animation.spring.damping,
+        stiffness: Animation.spring.stiffness,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      enter.setValue(0);
+    }
+  }, [visible, enter]);
+  const animStyle = {
+    opacity: enter,
+    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.sheet}>
+      <SafeAreaView style={styles.sheet} edges={['top']}>
+        <Animated.View style={[styles.flex, animStyle]}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Scanner un QR Code</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
+          <IconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" />
         </View>
 
         <View style={styles.body}>
-          <Text style={styles.hint}>
-            {scanned ? '✅ QR Code détecté !' : error ? '⚠️ QR Code non reconnu' : 'Pointez la caméra vers le QR Code'}
-          </Text>
+          <View style={styles.hintRow} accessibilityLiveRegion="polite">
+            <Ionicons
+              name={scanned ? 'checkmark-circle' : error ? 'warning-outline' : 'qr-code-outline'}
+              size={16}
+              color={scanned ? Colors.primary : error ? Colors.yellow : Colors.textSoft}
+            />
+            <Text style={styles.hint}>
+              {scanned ? 'QR Code détecté !' : error ? 'QR Code non reconnu' : 'Pointez la caméra vers le QR Code'}
+            </Text>
+          </View>
 
           {/* Scanner viewfinder */}
           <View style={styles.scanBox}>
             {!granted ? (
               <View style={styles.cameraPlaceholder}>
-                <Text style={styles.cameraIcon}>🚫</Text>
+                <Ionicons name="close-circle-outline" size={40} color={Colors.textMuted} style={styles.cameraIcon} />
                 <Text style={styles.cameraText}>
                   {permission && !permission.canAskAgain
                     ? 'Accès caméra refusé.\nActivez-le dans les réglages.'
@@ -136,7 +163,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
 
             {scanned && (
               <View style={styles.scannedOverlay}>
-                <Text style={styles.scannedCheck}>✓</Text>
+                <Ionicons name="checkmark-circle" size={64} color={Colors.primary} />
               </View>
             )}
 
@@ -176,7 +203,8 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
           {granted && (
             <View style={{ paddingHorizontal: Spacing.xxl, width: '100%', marginTop: Spacing.xl }}>
               <Button
-                label={scanned ? "Envoyer de l'argent →" : 'Scan en cours...'}
+                label={scanned ? "Envoyer de l'argent" : 'Scan en cours...'}
+                icon={scanned ? 'arrow-forward' : undefined}
                 onPress={() => {
                   if (scanned) {
                     onDetected(scanned);
@@ -184,32 +212,37 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
                   }
                 }}
                 disabled={!scanned}
+                fullWidth
               />
             </View>
           )}
 
-          <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.cancelBtn}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Annuler"
+          >
             <Text style={styles.cancelText}>Annuler</Text>
           </TouchableOpacity>
         </View>
-      </View>
+        </Animated.View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: Colors.surface },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  closeBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center',
-  },
-  closeBtnText: { color: Colors.textSoft, fontSize: Typography.base },
   body: { flex: 1, alignItems: 'center', paddingTop: Spacing.xxl, gap: Spacing.xl },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   hint: { color: Colors.textSoft, fontSize: Typography.base },
   scanBox: {
     width: 240, height: 240, borderRadius: BorderRadius.lg,
@@ -227,7 +260,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '20',
     alignItems: 'center', justifyContent: 'center',
   } as any,
-  scannedCheck: { fontSize: 60, color: Colors.primary },
   corner: { position: 'absolute', width: 24, height: 24 },
   cornerTL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderColor: Colors.primary },
   cornerTR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderColor: Colors.primary },

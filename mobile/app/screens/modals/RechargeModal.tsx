@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,12 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
+  Animated,
 } from 'react-native';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { Button } from '../../components/ui';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
+import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 
 interface RechargeModalProps {
@@ -21,23 +24,23 @@ interface RechargeModalProps {
 const METHODS = [
   {
     id: 'mtn',
-    icon: '📲',
+    icon: 'phone-portrait-outline' as const,
     label: 'MTN Mobile Money',
     desc: 'Recharge via MoMo',
-    color: Colors.yellow,
+    color: Colors.mtn,
     ussd: '*126#',
   },
   {
     id: 'orange',
-    icon: '🟠',
+    icon: 'ellipse' as const,
     label: 'Orange Money',
     desc: 'Recharge via OM',
-    color: '#FF6600',
+    color: Colors.orange,
     ussd: '*144#',
   },
   {
     id: 'agent',
-    icon: '🏪',
+    icon: 'storefront-outline' as const,
     label: 'Agent partenaire',
     desc: 'Près de chez vous',
     color: Colors.blue,
@@ -54,6 +57,25 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
   const reset = () => { setStep('method'); setMethod(null); setAmount(''); };
   const handleClose = () => { reset(); onClose(); };
 
+  // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(enter, {
+        toValue: 1,
+        damping: Animation.spring.damping,
+        stiffness: Animation.spring.stiffness,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      enter.setValue(0);
+    }
+  }, [visible, enter]);
+  const animStyle = {
+    opacity: enter,
+    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+  };
+
   const handleRecharge = () => {
     const amt = parseInt(amount);
     if (!amt) return;
@@ -67,7 +89,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
       status: 'success',
       ref: `TX_${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
     });
-    onSuccess(`⚡ Compte rechargé de ${amt.toLocaleString('fr-FR')} FCFA !`);
+    onSuccess(`Compte rechargé de ${amt.toLocaleString('fr-FR')} FCFA !`);
     handleClose();
   };
 
@@ -75,21 +97,26 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
-      <View style={styles.sheet}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Recharger mon compte</Text>
-          <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.sheet} edges={['top']}>
+        <Animated.View style={[styles.flex, animStyle]}>
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Recharger mon compte</Text>
+            <IconButton icon="close" onPress={handleClose} accessibilityLabel="Fermer" />
+          </View>
 
-        {step !== 'method' && (
-          <TouchableOpacity onPress={() => setStep('method')} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Retour</Text>
-          </TouchableOpacity>
-        )}
+          {step !== 'method' && (
+            <View style={styles.backRow}>
+              <IconButton
+                icon="arrow-back"
+                onPress={() => setStep('method')}
+                accessibilityLabel="Retour"
+                size={20}
+              />
+              <Text style={styles.backLabel}>Retour</Text>
+            </View>
+          )}
 
-        <ScrollView contentContainerStyle={styles.body}>
+          <ScrollView contentContainerStyle={styles.body}>
           {step === 'method' && (
             <>
               <Text style={styles.sectionLabel}>Choisir la méthode</Text>
@@ -99,22 +126,25 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                   style={styles.methodCard}
                   onPress={() => { setMethod(m); setStep('amount'); }}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={m.label}
                 >
                   <View style={[styles.methodIconWrap, { backgroundColor: m.color + '18', borderColor: m.color + '40' }]}>
-                    <Text style={styles.methodIcon}>{m.icon}</Text>
+                    <Ionicons name={m.icon} size={24} color={m.color} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.methodLabel}>{m.label}</Text>
                     <Text style={styles.methodDesc}>{m.desc}</Text>
                     {m.ussd && <Text style={{ color: m.color, fontSize: Typography.xs, marginTop: 2 }}>{m.ussd}</Text>}
                   </View>
-                  <Text style={{ color: Colors.textMuted }}>›</Text>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
                 </TouchableOpacity>
               ))}
 
               <View style={styles.infoBox}>
+                <Ionicons name="information-circle-outline" size={16} color={Colors.blue} style={{ marginTop: 1 }} />
                 <Text style={styles.infoText}>
-                  ℹ️ Votre argent reste chez l'opérateur. CamWallet crédite votre solde QR instantanément après confirmation.
+                  Votre argent reste chez l'opérateur. CamWallet crédite votre solde QR instantanément après confirmation.
                 </Text>
               </View>
             </>
@@ -124,7 +154,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
             <>
               {/* Method badge */}
               <View style={[styles.selectedMethod, { backgroundColor: method.color + '12', borderColor: method.color + '30' }]}>
-                <Text style={styles.methodIcon}>{method.icon}</Text>
+                <Ionicons name={method.icon} size={24} color={method.color} />
                 <Text style={[styles.methodLabel, { color: method.color }]}>{method.label}</Text>
               </View>
 
@@ -150,6 +180,9 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                     key={q}
                     style={[styles.quickBtn, parseInt(amount) === q && { borderColor: method.color, backgroundColor: method.color + '12' }]}
                     onPress={() => setAmount(q.toString())}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${q.toLocaleString('fr-FR')} FCFA`}
                   >
                     <Text style={[styles.quickBtnText, parseInt(amount) === q && { color: method.color }]}>
                       {(q / 1000).toLocaleString('fr-FR')}k
@@ -166,29 +199,27 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                 label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
                 onPress={handleRecharge}
                 disabled={amt < 500}
+                fullWidth
               />
             </>
           )}
-        </ScrollView>
-      </View>
+          </ScrollView>
+        </Animated.View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: Colors.surface },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  closeBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center',
-  },
-  closeBtnText: { color: Colors.textSoft, fontSize: Typography.base },
-  backBtn: { paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
-  backBtnText: { color: Colors.textMuted, fontSize: Typography.base },
+  backRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
+  backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
   sectionLabel: {
     color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold,
@@ -203,7 +234,6 @@ const styles = StyleSheet.create({
     width: 50, height: 50, borderRadius: BorderRadius.md, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
-  methodIcon: { fontSize: 24 },
   methodLabel: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
   methodDesc: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
   selectedMethod: {
@@ -226,8 +256,9 @@ const styles = StyleSheet.create({
   limitNote: { alignItems: 'center' },
   limitText: { color: Colors.textMuted, fontSize: Typography.xs },
   infoBox: {
+    flexDirection: 'row', gap: Spacing.sm,
     backgroundColor: Colors.infoBg, borderWidth: 1, borderColor: Colors.blue + '40',
     borderRadius: BorderRadius.md, padding: Spacing.md, marginTop: Spacing.sm,
   },
-  infoText: { color: Colors.textSoft, fontSize: Typography.xs, lineHeight: 18 },
+  infoText: { flex: 1, color: Colors.textSoft, fontSize: Typography.xs, lineHeight: 18 },
 });

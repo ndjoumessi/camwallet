@@ -9,8 +9,9 @@ import {
   Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
-import { Avatar, Badge, SectionTitle } from '../components/ui';
+import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
 import SendModal from './modals/SendModal';
 import ReceiveModal from './modals/ReceiveModal';
@@ -38,12 +39,18 @@ export default function HomeScreen() {
   const txColor = (type: string) =>
     type === 'received' || type === 'recharge' ? Colors.primary : Colors.red;
 
-  const ACTION_BTNS = [
-    { icon: '↑', label: 'Envoyer', color: Colors.blue, modal: 'send' as ModalType },
-    { icon: '↓', label: 'Recevoir', color: Colors.primary, modal: 'receive' as ModalType },
-    { icon: '⚡', label: 'Recharger', color: Colors.yellow, modal: 'recharge' as ModalType },
-    { icon: '⊞', label: 'Scanner', color: Colors.purple, modal: 'scan' as ModalType },
+  const ACTION_BTNS: { icon: keyof typeof Ionicons.glyphMap; label: string; color: string; modal: ModalType }[] = [
+    { icon: 'arrow-up', label: 'Envoyer', color: Colors.blue, modal: 'send' },
+    { icon: 'arrow-down', label: 'Recevoir', color: Colors.primary, modal: 'receive' },
+    { icon: 'flash', label: 'Recharger', color: Colors.yellow, modal: 'recharge' },
+    { icon: 'scan-outline', label: 'Scanner', color: Colors.purple, modal: 'scan' },
   ];
+
+  const txIcon = (type: string): keyof typeof Ionicons.glyphMap =>
+    type === 'received' ? 'arrow-down'
+      : type === 'recharge' ? 'flash'
+      : type === 'withdrawal' ? 'cash-outline'
+      : 'arrow-up';
 
   return (
     <View style={styles.container}>
@@ -85,14 +92,20 @@ export default function HomeScreen() {
                 {showBalance ? fmt(balance) : '•••••• FCFA'}
               </Text>
             </View>
-            <TouchableOpacity onPress={toggleShowBalance} style={styles.eyeBtn}>
-              <Text style={styles.eyeIcon}>{showBalance ? '🙈' : '👁'}</Text>
-            </TouchableOpacity>
+            <IconButton
+              icon={showBalance ? 'eye-off-outline' : 'eye-outline'}
+              onPress={toggleShowBalance}
+              accessibilityLabel={showBalance ? 'Masquer le solde' : 'Afficher le solde'}
+              size={18}
+              color={Colors.primary}
+              bg={Colors.primaryLight}
+              style={styles.eyeBtn}
+            />
           </View>
 
           <View style={styles.balanceBadges}>
-            <Badge label="✓ Compte vérifié" color={Colors.primary} bg={Colors.primaryLight} />
-            <Badge label="🇨🇲 XAF" color={Colors.blue} bg={Colors.infoBg} />
+            <Badge label="Compte vérifié" icon="checkmark-circle" color={Colors.primary} bg={Colors.primaryLight} />
+            <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
           </View>
         </LinearGradient>
 
@@ -111,7 +124,7 @@ export default function HomeScreen() {
                 colors={[a.color + '30', a.color + '15']}
                 style={[styles.actionIcon, { borderColor: a.color + '50' }]}
               >
-                <Text style={[styles.actionIconText, { color: a.color }]}>{a.icon}</Text>
+                <Ionicons name={a.icon} size={20} color={a.color} />
               </LinearGradient>
               <Text style={styles.actionLabel}>{a.label}</Text>
             </TouchableOpacity>
@@ -150,12 +163,7 @@ export default function HomeScreen() {
                 { backgroundColor: txColor(tx.type) + '18' },
               ]}
             >
-              <Text style={[styles.txIconText, { color: txColor(tx.type) }]}>
-                {tx.type === 'received' ? '↓'
-                  : tx.type === 'recharge' ? '⚡'
-                  : tx.type === 'withdrawal' ? '🏧'
-                  : '↑'}
-              </Text>
+              <Ionicons name={txIcon(tx.type)} size={18} color={txColor(tx.type)} />
             </View>
             <View style={styles.txInfo}>
               <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
@@ -171,19 +179,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* Toast */}
-      {toast && (
-        <View
-          style={[
-            styles.toast,
-            { backgroundColor: toast.type === 'success' ? Colors.successBg : Colors.errorBg,
-              borderColor: toast.type === 'success' ? Colors.primary : Colors.red },
-          ]}
-        >
-          <Text style={{ color: toast.type === 'success' ? Colors.primary : Colors.red, fontWeight: Typography.bold }}>
-            {toast.msg}
-          </Text>
-        </View>
-      )}
+      {toast && <Toast message={toast.msg} type={toast.type} />}
 
       {/* Modals */}
       <SendModal
@@ -269,9 +265,7 @@ const styles = StyleSheet.create({
   eyeBtn: {
     backgroundColor: Colors.primaryLight,
     borderRadius: BorderRadius.sm,
-    padding: 6,
   },
-  eyeIcon: { fontSize: 18 },
   balanceBadges: { flexDirection: 'row', gap: Spacing.sm },
 
   // Actions
@@ -299,7 +293,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionIconText: { fontSize: 18, fontWeight: Typography.bold },
   actionLabel: { color: Colors.textSoft, fontSize: Typography.xs, fontWeight: Typography.semibold },
 
   // Contacts
@@ -328,7 +321,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  txIconText: { fontSize: 18, fontWeight: Typography.bold },
   txInfo: { flex: 1, minWidth: 0 },
   txName: {
     color: Colors.text,
@@ -337,17 +329,4 @@ const styles = StyleSheet.create({
   },
   txDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
   txAmount: { fontSize: Typography.base, fontWeight: Typography.bold, flexShrink: 0 },
-
-  // Toast
-  toast: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    alignItems: 'center',
-    zIndex: 1000,
-  },
 });

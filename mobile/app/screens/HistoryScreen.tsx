@@ -4,11 +4,15 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
+  Pressable,
   TextInput,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { IconButton } from '../components/ui';
 import { useStore } from '../store/useStore';
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 const FILTERS = ['Tout', 'Envois', 'Reçus', 'Recharges', 'Retraits'];
 
@@ -20,8 +24,8 @@ export default function HistoryScreen() {
   const txColor = (type: string) =>
     type === 'received' || type === 'recharge' ? Colors.primary : Colors.red;
 
-  const txIcon = (type: string) =>
-    type === 'received' ? '↓' : type === 'recharge' ? '⚡' : type === 'withdrawal' ? '🏧' : '↑';
+  const txIcon = (type: string): IoniconName =>
+    type === 'received' ? 'arrow-down' : type === 'recharge' ? 'flash' : type === 'withdrawal' ? 'cash-outline' : 'arrow-up';
 
   const txTypeLabel = (type: string) =>
     ({ received: 'Reçu', sent: 'Envoyé', recharge: 'Recharge', withdrawal: 'Retrait' }[type] ?? type);
@@ -43,7 +47,7 @@ export default function HistoryScreen() {
     <View style={styles.container}>
       {/* Search */}
       <View style={styles.searchRow}>
-        <Text style={styles.searchIcon}>🔍</Text>
+        <Ionicons name="search" size={18} color={Colors.textMuted} />
         <TextInput
           style={styles.searchInput}
           value={search}
@@ -52,9 +56,13 @@ export default function HistoryScreen() {
           placeholderTextColor={Colors.textMuted}
         />
         {search !== '' && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Text style={{ color: Colors.textMuted }}>✕</Text>
-          </TouchableOpacity>
+          <IconButton
+            icon="close"
+            onPress={() => setSearch('')}
+            accessibilityLabel="Effacer la recherche"
+            size={18}
+            color={Colors.textMuted}
+          />
         )}
       </View>
 
@@ -66,15 +74,22 @@ export default function HistoryScreen() {
         contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
       >
         {FILTERS.map((f) => (
-          <TouchableOpacity
+          <Pressable
             key={f}
-            style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
+            style={({ pressed }) => [
+              styles.filterChip,
+              activeFilter === f && styles.filterChipActive,
+              pressed && styles.pressed,
+            ]}
             onPress={() => setActiveFilter(f)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filtrer : ${f}`}
+            accessibilityState={{ selected: activeFilter === f }}
           >
             <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>
               {f}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ))}
       </ScrollView>
 
@@ -82,14 +97,19 @@ export default function HistoryScreen() {
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
         {filtered.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📭</Text>
+            <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
             <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
           </View>
         ) : (
           filtered.map((tx) => (
-            <TouchableOpacity key={tx.id} style={styles.txRow} activeOpacity={0.7}>
+            <Pressable
+              key={tx.id}
+              style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel={`${txTypeLabel(tx.type)} ${tx.name}, ${fmt(tx.amount)}`}
+            >
               <View style={[styles.txIcon, { backgroundColor: txColor(tx.type) + '18' }]}>
-                <Text style={[styles.txIconText, { color: txColor(tx.type) }]}>{txIcon(tx.type)}</Text>
+                <Ionicons name={txIcon(tx.type)} size={20} color={txColor(tx.type)} />
               </View>
               <View style={styles.txInfo}>
                 <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
@@ -105,7 +125,7 @@ export default function HistoryScreen() {
                   </Text>
                 </View>
               </View>
-            </TouchableOpacity>
+            </Pressable>
           ))
         )}
         <View style={{ height: 80 }} />
@@ -122,8 +142,8 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md, margin: Spacing.lg,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
   },
-  searchIcon: { fontSize: 16 },
   searchInput: { flex: 1, color: Colors.text, fontSize: Typography.base, minHeight: 40 },
+  pressed: { opacity: 0.7 },
   filterRow: { marginBottom: Spacing.sm },
   filterChip: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
@@ -142,7 +162,6 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: BorderRadius.md,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  txIconText: { fontSize: 20, fontWeight: Typography.bold },
   txInfo: { flex: 1, minWidth: 0 },
   txName: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
   txDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
@@ -153,6 +172,5 @@ const styles = StyleSheet.create({
   },
   txStatusText: { fontSize: Typography.xs, fontWeight: Typography.medium },
   empty: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
-  emptyIcon: { fontSize: 48 },
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
 });
