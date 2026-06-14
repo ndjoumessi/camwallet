@@ -541,19 +541,37 @@ export class AdminService {
       }),
     ]);
 
+    // Récupère les détails utilisateurs des émetteurs fréquents
+    const frequentSenderIds = frequentSenders
+      .filter((s) => s.senderId !== null)
+      .map((s) => s.senderId as string);
+    const frequentUserDetails = frequentSenderIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: frequentSenderIds } },
+          select: { id: true, phone: true, fullName: true },
+        })
+      : [];
+    const frequentWithDetails = frequentSenders.map((s) => {
+      const u = frequentUserDetails.find((u) => u.id === s.senderId);
+      return {
+        senderId: s.senderId,
+        count: s._count._all,
+        phone: u?.phone ?? '—',
+        fullName: u?.fullName ?? null,
+      };
+    });
+
     return {
-      alerts: largeTx.map((tx) => ({
+      highValue: largeTx.map((tx) => ({
         id: tx.id,
-        reference: tx.reference,
         amount: tx.amount,
         type: tx.type,
         status: tx.status,
         sender: tx.sender,
         receiver: tx.receiver,
         createdAt: tx.createdAt,
-        reason: 'MONTANT_ELEVE',
       })),
-      frequentSenders: frequentSenders.length,
+      frequentSenders: frequentWithDetails,
       cases,
       threshold: ANIF_THRESHOLD.toString(),
     };
@@ -614,10 +632,14 @@ export class AdminService {
 
     return {
       data: operations,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-      stats7d: {
-        recharge: { count: rechargeVol._count._all, amount: rechargeVol._sum.amount ?? 0n },
-        withdrawal: { count: withdrawalVol._count._all, amount: withdrawalVol._sum.amount ?? 0n },
+      total,
+      page,
+      limit,
+      stats: {
+        rechargeCount: rechargeVol._count._all,
+        rechargeTotal: rechargeVol._sum.amount ?? 0n,
+        withdrawalCount: withdrawalVol._count._all,
+        withdrawalTotal: withdrawalVol._sum.amount ?? 0n,
       },
     };
   }
