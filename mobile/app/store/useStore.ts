@@ -15,7 +15,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Types exposés (conservés pour les écrans)
 // ─────────────────────────────────────────────────────────────────────────────
-export type TransactionType = 'sent' | 'received' | 'recharge' | 'withdrawal';
+export type TransactionType = 'sent' | 'received' | 'recharge' | 'withdrawal' | 'refund';
 
 export interface Transaction {
   id: string;
@@ -77,11 +77,13 @@ function mapTransaction(t: ApiTransaction, meId: string | null): Transaction {
   let type: TransactionType;
   if (t.type === 'RECHARGE') type = 'recharge';
   else if (t.type === 'WITHDRAWAL') type = 'withdrawal';
+  else if (t.type === 'REFUND') type = 'refund';
   else type = isIncoming ? 'received' : 'sent';
 
   let name: string;
   if (type === 'recharge') name = 'Recharge Mobile Money';
   else if (type === 'withdrawal') name = 'Retrait Mobile Money';
+  else if (type === 'refund') name = 'Remboursement';
   else {
     const party = isIncoming ? t.sender : t.receiver;
     name = party?.fullName || party?.phone || '—';
