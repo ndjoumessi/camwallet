@@ -1,26 +1,67 @@
-# Dependencies
+# Dépendances
 node_modules/
-vendor/
+.pnp
+.pnp.js
 
-# Build output
-dist/
-build/
-out/
-
-# Environment & secrets
+# Environnement
 .env
 .env.local
 .env.*.local
-*.key
-*.pem
+!.env.example
+
+# Build outputs
+dist/
+build/
+.expo/
+.expo-shared/
+web-build/
+ios/
+android/
+
+# Prisma
+prisma/migrations/*.sql.bak
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# OS / editor
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+
+# Tests
+coverage/
+.nyc_output/
+
+# Expo
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+.cache/
+tmp/
+temp/
