@@ -42,6 +42,24 @@ const initials = (name?: string | null, phone?: string) =>
 
 const fcfa = (centimes: number) => Math.round(centimes / 100).toLocaleString('fr-FR');
 
+// "1995-04-23" → "23/04/1995"
+const isoToDmy = (iso: string) => {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
+// "23/04/1995" → "1995-04-23"
+const dmyToIso = (dmy: string) => {
+  const [d, m, y] = dmy.split('/');
+  return `${y}-${m}-${d}`;
+};
+// Auto-insère les "/" pendant la saisie (retourne la valeur formatée)
+const formatDob = (raw: string) => {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length > 4) return digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+  if (digits.length > 2) return digits.slice(0, 2) + '/' + digits.slice(2);
+  return digits;
+};
+
 interface ProfileScreenProps {
   onLogout: () => void;
 }
@@ -80,7 +98,7 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
       fullName: me.fullName ?? '',
       email: me.email ?? '',
       city: me.city ?? '',
-      dateOfBirth: me.dateOfBirth ? me.dateOfBirth.slice(0, 10) : '',
+      dateOfBirth: me.dateOfBirth ? isoToDmy(me.dateOfBirth.slice(0, 10)) : '',
     });
     setEditing(true);
   };
@@ -92,7 +110,7 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
         fullName: form.fullName.trim() || undefined,
         email: form.email.trim() || undefined,
         city: form.city.trim() || undefined,
-        dateOfBirth: form.dateOfBirth.trim() || undefined,
+        dateOfBirth: form.dateOfBirth.trim() ? dmyToIso(form.dateOfBirth.trim()) : undefined,
       });
       setMe((prev) => (prev ? { ...prev, ...updated } : updated));
       setEditing(false);
@@ -265,18 +283,25 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
                 ['fullName', 'Nom complet', 'Jean Dupont'],
                 ['email', 'Email', 'jean@example.cm'],
                 ['city', 'Ville', 'Douala'],
-                ['dateOfBirth', 'Date de naissance (AAAA-MM-JJ)', '1995-04-23'],
+                ['dateOfBirth', 'Date de naissance', 'JJ/MM/AAAA'],
               ] as const).map(([key, label, ph]) => (
                 <View key={key} style={{ marginBottom: Spacing.md }}>
                   <Text style={styles.fieldLabel}>{label}</Text>
                   <TextInput
                     style={styles.input}
                     value={(form as any)[key]}
-                    onChangeText={(v) => setForm((f) => ({ ...f, [key]: v }))}
+                    onChangeText={(v) => {
+                      const val = key === 'dateOfBirth' ? formatDob(v) : v;
+                      setForm((f) => ({ ...f, [key]: val }));
+                    }}
                     placeholder={ph}
                     placeholderTextColor={Colors.textMuted}
-                    autoCapitalize={key === 'email' ? 'none' : 'words'}
-                    keyboardType={key === 'email' ? 'email-address' : 'default'}
+                    autoCapitalize={key === 'email' || key === 'dateOfBirth' ? 'none' : 'words'}
+                    keyboardType={
+                      key === 'email' ? 'email-address'
+                      : key === 'dateOfBirth' ? 'numeric'
+                      : 'default'
+                    }
                   />
                 </View>
               ))}

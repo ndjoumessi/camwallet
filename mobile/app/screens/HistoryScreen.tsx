@@ -15,7 +15,7 @@ import { useStore } from '../store/useStore';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-const FILTERS = ['Tout', 'Envois', 'Reçus', 'Recharges', 'Retraits'];
+const FILTERS = ['Tout', 'Reçus', 'Envois', 'Recharges', 'Retraits'];
 
 export default function HistoryScreen() {
   const { transactions } = useStore();
@@ -143,13 +143,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   filterChip: {
-    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.full, height: 36, paddingHorizontal: Spacing.lg,
+    backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 18, height: 36, paddingHorizontal: 16,
     alignItems: 'center', justifyContent: 'center',
   },
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterText: { color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium },
-  filterTextActive: { color: Colors.white, fontWeight: Typography.bold },
+  filterText: { color: '#64748B', fontSize: Typography.sm, fontWeight: Typography.medium },
+  filterTextActive: { color: Colors.white, fontWeight: '700' as const },
   list: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   txRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
