@@ -5,6 +5,44 @@ Toutes les évolutions notables de CamWallet sont documentées dans ce fichier.
 Le format s'appuie sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et le projet suit le [versionnement sémantique](https://semver.org/lang/fr/).
 
+## [1.1.0] — 2026-06-14
+
+Trois nouvelles fonctionnalités : scan QR réel, notifications push et
+graphiques temps réel du tableau de bord admin.
+
+### Ajouté
+
+#### Mobile
+- **Scan QR réel** via `expo-camera` : la caméra remplace le scan simulé,
+  permission demandée à la première ouverture, décodage du QR en temps réel
+  (URI `camwallet://pay`, JSON ou numéro brut) puis ouverture de l'écran d'envoi
+  pré-rempli (destinataire et montant).
+- **Notifications push** via `expo-notifications` : demande de permission,
+  enregistrement du jeton Expo côté backend après connexion, affichage des
+  notifications au premier plan et incrément du badge à la réception.
+
+#### Backend
+- Champ `User.pushToken` (migration) et endpoint `POST /users/push-token` pour
+  enregistrer le jeton de notification.
+- Envoi d'une notification « argent reçu » après chaque crédit : paiement P2P,
+  paiement par QR et recharge (via webhook opérateur). L'envoi est non bloquant
+  et ne peut pas faire échouer la transaction.
+- `GET /admin/stats/timeseries?period=7d|30d|90d` : séries temporelles réelles
+  par jour (volume, frais perçus, transactions, nouveaux utilisateurs), série
+  continue avec jours sans activité à zéro.
+
+#### Tableau de bord admin
+- Graphiques branchés sur les données réelles : volume (aire), revenus/frais par
+  jour (barres) et activité utilisateurs + transactions (lignes), avec un
+  **sélecteur de période** 7 j / 30 j / 90 j.
+
+### Supprimé
+- Dernières données de démonstration des graphiques du dashboard (`VOLUME_DATA`,
+  `REVENUE_DATA`) et les marqueurs « · démo » : tous les graphiques sont
+  désormais alimentés par l'API.
+
+[1.1.0]: https://github.com/ndjoumessi/camwallet/releases/tag/v1.1.0
+
 ## [1.0.0] — 2026-06-14
 
 Première version stable de **CamWallet** — portefeuille prépayé QR pour le
