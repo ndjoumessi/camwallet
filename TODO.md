@@ -52,7 +52,7 @@ Fonctionnalités marquées "Haute" dans le CDC ou nécessaires pour une beta uti
 
 ### Admin
 
-- [ ] **[ADMIN] Vue dédiée Recharges & Retraits** — page admin listant les opérations OM/MoMo avec statut webhook en temps réel, référence opérateur, payload callback (§14.3.4 CDC).
+- [x] **[ADMIN] Vue dédiée Recharges & Retraits** — page "Recharges & Retraits" dans le nav admin ; 2 onglets : Opérations (table avec type, statut, ref. opérateur, retryCount, bouton Relancer) + Callbacks webhook (table avec payload dépliable inline, statut traité/erreur). KPI cards : volume 7j recharges, retraits, webhooks en attente.
 - [x] **[ADMIN] Score de risque ANIF par utilisateur** — `getUserDetail()` calcule `anifRisk` (Bas/Moyen/Élevé) depuis le volume mensuel ; affiché sur la fiche utilisateur admin avec couleur (rouge/jaune/vert).
 - [x] **[ADMIN] Tableau santé intégrations sur Dashboard** — widget `HealthWidget` consomme `GET /admin/health/integrations` (déjà implémenté).
 - [x] **[ADMIN] Relance transaction manuelle** — `POST /admin/transactions/:id/retry` + bouton "Relancer" sur la fiche transaction admin (déjà implémenté).
@@ -131,7 +131,7 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 | Priorité | Nombre d'items | Domaines principaux |
 |---|---|---|
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
-| 🟠 Haute | 1 *(14/15 ✅)* | Admin (Vue Recharges & Retraits) |
+| 🟠 Haute | 0 *(tous ✅)* | — |
 | 🟡 Moyenne | 13 | Backend (5) + Mobile (4) + Admin (4) |
 | 🔵 Phase 2 | 22 | Mobile (11) + Admin (8) + Infra (5) - 2 partagés |
 | **Total** | **61** | |

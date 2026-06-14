@@ -19,7 +19,7 @@ import {
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase,
-  getOperations, retryOperation,
+  getOperations, retryOperation, WebhookEvent,
   getHealthIntegrations,
 } from './lib/api'
 
@@ -1148,9 +1148,41 @@ function FinancePage() {
 }
 
 // ── Page : Recharges & Retraits OM/MoMo ──────────────────
+function WebhookPayloadCell({ wh }: { wh: WebhookEvent }) {
+  const [open, setOpen] = useState(false)
+  const statusColor = wh.processed ? C.green : wh.error ? C.red : C.yellow
+  const statusLabel = wh.processed ? 'Traité' : wh.error ? 'Erreur' : 'En attente'
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+        <button
+          onClick={() => setOpen(v => !v)}
+          title="Voir payload"
+          style={{ fontSize: 10, background: C.border, color: C.textMuted, border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' }}
+        >
+          {open ? '▲ payload' : '▼ payload'}
+        </button>
+      </div>
+      {wh.error && <div style={{ fontSize: 10, color: C.red, marginTop: 2 }}>{wh.error}</div>}
+      {open && (
+        <pre style={{
+          marginTop: 6, padding: 8, borderRadius: 6,
+          background: C.bg, border: `1px solid ${C.border}`,
+          fontSize: 10, color: C.textMuted,
+          whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflowY: 'auto',
+        }}>
+          {JSON.stringify(wh.payload, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
+
 function OperationsPage() {
   const [page, setPage] = useState(1)
   const [operator, setOperator] = useState('')
+  const [activeTab, setActiveTab] = useState<'ops' | 'webhooks'>('ops')
   const showToast = useContext(ToastContext)
   const { data, loading, error, refetch } = useFetch(
     () => getOperations(page, 20, operator || undefined),
@@ -1168,21 +1200,26 @@ function OperationsPage() {
   }
 
   const ops = data?.data ?? []
+  const webhooks = data?.webhookEvents ?? []
   const stats = data?.stats
 
-  const statusColor = (s: string) =>
+  const txStatusColor = (s: string) =>
     s === 'COMPLETED' ? C.green : s === 'PENDING' || s === 'PROCESSING' ? C.yellow : C.red
+
+  const opLabel = (type: string) => (type === 'ORANGE_MONEY' ? 'Orange Money' : type === 'MTN_MOMO' ? 'MTN MoMo' : type ?? '—')
 
   return (
     <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
+      {/* KPI cards */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
-          { label: 'Recharges', value: toFcfa(stats?.rechargeTotal ?? 0), sub: `${stats?.rechargeCount ?? 0} op.`, color: C.green },
-          { label: 'Retraits', value: toFcfa(stats?.withdrawalTotal ?? 0), sub: `${stats?.withdrawalCount ?? 0} op.`, color: C.purple },
+          { label: 'Recharges 7j', value: fmt(toFcfa(stats?.rechargeTotal ?? 0)), sub: `${stats?.rechargeCount ?? 0} op.`, color: C.green },
+          { label: 'Retraits 7j', value: fmt(toFcfa(stats?.withdrawalTotal ?? 0)), sub: `${stats?.withdrawalCount ?? 0} op.`, color: C.purple },
+          { label: 'Webhooks en attente', value: String(stats?.pendingWebhooks ?? 0), sub: 'non traités', color: (stats?.pendingWebhooks ?? 0) > 0 ? C.red : C.green },
         ].map(k => (
           <div key={k.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 20px', minWidth: 160 }}>
             <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', fontWeight: 600, marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{fmt(k.value)}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
             <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{k.sub}</div>
           </div>
         ))}
@@ -1190,7 +1227,7 @@ function OperationsPage() {
         <select
           value={operator}
           onChange={e => { setOperator(e.target.value); setPage(1) }}
-          style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }}
+          style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, alignSelf: 'flex-start' }}
         >
           <option value="">Tous les opérateurs</option>
           <option value="ORANGE_MONEY">Orange Money</option>
@@ -1198,55 +1235,116 @@ function OperationsPage() {
         </select>
       </div>
 
-      <StateRow loading={loading} error={error} empty={ops.length === 0 ? 'Aucune opération' : undefined} />
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${C.border}` }}>
+        {(['ops', 'webhooks'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setActiveTab(t)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+              padding: '8px 16px', color: activeTab === t ? C.green : C.textMuted,
+              borderBottom: activeTab === t ? `2px solid ${C.green}` : '2px solid transparent',
+              marginBottom: -1,
+            }}
+          >
+            {t === 'ops' ? `Opérations (${data?.total ?? 0})` : `Callbacks webhook (${webhooks.length})`}
+          </button>
+        ))}
+      </div>
 
-      {ops.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-              {['Date', 'Type', 'Utilisateur', 'Montant', 'Opérateur', 'Statut', 'Ref. opérateur', 'Action'].map(h => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.textMuted, fontWeight: 600 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ops.map(op => (
-              <tr key={op.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
-                <td style={{ padding: '9px 10px', color: C.textMuted }}>{fmtDate(op.createdAt)}</td>
-                <td style={{ padding: '9px 10px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, background: op.type === 'RECHARGE' ? C.yellow + '20' : C.purple + '20', color: op.type === 'RECHARGE' ? C.yellow : C.purple, padding: '2px 8px', borderRadius: 6 }}>
-                    {op.type === 'RECHARGE' ? 'Recharge' : 'Retrait'}
-                  </span>
-                </td>
-                <td style={{ padding: '9px 10px', color: C.text }}>{partyLabel(op.sender, '—')}</td>
-                <td style={{ padding: '9px 10px', fontWeight: 700, color: C.text }}>{fmt(toFcfa(op.amount))}</td>
-                <td style={{ padding: '9px 10px', color: C.textMuted }}>{op.operator ?? '—'}</td>
-                <td style={{ padding: '9px 10px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: statusColor(op.status) }}>{op.status}</span>
-                </td>
-                <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11 }}>{op.operatorRef ?? '—'}</td>
-                <td style={{ padding: '9px 10px' }}>
-                  {op.status === 'PENDING' && (
-                    <button
-                      onClick={() => handleRetry(op.id)}
-                      style={{ fontSize: 11, background: C.yellow + '20', color: C.yellow, border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
-                    >
-                      Retry
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <StateRow loading={loading} error={error} />
+
+      {activeTab === 'ops' && (
+        <>
+          {ops.length === 0 && !loading && !error && (
+            <StateRow empty="Aucune opération" />
+          )}
+          {ops.length > 0 && (
+            <div className="cw-tablewrap">
+              <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {['Date', 'Type', 'Utilisateur', 'Montant', 'Opérateur', 'Statut', 'Ref. opérateur', 'Tentatives', 'Action'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.textMuted, fontWeight: 600, fontSize: 11 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ops.map(op => (
+                    <tr key={op.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
+                      <td style={{ padding: '9px 10px', color: C.textMuted, whiteSpace: 'nowrap' }}>{fmtDate(op.createdAt)}</td>
+                      <td style={{ padding: '9px 10px' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, background: op.type === 'RECHARGE' ? C.yellow + '20' : C.purple + '20', color: op.type === 'RECHARGE' ? C.yellow : C.purple, padding: '2px 8px', borderRadius: 6 }}>
+                          {op.type === 'RECHARGE' ? 'Recharge' : 'Retrait'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '9px 10px', color: C.text }}>{partyLabel(op.sender, '—')}</td>
+                      <td style={{ padding: '9px 10px', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>{fmt(toFcfa(op.amount))}</td>
+                      <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11 }}>{opLabel(op.operator ?? '')}</td>
+                      <td style={{ padding: '9px 10px' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: txStatusColor(op.status) }}>{op.status}</span>
+                      </td>
+                      <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11, fontFamily: 'monospace' }}>{op.operatorRef ?? '—'}</td>
+                      <td style={{ padding: '9px 10px', color: op.retryCount > 0 ? C.yellow : C.textMuted, textAlign: 'center' }}>{op.retryCount}</td>
+                      <td style={{ padding: '9px 10px' }}>
+                        {op.status === 'PENDING' && (
+                          <button
+                            onClick={() => handleRetry(op.id)}
+                            style={{ fontSize: 11, background: C.yellow + '20', color: C.yellow, border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            ↺ Relancer
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {(data?.total ?? 0) > 20 && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Préc.</button>
+              <span style={{ color: C.textMuted, fontSize: 13, alignSelf: 'center' }}>Page {page} · {data?.total} opérations</span>
+              <button disabled={page * 20 >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Suiv.</button>
+            </div>
+          )}
+        </>
       )}
 
-      {(data?.total ?? 0) > 20 && (
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
-          <button className="cw-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Préc.</button>
-          <span style={{ color: C.textMuted, fontSize: 13, alignSelf: 'center' }}>Page {page}</span>
-          <button className="cw-btn" disabled={page * 20 >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Suiv.</button>
-        </div>
+      {activeTab === 'webhooks' && (
+        <>
+          {webhooks.length === 0 && !loading && <StateRow empty="Aucun événement webhook" />}
+          {webhooks.length > 0 && (
+            <div className="cw-tablewrap">
+              <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                    {['Date réception', 'Opérateur', 'Événement', 'Statut / Payload'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.textMuted, fontWeight: 600, fontSize: 11 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {webhooks.map(wh => (
+                    <tr key={wh.id} style={{ borderBottom: `1px solid ${C.border}20`, verticalAlign: 'top' }}>
+                      <td style={{ padding: '9px 10px', color: C.textMuted, whiteSpace: 'nowrap' }}>{fmtDate(wh.createdAt)}</td>
+                      <td style={{ padding: '9px 10px', color: C.text }}>{opLabel(wh.operator)}</td>
+                      <td style={{ padding: '9px 10px', color: C.textMuted, fontFamily: 'monospace', fontSize: 11 }}>{wh.eventType}</td>
+                      <td style={{ padding: '9px 10px' }}>
+                        <WebhookPayloadCell wh={wh} />
+                        {wh.processedAt && (
+                          <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>Traité le {fmtDate(wh.processedAt)}</div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

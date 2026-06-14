@@ -637,14 +637,19 @@ export class AdminService {
   // ─── Opérations OM/MoMo (Recharges & Retraits) ───────────────────────────
   async getOperations(page = 1, limit = 20, operator?: string) {
     const skip = (page - 1) * limit;
-    const where: any = {
+    const txWhere: any = {
       type: { in: [TransactionType.RECHARGE, TransactionType.WITHDRAWAL] },
     };
-    if (operator) where.operator = operator;
+    if (operator) txWhere.operator = operator;
 
-    const [operations, total] = await Promise.all([
+    const whWhere: any = {};
+    if (operator) whWhere.operator = operator;
+
+    const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+
+    const [operations, total, rechargeVol, withdrawalVol, webhookEvents, pendingWebhooks] = await Promise.all([
       this.prisma.transaction.findMany({
-        where,
+        where: txWhere,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -653,12 +658,7 @@ export class AdminService {
           receiver: { select: { phone: true, fullName: true } },
         },
       }),
-      this.prisma.transaction.count({ where }),
-    ]);
-
-    // Statistiques agrégées volume recharge vs retrait sur 7 jours
-    const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-    const [rechargeVol, withdrawalVol] = await Promise.all([
+      this.prisma.transaction.count({ where: txWhere }),
       this.prisma.transaction.aggregate({
         _sum: { amount: true },
         _count: { _all: true },
@@ -669,6 +669,23 @@ export class AdminService {
         _count: { _all: true },
         where: { type: TransactionType.WITHDRAWAL, status: TransactionStatus.COMPLETED, createdAt: { gte: d7 } },
       }),
+      // 50 derniers événements webhook (toutes opérations MoMo)
+      this.prisma.webhookEvent.findMany({
+        where: whWhere,
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          operator: true,
+          eventType: true,
+          payload: true,
+          processed: true,
+          processedAt: true,
+          error: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.webhookEvent.count({ where: { ...whWhere, processed: false } }),
     ]);
 
     return {
@@ -681,7 +698,9 @@ export class AdminService {
         rechargeTotal: rechargeVol._sum.amount ?? 0n,
         withdrawalCount: withdrawalVol._count._all,
         withdrawalTotal: withdrawalVol._sum.amount ?? 0n,
+        pendingWebhooks,
       },
+      webhookEvents,
     };
   }
 

@@ -343,6 +343,17 @@ export interface AdminOperation {
   retryCount: number
 }
 
+export interface WebhookEvent {
+  id: string
+  operator: string
+  eventType: string
+  payload: Record<string, any>
+  processed: boolean
+  processedAt: string | null
+  error: string | null
+  createdAt: string
+}
+
 export interface OperationsResponse {
   data: AdminOperation[]
   total: number
@@ -353,7 +364,9 @@ export interface OperationsResponse {
     rechargeTotal: number
     withdrawalCount: number
     withdrawalTotal: number
+    pendingWebhooks: number
   }
+  webhookEvents: WebhookEvent[]
 }
 
 export const getOperations = (page = 1, limit = 20, operator?: string) =>
