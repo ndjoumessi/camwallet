@@ -63,7 +63,7 @@ export default function HistoryScreen() {
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterRow}
-        contentContainerStyle={{ gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
+        contentContainerStyle={styles.filterContent}
       >
         {FILTERS.map((f) => (
           <Pressable
@@ -137,6 +137,11 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: Colors.text, fontSize: Typography.base, minHeight: 40 },
   pressed: { opacity: 0.7 },
   filterRow: { marginBottom: Spacing.sm },
+  filterContent: {
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
+  },
   filterChip: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
     borderRadius: BorderRadius.full, height: 36, paddingHorizontal: Spacing.lg,

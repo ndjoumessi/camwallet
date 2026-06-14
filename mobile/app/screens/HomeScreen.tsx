@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
 
   // Contacts
   contactsScroll: { marginBottom: Spacing.xxl },
-  contactsContent: { gap: Spacing.lg, paddingBottom: 4 },
+  contactsContent: { gap: Spacing.lg, paddingVertical: 8 },
   contactItem: { alignItems: 'center', gap: 6 },
   contactName: { color: Colors.textSoft, fontSize: Typography.xs },
 
