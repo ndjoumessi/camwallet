@@ -8,46 +8,96 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { Button } from '../../components/ui';
+
+// Destinataire décodé depuis un QR Code CamWallet.
+export interface ScannedRecipient {
+  phone: string;
+  name?: string;
+  amount?: string;
+}
 
 interface ScanModalProps {
   visible: boolean;
   onClose: () => void;
-  onDetected: (data: string) => void;
+  onDetected: (recipient: ScannedRecipient) => void;
 }
 
+// Décode le contenu d'un QR : URI camwallet://pay, JSON, ou numéro brut.
+function parseQr(raw: string): ScannedRecipient | null {
+  const value = raw.trim();
+  try {
+    if (value.startsWith('camwallet://')) {
+      const qs = value.split('?')[1] ?? '';
+      const params: Record<string, string> = {};
+      qs.split('&').forEach((pair) => {
+        const [k, v] = pair.split('=');
+        if (k) params[decodeURIComponent(k)] = decodeURIComponent(v ?? '');
+      });
+      const phone = params.to || params.phone;
+      if (!phone) return null;
+      return { phone, name: params.name || undefined, amount: params.amount || undefined };
+    }
+    if (value.startsWith('{')) {
+      const obj = JSON.parse(value);
+      const phone = obj.phone ?? obj.to;
+      if (phone) return { phone: String(phone), name: obj.name, amount: obj.amount != null ? String(obj.amount) : undefined };
+    }
+    const digits = value.replace(/[^0-9+]/g, '');
+    if (digits.length >= 8) return { phone: digits };
+  } catch {
+    /* payload illisible */
+  }
+  return null;
+}
+
+const initials = (name?: string, phone?: string) =>
+  name
+    ? name.split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+    : (phone ?? '?').replace(/\D/g, '').slice(-2);
+
 export default function ScanModal({ visible, onClose, onDetected }: ScanModalProps) {
-  const [scanned, setScanned] = useState(false);
-  const [scanData, setScanData] = useState<{ name: string; phone: string } | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState<ScannedRecipient | null>(null);
+  const [error, setError] = useState(false);
   const scanLine = useState(new Animated.Value(0))[0];
 
+  // Demande la permission caméra à la première ouverture.
   useEffect(() => {
-    if (!visible) { setScanned(false); setScanData(null); return; }
+    if (visible && permission && !permission.granted && permission.canAskAgain) {
+      requestPermission();
+    }
+  }, [visible, permission]);
 
-    // Animate scan line
+  // Réinitialise + anime la ligne de scan tant qu'aucun QR n'est détecté.
+  useEffect(() => {
+    if (!visible) { setScanned(null); setError(false); return; }
+    if (scanned) return;
     const anim = Animated.loop(
       Animated.sequence([
         Animated.timing(scanLine, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
         Animated.timing(scanLine, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])
+      ]),
     );
     anim.start();
+    return () => anim.stop();
+  }, [visible, scanned]);
 
-    // Simulate scan after 2s
-    const timer = setTimeout(() => {
-      setScanned(true);
-      setScanData({ name: 'Marie Ngono', phone: '670 112 233' });
-      anim.stop();
-    }, 2000);
+  const handleBarcode = ({ data }: { data: string }) => {
+    if (scanned) return; // évite les détections répétées
+    const parsed = parseQr(data);
+    if (parsed) {
+      setError(false);
+      setScanned(parsed);
+    } else {
+      setError(true);
+    }
+  };
 
-    return () => { clearTimeout(timer); anim.stop(); };
-  }, [visible]);
-
-  const scanLineTranslate = scanLine.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 180],
-  });
+  const scanLineTranslate = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
+  const granted = permission?.granted ?? false;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -61,20 +111,29 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
 
         <View style={styles.body}>
           <Text style={styles.hint}>
-            {scanned ? '✅ QR Code détecté !' : 'Pointez la caméra vers le QR Code'}
+            {scanned ? '✅ QR Code détecté !' : error ? '⚠️ QR Code non reconnu' : 'Pointez la caméra vers le QR Code'}
           </Text>
 
           {/* Scanner viewfinder */}
           <View style={styles.scanBox}>
-            {/* Camera simulation */}
-            {!scanned && (
+            {!granted ? (
               <View style={styles.cameraPlaceholder}>
-                <Text style={styles.cameraIcon}>📷</Text>
-                <Text style={styles.cameraText}>Caméra active</Text>
+                <Text style={styles.cameraIcon}>🚫</Text>
+                <Text style={styles.cameraText}>
+                  {permission && !permission.canAskAgain
+                    ? 'Accès caméra refusé.\nActivez-le dans les réglages.'
+                    : 'Autorisation caméra requise'}
+                </Text>
               </View>
+            ) : (
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={scanned ? undefined : handleBarcode}
+              />
             )}
 
-            {/* Scanned QR preview */}
             {scanned && (
               <View style={styles.scannedOverlay}>
                 <Text style={styles.scannedCheck}>✓</Text>
@@ -88,41 +147,46 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
             <View style={[styles.corner, styles.cornerBR]} />
 
             {/* Scan line */}
-            {!scanned && (
-              <Animated.View
-                style={[
-                  styles.scanLine,
-                  { transform: [{ translateY: scanLineTranslate }] },
-                ]}
-              />
+            {granted && !scanned && (
+              <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineTranslate }] }]} />
             )}
           </View>
 
+          {/* Permission CTA */}
+          {!granted && permission?.canAskAgain && (
+            <View style={{ paddingHorizontal: Spacing.xxl, width: '100%' }}>
+              <Button label="Autoriser la caméra" onPress={requestPermission} />
+            </View>
+          )}
+
           {/* Result card */}
-          {scanned && scanData && (
+          {scanned && (
             <View style={styles.resultCard}>
               <View style={styles.resultAvatar}>
-                <Text style={styles.resultAvatarText}>MN</Text>
+                <Text style={styles.resultAvatarText}>{initials(scanned.name, scanned.phone)}</Text>
               </View>
               <View>
-                <Text style={styles.resultName}>{scanData.name}</Text>
-                <Text style={styles.resultPhone}>+237 {scanData.phone}</Text>
+                <Text style={styles.resultName}>{scanned.name ?? 'Destinataire'}</Text>
+                <Text style={styles.resultPhone}>+237 {scanned.phone}</Text>
+                {scanned.amount && <Text style={styles.resultPhone}>Montant : {scanned.amount} FCFA</Text>}
               </View>
             </View>
           )}
 
-          <View style={{ paddingHorizontal: Spacing.xxl, width: '100%', marginTop: Spacing.xl }}>
-            <Button
-              label={scanned ? "Envoyer de l'argent →" : "Scan en cours..."}
-              onPress={() => {
-                if (scanned) {
-                  onDetected(`camwallet://pay?to=${scanData?.phone}`);
-                  onClose();
-                }
-              }}
-              disabled={!scanned}
-            />
-          </View>
+          {granted && (
+            <View style={{ paddingHorizontal: Spacing.xxl, width: '100%', marginTop: Spacing.xl }}>
+              <Button
+                label={scanned ? "Envoyer de l'argent →" : 'Scan en cours...'}
+                onPress={() => {
+                  if (scanned) {
+                    onDetected(scanned);
+                    onClose();
+                  }
+                }}
+                disabled={!scanned}
+              />
+            </View>
+          )}
 
           <TouchableOpacity onPress={onClose} style={styles.cancelBtn}>
             <Text style={styles.cancelText}>Annuler</Text>
@@ -154,10 +218,10 @@ const styles = StyleSheet.create({
   },
   cameraPlaceholder: {
     position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#111',
+    backgroundColor: '#111', paddingHorizontal: Spacing.lg,
   } as any,
   cameraIcon: { fontSize: 40, marginBottom: Spacing.sm },
-  cameraText: { color: Colors.textMuted, fontSize: Typography.sm },
+  cameraText: { color: Colors.textMuted, fontSize: Typography.sm, textAlign: 'center' },
   scannedOverlay: {
     position: 'absolute', inset: 0,
     backgroundColor: Colors.primary + '20',

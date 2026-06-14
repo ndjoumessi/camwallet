@@ -15,7 +15,7 @@ import { useStore } from '../store/useStore';
 import SendModal from './modals/SendModal';
 import ReceiveModal from './modals/ReceiveModal';
 import RechargeModal from './modals/RechargeModal';
-import ScanModal from './modals/ScanModal';
+import ScanModal, { ScannedRecipient } from './modals/ScanModal';
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +26,7 @@ const QUICK_AMOUNTS = [5000, 10000, 25000];
 export default function HomeScreen() {
   const { user, balance, showBalance, toggleShowBalance, contacts, transactions } = useStore();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
@@ -185,10 +186,19 @@ export default function HomeScreen() {
       )}
 
       {/* Modals */}
-      <SendModal visible={activeModal === 'send'} onClose={() => setActiveModal(null)} onSuccess={(msg) => showToast(msg)} />
+      <SendModal
+        visible={activeModal === 'send'}
+        onClose={() => { setActiveModal(null); setScannedRecipient(null); }}
+        onSuccess={(msg) => showToast(msg)}
+        initialRecipient={scannedRecipient}
+      />
       <ReceiveModal visible={activeModal === 'receive'} onClose={() => setActiveModal(null)} />
       <RechargeModal visible={activeModal === 'recharge'} onClose={() => setActiveModal(null)} onSuccess={(msg) => showToast(msg)} />
-      <ScanModal visible={activeModal === 'scan'} onClose={() => setActiveModal(null)} onDetected={() => { setActiveModal('send'); }} />
+      <ScanModal
+        visible={activeModal === 'scan'}
+        onClose={() => setActiveModal(null)}
+        onDetected={(recipient) => { setScannedRecipient(recipient); setActiveModal('send'); }}
+      />
     </View>
   );
 }
