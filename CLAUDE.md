@@ -50,7 +50,7 @@ There is **no `tsconfig.json`** in the admin project, so the `tsc` step in `buil
 
 ## Backend architecture
 
-NestJS module-per-domain layout under `backend/src/`: `auth`, `users`, `wallets`, `transactions`, `qr`, `webhooks`, `admin`, plus global modules `prisma`, `notifications` (Expo push), and `cloudinary` (image upload). `AppModule` wires them with global `ConfigModule` and `ThrottlerModule` (10 req / 60s).
+NestJS module-per-domain layout under `backend/src/`: `auth`, `users`, `wallets`, `transactions`, `qr`, `webhooks`, `admin`, `kyc`, plus global modules `prisma`, `notifications` (Expo push), and `cloudinary` (image upload). `AppModule` wires them with global `ConfigModule` and `ThrottlerModule` (10 req / 60s).
 
 Bootstrap conventions (`main.ts`) that affect every route:
 - Global prefix `api/v1` — all endpoints live under `/api/v1/...`.
@@ -72,7 +72,10 @@ Phone + 6-digit PIN for users; email + password for admin. User registration is 
 
 ### Notifications & uploads
 - `notifications/notifications.service.ts` sends Expo push via the Expo Push API after each **received** credit (P2P, QR payment, recharge). Non-blocking. Users register their Expo token via `POST /users/push-token` (stored on `User.pushToken`).
-- `cloudinary/cloudinary.service.ts` uploads images (avatars). Validates the real type by **magic-byte signature** (PNG/JPEG/WEBP only — never the client MIME, so SVG/script payloads are rejected). When Cloudinary env is unset/placeholder it falls back to a base64 **data URI**, so avatar upload works in dev without credentials.
+- `cloudinary/cloudinary.service.ts` uploads images (avatars + KYC documents). Validates the real type by **magic-byte signature** (PNG/JPEG/WEBP only — never the client MIME, so SVG/script payloads are rejected). When Cloudinary env is unset/placeholder it falls back to a base64 **data URI**, so uploads work in dev without credentials.
+
+### KYC
+`kyc/kyc.service.ts` handles identity verification. `POST /kyc/submit` takes three images (CNI recto + verso + selfie, `FileFieldsInterceptor`), uploads each via `CloudinaryService`, upserts the `KycDocument`, and sets `User.kycStatus = SUBMITTED` (atomic `$transaction`). `GET /kyc/status` returns the caller's status. Admins review via `GET /admin/kyc` (queue with photo URLs) → `PATCH /admin/kyc/:userId` (approve/reject, audited). `KycStatus`: `PENDING → SUBMITTED → APPROVED | REJECTED`.
 
 ### Webhooks
 `webhooks/webhooks.service.ts` ingests Orange Money / MTN MoMo callbacks. Every raw event is persisted to `WebhookEvent` before processing; a `SUCCESSFUL` event matches a `PENDING` transaction by `operatorRef` and credits atomically. **Signature/token verification is still stubbed (`TODO`)** — `OM_WEBHOOK_SECRET` / `MTN_WEBHOOK_SECRET` exist in env but are not validated.
@@ -83,6 +86,7 @@ Phone + 6-digit PIN for users; email + password for admin. User registration is 
 ### API surface (selected)
 - **auth**: `register`, `verify-otp`, `set-pin`, `login`, `login-admin`, `refresh`, `pin-reset/request`.
 - **users** (JWT): `GET /users/me` (profile + wallet + stats: tx count, total sent/received), `PATCH /users/profile` (fullName, email, dateOfBirth, city), `POST /users/avatar` (multipart upload), `POST /users/push-token`.
+- **kyc** (JWT): `POST /kyc/submit` (3-image multipart upload), `GET /kyc/status`.
 - **admin** (JWT + AdminGuard): `GET /admin/stats`, `GET /admin/stats/timeseries?period=7d|30d|90d`, `GET /admin/users` (search + `status` filter), `GET /admin/users/:id` (detail: info, KYC doc, transactions, audit, stats), `PATCH /admin/users/:id/status` (block/unblock), `POST /admin/users/:id/reset-pin`, `GET /admin/kyc` + `PATCH /admin/kyc/:userId` (approve/reject), `GET /admin/transactions`, `GET /admin/alerts`, `GET /admin/audit`. Admin moderation actions write to `AuditLog`.
 
 ## Frontend integration
