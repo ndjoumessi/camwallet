@@ -10,7 +10,8 @@ GREEN := \033[32m
 RESET := \033[0m
 
 .DEFAULT_GOAL := help
-.PHONY: help install db dev migrate seed reset studio down logs clean
+.PHONY: help install db dev migrate seed reset studio down logs clean \
+        backend-dev admin mobile dev-all
 
 help: ## Affiche cette aide
 	@echo ""
@@ -65,3 +66,24 @@ logs: ## Affiche les logs des conteneurs Docker
 clean: ## Arrête et SUPPRIME les volumes Docker (efface toutes les données)
 	$(COMPOSE) down -v
 	@echo "$(GREEN)✅ Conteneurs et volumes supprimés$(RESET)"
+
+# ─── Serveurs de développement (hot reload) ──────────────────────────────────
+
+backend-dev: ## API NestJS en watch mode seul (suppose la base déjà lancée — sinon `make db`)
+	cd $(BACKEND) && npm run start:dev
+
+admin: ## Dashboard admin (Vite dev, http://localhost:3001) — hot reload
+	cd camwallet-admin && npm run dev
+
+mobile: ## Expo (mobile/) en mode interactif — reste actif, hot reload (Metro :8081)
+	cd mobile && npx expo start
+
+dev-all: ## Lance backend (watch) + admin (vite) + expo EN PARALLÈLE, hot reload partout
+	@command -v npx >/dev/null 2>&1 || { echo "❌ npx (Node) requis"; exit 1; }
+	@echo "$(CYAN)🚀 backend :3000 · admin :3001 · expo :8081 — Ctrl-C arrête tout$(RESET)"
+	@echo "$(CYAN)ℹ️  La base doit tourner (lancez 'make db' une fois si besoin).$(RESET)"
+	npx --yes concurrently --kill-others --names "backend,admin,mobile" \
+		--prefix-colors "blue,magenta,green" \
+		"cd $(BACKEND) && npm run start:dev" \
+		"cd camwallet-admin && npm run dev" \
+		"cd mobile && npx expo start"
