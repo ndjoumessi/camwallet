@@ -205,7 +205,7 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
         </TouchableOpacity>
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>{name}</Text>
-          <Text style={styles.profilePhone}>+237 {phone}</Text>
+          <Text style={styles.profilePhone}>{phone}</Text>
           {me?.email ? <Text style={styles.profilePhone}>{me.email}</Text> : null}
           {me?.city ? (
             <View style={styles.profileLocation}>

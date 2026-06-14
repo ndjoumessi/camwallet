@@ -22,7 +22,19 @@ export default function HistoryScreen() {
   const [search, setSearch] = useState('');
 
   const txColor = (type: string) =>
-    type === 'received' || type === 'recharge' ? Colors.primary : Colors.red;
+    type === 'received' || type === 'recharge'
+      ? Colors.primary
+      : type === 'withdrawal'
+      ? Colors.orange
+      : Colors.textSoft;
+
+  const txBadge = (type: string) => {
+    if (type === 'received' || type === 'recharge')
+      return { bg: Colors.successBg, text: Colors.primary };
+    if (type === 'withdrawal')
+      return { bg: Colors.orangeBg, text: Colors.orange };
+    return { bg: Colors.surface, text: Colors.textSoft };
+  };
 
   const txIcon = (type: string): IoniconName =>
     type === 'received' ? 'arrow-down' : type === 'recharge' ? 'flash' : type === 'withdrawal' ? 'cash-outline' : 'arrow-up';
@@ -119,8 +131,8 @@ export default function HistoryScreen() {
                 <Text style={[styles.txAmount, { color: txColor(tx.type) }]}>
                   {tx.amount > 0 ? '+' : ''}{fmt(tx.amount)}
                 </Text>
-                <View style={[styles.txStatus, { backgroundColor: Colors.successBg }]}>
-                  <Text style={[styles.txStatusText, { color: Colors.primary }]}>
+                <View style={[styles.txStatus, { backgroundColor: txBadge(tx.type).bg }]}>
+                  <Text style={[styles.txStatusText, { color: txBadge(tx.type).text }]}>
                     {txTypeLabel(tx.type)}
                   </Text>
                 </View>
@@ -147,7 +159,8 @@ const styles = StyleSheet.create({
   filterRow: { marginBottom: Spacing.sm },
   filterChip: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.full, paddingVertical: 6, paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full, height: 36, paddingHorizontal: Spacing.lg,
+    alignItems: 'center', justifyContent: 'center',
   },
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterText: { color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium },

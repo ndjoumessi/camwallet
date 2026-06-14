@@ -37,7 +37,11 @@ export default function HomeScreen() {
 
   const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
   const txColor = (type: string) =>
-    type === 'received' || type === 'recharge' ? Colors.primary : Colors.red;
+    type === 'received' || type === 'recharge'
+      ? Colors.primary
+      : type === 'withdrawal'
+      ? Colors.orange
+      : Colors.textSoft;
 
   const ACTION_BTNS: { icon: keyof typeof Ionicons.glyphMap; label: string; color: string; modal: ModalType }[] = [
     { icon: 'arrow-up', label: 'Envoyer', color: Colors.blue, modal: 'send' },
