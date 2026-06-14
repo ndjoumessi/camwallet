@@ -29,6 +29,12 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  @Get('stats/timeseries')
+  @ApiOperation({ summary: 'Séries temporelles par jour (7d | 30d | 90d)' })
+  timeseries(@Query('period') period = '7d') {
+    return this.adminService.getTimeseries(period);
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Liste paginée des utilisateurs' })
   users(

@@ -364,4 +364,52 @@ export class AdminService {
 
     return { alerts, flagged };
   }
+
+  // ─── Séries temporelles (graphiques dashboard) ────────────────────────────
+  // Données réelles agrégées par jour sur la période. Les jours sans activité
+  // sont remplis à 0 pour une courbe continue. Montants en centimes FCFA.
+  async getTimeseries(period: string) {
+    const days = period === '90d' ? 90 : period === '30d' ? 30 : 7;
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const start = new Date(todayUtc - (days - 1) * 86400000);
+
+    const txRows = await this.prisma.$queryRaw<
+      Array<{ day: Date; tx: number; volume: bigint; fees: bigint }>
+    >`
+      SELECT date_trunc('day', "createdAt")::date AS day,
+             COUNT(*)::int AS tx,
+             COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN amount ELSE 0 END), 0)::bigint AS volume,
+             COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN fee ELSE 0 END), 0)::bigint AS fees
+      FROM "transactions"
+      WHERE "createdAt" >= ${start}
+      GROUP BY day
+    `;
+    const userRows = await this.prisma.$queryRaw<Array<{ day: Date; users: number }>>`
+      SELECT date_trunc('day', "createdAt")::date AS day, COUNT(*)::int AS users
+      FROM "users"
+      WHERE "createdAt" >= ${start}
+      GROUP BY day
+    `;
+
+    const key = (d: Date) => d.toISOString().slice(0, 10);
+    const txMap = new Map(txRows.map((r) => [key(new Date(r.day)), r]));
+    const userMap = new Map(userRows.map((r) => [key(new Date(r.day)), Number(r.users)]));
+
+    const series = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start.getTime() + i * 86400000);
+      const k = key(d);
+      const t = txMap.get(k);
+      series.push({
+        date: k,
+        volume: t ? t.volume : 0n,
+        fees: t ? t.fees : 0n,
+        transactions: t ? Number(t.tx) : 0,
+        users: userMap.get(k) ?? 0,
+      });
+    }
+
+    return { period, days, series };
+  }
 }
