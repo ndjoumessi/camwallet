@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,30 +6,36 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
 import SendModal from './modals/SendModal';
 import ReceiveModal from './modals/ReceiveModal';
 import RechargeModal from './modals/RechargeModal';
+import WithdrawModal from './modals/WithdrawModal';
 import ScanModal, { ScannedRecipient } from './modals/ScanModal';
 
 const { width } = Dimensions.get('window');
 
-type ModalType = 'send' | 'receive' | 'recharge' | 'scan' | null;
+type ModalType = 'send' | 'receive' | 'recharge' | 'withdraw' | 'scan' | null;
 
 const QUICK_AMOUNTS = [5000, 10000, 25000];
 
 export default function HomeScreen() {
-  const { user, balance, showBalance, toggleShowBalance, contacts, transactions } = useStore();
+  const { user, balance, showBalance, toggleShowBalance, recentContacts, transactions, fetchBalance, fetchHistory } = useStore();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  // Chargement des données réelles au montage (et à chaque retour sur l'écran)
+  useEffect(() => {
+    fetchBalance();
+    fetchHistory();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -42,6 +48,7 @@ export default function HomeScreen() {
     { icon: 'arrow-up', label: 'Envoyer', color: Colors.blue, modal: 'send' },
     { icon: 'arrow-down', label: 'Recevoir', color: Colors.primary, modal: 'receive' },
     { icon: 'flash', label: 'Recharger', color: Colors.yellow, modal: 'recharge' },
+    { icon: 'arrow-undo', label: 'Retirer', color: Colors.orange, modal: 'withdraw' },
     { icon: 'scan-outline', label: 'Scanner', color: Colors.purple, modal: 'scan' },
   ];
 
@@ -103,7 +110,12 @@ export default function HomeScreen() {
         </LinearGradient>
 
         {/* Quick actions */}
-        <View style={styles.actionGrid}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.actionScroll}
+          contentContainerStyle={styles.actionGrid}
+        >
           {ACTION_BTNS.map((a) => (
             <TouchableOpacity
               key={a.modal}
@@ -122,29 +134,33 @@ export default function HomeScreen() {
               <Text style={styles.actionLabel}>{a.label}</Text>
             </TouchableOpacity>
           ))}
-        </View>
-
-        {/* Contacts récents */}
-        <SectionTitle label="Contacts récents" />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.contactsScroll}
-          contentContainerStyle={styles.contactsContent}
-        >
-          {contacts.slice(0, 5).map((c) => (
-            <TouchableOpacity
-              key={c.id}
-              style={styles.contactItem}
-              onPress={() => setActiveModal('send')}
-              accessibilityRole="button"
-              accessibilityLabel={`Envoyer à ${c.name}`}
-            >
-              <Avatar initials={c.avatar} size={52} color={c.color} bg={c.color + '20'} />
-              <Text style={styles.contactName}>{c.name.split(' ')[0]}</Text>
-            </TouchableOpacity>
-          ))}
         </ScrollView>
+
+        {/* Contacts récents (dérivés de l'historique API) */}
+        {recentContacts.length > 0 && (
+          <>
+            <SectionTitle label="Contacts récents" />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.contactsScroll}
+              contentContainerStyle={styles.contactsContent}
+            >
+              {recentContacts.map((c) => (
+                <TouchableOpacity
+                  key={c.phone}
+                  style={styles.contactItem}
+                  onPress={() => setActiveModal('send')}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Envoyer à ${c.name}`}
+                >
+                  <Avatar initials={c.initials} size={52} color={c.color} bg={c.color + '20'} />
+                  <Text style={styles.contactName}>{c.name.split(' ')[0]}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         {/* Transactions récentes */}
         <SectionTitle label="Transactions récentes" />
@@ -184,6 +200,7 @@ export default function HomeScreen() {
       />
       <ReceiveModal visible={activeModal === 'receive'} onClose={() => setActiveModal(null)} />
       <RechargeModal visible={activeModal === 'recharge'} onClose={() => setActiveModal(null)} onSuccess={(msg) => showToast(msg)} />
+      <WithdrawModal visible={activeModal === 'withdraw'} onClose={() => setActiveModal(null)} onSuccess={(msg) => showToast(msg)} />
       <ScanModal
         visible={activeModal === 'scan'}
         onClose={() => setActiveModal(null)}
@@ -263,13 +280,14 @@ const styles = StyleSheet.create({
   balanceBadges: { flexDirection: 'row', gap: Spacing.sm },
 
   // Actions
+  actionScroll: { marginBottom: Spacing.xxl },
   actionGrid: {
     flexDirection: 'row',
     gap: Spacing.md,
-    marginBottom: Spacing.xxl,
+    paddingVertical: 4,
   },
   actionBtn: {
-    flex: 1,
+    width: 80,
     alignItems: 'center',
     gap: Spacing.sm,
     backgroundColor: Colors.card,

@@ -19,12 +19,12 @@ Ces points bloquent la validation ou la sécurité du produit. Sans eux, CamWall
 
 ### Mobile
 
-- [ ] **[CRITIQUE] HomeScreen : solde et transactions depuis l'API** — balance et contacts sont encore lus depuis le Zustand store avec données hardcodées. Câbler `fetchBalance()` et `fetchHistory()` au montage et à chaque focus de l'écran.
-- [ ] **[SÉCU] SendModal : validation PIN via l'API** — le PIN est actuellement validé côté client (`'123456'`). N'importe qui peut effectuer un paiement P2P sans connaître le vrai PIN. La validation doit passer par `POST /transactions/p2p` avec le PIN en body.
-- [ ] **[UX] Contacts récents depuis l'API** — les 5 contacts de la HomeScreen sont hardcodés dans le store. Charger les vrais destinataires récents depuis `GET /transactions/history` (extraire les contacts uniques).
-- [ ] **[FLOW] Modal Retrait complet** — il n'existe pas de `WithdrawModal` dans l'app. L'endpoint `POST /wallets/withdraw` existe côté backend mais aucun écran mobile ne permet de l'appeler.
-- [ ] **[FLOW] RechargeModal câblée à l'API** — la recharge simule une confirmation immédiate sans appeler `POST /wallets/recharge`. Le vrai flux (initiation → polling ou deep link USSD → webhook → crédit) doit être implémenté.
-- [ ] **[SÉCU] Déconnexion automatique après 15 min d'inactivité** — requis au §3.1 (AU-09, MVP). Implémenter un timer d'inactivité réinitialisé à chaque interaction utilisateur.
+- [x] **[CRITIQUE] HomeScreen : solde et transactions depuis l'API** — `useEffect` au montage appelle `fetchBalance()` + `fetchHistory()` (store). La HomeScreen remonte à chaque retour sur l'onglet (tab non persisté), donc les données sont toujours fraîches.
+- [x] **[SÉCU] SendModal : validation PIN via l'API** — `handlePin` appelle `authApi.login(user.phone, pin)` côté serveur avant tout envoi. Implémente le lockout backend (3 tentatives). Supprimé le hint "PIN de démo : 123456".
+- [x] **[UX] Contacts récents depuis l'API** — `fetchHistory()` dérive `recentContacts[]` depuis l'historique P2P (téléphone + nom des contreparties). HomeScreen + SendModal utilisent ces contacts réels.
+- [x] **[FLOW] Modal Retrait complet** — `WithdrawModal.tsx` : sélection opérateur → numéro + montant → `walletApi.withdraw()` → écran "Retrait initié". Bouton "Retirer" ajouté en HomeScreen (barre d'actions défilante).
+- [x] **[FLOW] RechargeModal câblée à l'API** — `handleRecharge` appelle `walletApi.recharge()`. Champ numéro MoMo (pré-rempli avec `user.phone`). Écran "Recharge en cours" (webhook crédite, pas de confirmation immédiate).
+- [x] **[SÉCU] Déconnexion automatique après 15 min d'inactivité** — Timer `setInterval` (60 s) dans `index.tsx` + `AppState` pour le background. `onTouchStart` sur le contenu réinitialise `lastActivityRef`. Appelle `logout()` + redirige vers login.
 
 ---
 
@@ -130,7 +130,7 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 
 | Priorité | Nombre d'items | Domaines principaux |
 |---|---|---|
-| 🔴 MVP Bloquant | 6 *(5 backend ✅)* | Mobile (6) |
+| 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
 | 🟠 Haute | 15 | Backend (5) + Mobile (7) + Admin (4) - 1 partagé |
 | 🟡 Moyenne | 13 | Backend (5) + Mobile (4) + Admin (4) |
 | 🔵 Phase 2 | 22 | Mobile (11) + Admin (8) + Infra (5) - 2 partagés |

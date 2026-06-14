@@ -36,6 +36,13 @@ export interface Contact {
   color: string;
 }
 
+export interface RecentContact {
+  phone: string; // format +237...
+  name: string;
+  initials: string;
+  color: string;
+}
+
 export interface User {
   id: string | null;
   name: string;
@@ -116,16 +123,7 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Erreur inconnue';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Données statiques restantes (aucune API contacts côté backend)
-// ─────────────────────────────────────────────────────────────────────────────
-const CONTACTS: Contact[] = [
-  { id: 1, name: 'Marie Ngono', phone: '670 112 233', avatar: 'MN', color: '#F5C542' },
-  { id: 2, name: 'Paul Biya Jr', phone: '655 443 322', avatar: 'PB', color: '#3B82F6' },
-  { id: 3, name: 'Awa Fanta', phone: '699 887 766', avatar: 'AF', color: '#FF4D6D' },
-  { id: 4, name: 'Sylvain Kotto', phone: '677 554 411', avatar: 'SK', color: '#A78BFA' },
-  { id: 5, name: 'Rodrigue Mbé', phone: '681 234 567', avatar: 'RM', color: '#F97316' },
-];
+const CONTACT_COLORS = ['#F5C542', '#3B82F6', '#FF4D6D', '#A78BFA', '#F97316', '#00C896', '#FFCC00'];
 
 const GUEST: User = {
   id: null,
@@ -143,7 +141,8 @@ interface AppState {
   user: User;
   balance: number; // FCFA
   showBalance: boolean;
-  contacts: Contact[];
+  contacts: Contact[]; // conservé pour rétrocompatibilité
+  recentContacts: RecentContact[]; // dérivés de l'historique API
   transactions: Transaction[];
   isAuthenticated: boolean;
   loading: boolean;
@@ -152,7 +151,7 @@ interface AppState {
   pinAttempts: number;
   pinBlocked: boolean;
 
-  // Actions locales (état UI / utilisées par les modals existants)
+  // Actions locales
   setBalance: (balance: number) => void;
   toggleShowBalance: () => void;
   addTransaction: (tx: Transaction) => void;
@@ -178,7 +177,8 @@ export const useStore = create<AppState>((set, get) => ({
   user: GUEST,
   balance: 0,
   showBalance: true,
-  contacts: CONTACTS,
+  contacts: [],
+  recentContacts: [],
   transactions: [],
   isAuthenticated: false,
   loading: false,
@@ -258,12 +258,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   logout: async () => {
-    await clearTokens();
+    await authApi.logout(); // invalide le refresh token côté serveur puis vide SecureStore
     set({
       isAuthenticated: false,
       user: GUEST,
       balance: 0,
       transactions: [],
+      recentContacts: [],
       error: null,
     });
   },
@@ -308,8 +309,30 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchHistory: async () => {
     const meId = get().user.id;
+    const myPhone = get().user.phone;
     const res = await transactionsApi.getHistory(1, 50);
-    set({ transactions: res.data.map((t) => mapTransaction(t, meId)) });
+
+    // Dériver les contacts récents depuis les P2P (pas d'API contacts dédiée)
+    const seen = new Set<string>();
+    const recentContacts: RecentContact[] = [];
+    for (const t of res.data) {
+      if (t.type !== 'P2P') continue;
+      const isIncoming = t.receiverId === meId;
+      const party = isIncoming ? t.sender : t.receiver;
+      if (!party?.phone || party.phone === myPhone) continue;
+      if (seen.has(party.phone)) continue;
+      seen.add(party.phone);
+      const name = party.fullName || party.phone;
+      recentContacts.push({
+        phone: party.phone,
+        name,
+        initials: initials(name),
+        color: CONTACT_COLORS[recentContacts.length % CONTACT_COLORS.length],
+      });
+      if (recentContacts.length >= 5) break;
+    }
+
+    set({ transactions: res.data.map((t) => mapTransaction(t, meId)), recentContacts });
   },
 
   // ── Paiement P2P ─────────────────────────────────────────────────────────────

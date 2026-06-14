@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
   StatusBar,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +42,47 @@ function AppContent() {
   const logout = useStore((s) => s.logout);
   const isAuthenticated = useStore((s) => s.isAuthenticated);
   const pushRegistered = useRef(false);
+
+  // ── Timer d'inactivité (AU-09 CDC) — déconnexion après 15 min sans interaction
+  const INACTIVITY_MS = 15 * 60 * 1000;
+  const lastActivityRef = useRef<number>(Date.now());
+  const backgroundedAtRef = useRef<number>(0);
+
+  const resetActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  const doLogout = useCallback(() => {
+    logout();
+    setPhase('login');
+    setActiveTab('home');
+  }, [logout]);
+
+  // Vérification périodique de l'inactivité en foreground (toutes les 60 s)
+  useEffect(() => {
+    if (phase !== 'app') return;
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > INACTIVITY_MS) doLogout();
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [phase, doLogout]);
+
+  // Déconnexion si l'app revient au premier plan après > 15 min en arrière-plan
+  useEffect(() => {
+    if (phase !== 'app') return;
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      if (state === 'background') {
+        backgroundedAtRef.current = Date.now();
+      } else if (state === 'active') {
+        if (backgroundedAtRef.current && Date.now() - backgroundedAtRef.current > INACTIVITY_MS) {
+          doLogout();
+        }
+        backgroundedAtRef.current = 0;
+        lastActivityRef.current = Date.now();
+      }
+    });
+    return () => sub.remove();
+  }, [phase, doLogout]);
 
   // Une fois authentifié et dans l'app : enregistre le jeton push (une seule fois).
   useEffect(() => {
@@ -108,8 +151,8 @@ function AppContent() {
         </View>
       </View>
 
-      {/* Screen content */}
-      <View style={styles.content}>
+      {/* Screen content — onTouchStart réinitialise le timer d'inactivité */}
+      <View style={styles.content} onTouchStart={resetActivity}>
         {showMerchant ? (
           <MerchantScreen onBack={() => setShowMerchant(false)} />
         ) : (

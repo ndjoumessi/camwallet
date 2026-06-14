@@ -241,7 +241,20 @@ export const authApi = {
       .post<{ message: string; userId: string }>('/auth/pin-reset/request', { phone })
       .then((r) => r.data),
 
-  logout: () => clearTokens(),
+  // Invalide le refresh token côté serveur, puis supprime les tokens locaux.
+  logout: async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Si le serveur est injoignable, on déconnecte quand même localement.
+    }
+    await clearTokens();
+  },
+
+  changePin: (currentPin: string, newPin: string) =>
+    api
+      .patch<{ message: string }>('/auth/change-pin', { currentPin, newPin })
+      .then((r) => r.data),
 };
 
 export const userApi = {

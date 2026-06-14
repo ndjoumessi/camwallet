@@ -8,12 +8,14 @@ import {
   TextInput,
   ScrollView,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { walletApi, MobileOperator } from '../../../src/lib/api';
 
 interface RechargeModalProps {
   visible: boolean;
@@ -48,13 +50,23 @@ const METHODS = [
   },
 ];
 
+const toCentimes = (fcfa: number) => Math.round(fcfa * 100);
+
 export default function RechargeModal({ visible, onClose, onSuccess }: RechargeModalProps) {
-  const { balance, setBalance, addTransaction } = useStore();
-  const [step, setStep] = useState<'method' | 'amount' | 'confirm'>('method');
+  const { user, fetchBalance } = useStore();
+  const [step, setStep] = useState<'method' | 'amount' | 'pending'>('method');
   const [method, setMethod] = useState<typeof METHODS[0] | null>(null);
   const [amount, setAmount] = useState('');
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const reset = () => { setStep('method'); setMethod(null); setAmount(''); };
+  // Pré-remplir le numéro avec le téléphone de l'utilisateur à l'ouverture
+  useEffect(() => {
+    if (visible && user.phone) setPhone(user.phone);
+  }, [visible, user.phone]);
+
+  const reset = () => { setStep('method'); setMethod(null); setAmount(''); setPhone(user.phone || ''); setError(null); };
   const handleClose = () => { reset(); onClose(); };
 
   // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
@@ -76,21 +88,24 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
   };
 
-  const handleRecharge = () => {
+  const handleRecharge = async () => {
     const amt = parseInt(amount);
-    if (!amt) return;
-    setBalance(balance + amt);
-    addTransaction({
-      id: `TX_${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-      type: 'recharge',
-      name: method!.label,
-      amount: amt,
-      date: new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      status: 'success',
-      ref: `TX_${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-    });
-    onSuccess(`Compte rechargé de ${amt.toLocaleString('fr-FR')} FCFA !`);
-    handleClose();
+    if (!amt || !method) return;
+    const operator: MobileOperator = method.id === 'orange' ? 'ORANGE_MONEY' : 'MTN_MOMO';
+    setLoading(true);
+    setError(null);
+    try {
+      await walletApi.recharge(toCentimes(amt), operator, phone || undefined);
+      setStep('pending');
+      // Le crédit arrivera via webhook — on rafraîchit le solde dans quelques secondes
+      setTimeout(() => fetchBalance(), 5000);
+      onSuccess(`Recharge de ${amt.toLocaleString('fr-FR')} FCFA initiée !`);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge';
+      setError(Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const amt = parseInt(amount) || 0;
@@ -152,13 +167,26 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
 
           {step === 'amount' && method && (
             <>
-              {/* Method badge */}
               <View style={[styles.selectedMethod, { backgroundColor: method.color + '12', borderColor: method.color + '30' }]}>
                 <Ionicons name={method.icon} size={24} color={method.color} />
                 <Text style={[styles.methodLabel, { color: method.color }]}>{method.label}</Text>
               </View>
 
-              {/* Amount input */}
+              {/* Numéro MoMo */}
+              {method.id !== 'agent' && (
+                <View style={styles.phoneRow}>
+                  <Text style={styles.phoneLabel}>Numéro {method.label.split(' ')[0]}</Text>
+                  <TextInput
+                    style={styles.phoneInput}
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="+237 6XX XXX XXX"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              )}
+
               <View style={styles.amountWrap}>
                 <Text style={styles.amountLabel}>Montant à recharger</Text>
                 <TextInput
@@ -173,7 +201,6 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                 <Text style={styles.amountCurrency}>FCFA</Text>
               </View>
 
-              {/* Quick amounts */}
               <View style={styles.quickGrid}>
                 {[5000, 10000, 25000, 50000].map((q) => (
                   <TouchableOpacity
@@ -195,13 +222,33 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                 <Text style={styles.limitText}>Min: 500 FCFA · Max: 500 000 FCFA</Text>
               </View>
 
-              <Button
-                label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
-                onPress={handleRecharge}
-                disabled={amt < 500}
-                fullWidth
-              />
+              {error && <Text style={styles.errorText}>{error}</Text>}
+
+              {loading ? (
+                <ActivityIndicator color={Colors.primary} style={{ marginTop: Spacing.md }} />
+              ) : (
+                <Button
+                  label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
+                  onPress={handleRecharge}
+                  disabled={amt < 500 || loading}
+                  fullWidth
+                />
+              )}
             </>
+          )}
+
+          {step === 'pending' && (
+            <View style={styles.pendingContainer}>
+              <View style={styles.pendingIcon}>
+                <Ionicons name="hourglass-outline" size={40} color={Colors.yellow} />
+              </View>
+              <Text style={styles.pendingTitle}>Recharge en cours</Text>
+              <Text style={styles.pendingText}>
+                Votre compte sera crédité dès confirmation par {method?.label ?? 'l\'opérateur'}.
+                {'\n\n'}Cela prend généralement quelques secondes.
+              </Text>
+              <Button label="Fermer" onPress={handleClose} fullWidth style={{ marginTop: Spacing.xl }} />
+            </View>
           )}
           </ScrollView>
         </Animated.View>
@@ -255,6 +302,22 @@ const styles = StyleSheet.create({
   quickBtnText: { color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium },
   limitNote: { alignItems: 'center' },
   limitText: { color: Colors.textMuted, fontSize: Typography.xs },
+  phoneRow: { marginBottom: Spacing.md },
+  phoneLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginBottom: 6 },
+  phoneInput: {
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, padding: Spacing.md,
+    color: Colors.text, fontSize: Typography.base,
+  },
+  errorText: { color: Colors.red, fontSize: Typography.sm, textAlign: 'center', marginBottom: Spacing.sm },
+  pendingContainer: { alignItems: 'center', padding: Spacing.xl, paddingTop: Spacing.xxl },
+  pendingIcon: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: Colors.yellow + '20', alignItems: 'center', justifyContent: 'center',
+    marginBottom: Spacing.xl,
+  },
+  pendingTitle: { color: Colors.text, fontSize: Typography.xl, fontWeight: Typography.bold, marginBottom: Spacing.md },
+  pendingText: { color: Colors.textMuted, fontSize: Typography.base, textAlign: 'center', lineHeight: 22 },
   infoBox: {
     flexDirection: 'row', gap: Spacing.sm,
     backgroundColor: Colors.infoBg, borderWidth: 1, borderColor: Colors.blue + '40',

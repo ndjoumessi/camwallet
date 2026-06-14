@@ -9,34 +9,44 @@ import {
   ScrollView,
   Animated,
   Linking,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Avatar, Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { authApi } from '../../../src/lib/api';
 
 interface SendModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: (msg: string) => void;
   initialContact?: number;
-  // Destinataire pré-rempli depuis un QR Code scanné.
   initialRecipient?: { name?: string; phone: string; amount?: string } | null;
 }
 
-const FRAIS = 10;
+const FRAIS = 0; // Les frais P2P sont calculés côté backend
+
+const normalizePhone = (phone: string): string => {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('237') && digits.length >= 12) return '+' + digits;
+  if (digits.length === 9) return '+237' + digits;
+  return phone;
+};
 
 export default function SendModal({ visible, onClose, onSuccess, initialContact, initialRecipient }: SendModalProps) {
-  const { contacts, balance, setBalance, addTransaction } = useStore();
+  const { user, balance, recentContacts, sendMoney } = useStore();
   const [step, setStep] = useState<'contact' | 'amount' | 'pin' | 'done'>('contact');
-  const [selectedContact, setSelectedContact] = useState(
-    initialContact ? contacts.find(c => c.id === initialContact) : null
-  );
+  const [selectedContact, setSelectedContact] = useState<{ id: number; name: string; phone: string; avatar: string; color: string } | null>(null);
+  const [manualPhone, setManualPhone] = useState('');
   const [amount, setAmount] = useState('');
   const [motif, setMotif] = useState('');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
+  const [pinErrMsg, setPinErrMsg] = useState('PIN incorrect');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const shake = useRef(new Animated.Value(0)).current;
 
   // Pré-remplit le destinataire depuis un QR scanné et saute à l'étape montant.
@@ -62,10 +72,14 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const reset = () => {
     setStep('contact');
     setSelectedContact(null);
+    setManualPhone('');
     setAmount('');
     setMotif('');
     setPin('');
     setPinError(false);
+    setPinErrMsg('PIN incorrect');
+    setSending(false);
+    setSendError(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -99,35 +113,42 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     ]).start();
   };
 
-  const handlePin = (digit: string) => {
-    if (pin.length >= 6) return;
+  const handlePin = async (digit: string) => {
+    if (pin.length >= 6 || sending) return;
     const next = pin + digit;
     setPin(next);
-    if (next.length === 6) {
-      if (next === '123456') {
-        const amt = parseInt(amount);
-        setTimeout(() => {
-          setBalance(balance - amt - FRAIS);
-          addTransaction({
-            id: ref,
-            type: 'sent',
-            name: selectedContact!.name,
-            amount: -(amt + FRAIS),
-            date: dateStr,
-            status: 'success',
-            ref,
-            motif,
-          });
-          setStep('done');
-        }, 300);
-      } else {
-        setTimeout(() => {
-          setPinError(true);
-          setPin('');
-          triggerShake();
-          setTimeout(() => setPinError(false), 800);
-        }, 300);
-      }
+    if (next.length < 6) return;
+
+    setSending(true);
+    try {
+      // Vérification du PIN côté serveur (implémente le lockout après 3 échecs)
+      await authApi.login(user.phone, next);
+    } catch (e: any) {
+      setSending(false);
+      const msg: string =
+        e?.response?.data?.message ?? e?.message ?? 'PIN incorrect';
+      setPinErrMsg(msg.length < 60 ? msg : 'PIN incorrect');
+      setPinError(true);
+      setPin('');
+      triggerShake();
+      setTimeout(() => { setPinError(false); setPinErrMsg('PIN incorrect'); }, 2000);
+      return;
+    }
+
+    try {
+      // PIN validé — envoi de la transaction
+      const recipientPhone = normalizePhone(selectedContact!.phone);
+      await sendMoney(recipientPhone, amt, motif || undefined);
+      setStep('done');
+    } catch (e: any) {
+      const msg: string =
+        e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'envoi';
+      setSendError(Array.isArray(msg) ? (msg as string[]).join(', ') : msg);
+      setPin('');
+      triggerShake();
+      setTimeout(() => setSendError(null), 3000);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -145,29 +166,66 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
 
   const renderStep = () => {
     switch (step) {
-      case 'contact':
+      case 'contact': {
+        const canUseManual = manualPhone.replace(/\D/g, '').length >= 9;
         return (
-          <ScrollView contentContainerStyle={styles.body}>
-            <Text style={styles.sectionLabel}>Choisir un destinataire</Text>
-            {contacts.map((c) => (
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+            {/* Saisie manuelle d'un numéro */}
+            <Text style={styles.sectionLabel}>Entrer un numéro</Text>
+            <View style={styles.phoneInputRow}>
+              <TextInput
+                style={styles.phoneInput}
+                value={manualPhone}
+                onChangeText={(v) => setManualPhone(v.replace(/[^\d\s+]/g, ''))}
+                placeholder="+237 6XX XXX XXX"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="phone-pad"
+              />
               <TouchableOpacity
-                key={c.id}
-                style={styles.contactRow}
-                onPress={() => { setSelectedContact(c); setStep('amount'); }}
+                style={[styles.phoneInputBtn, !canUseManual && styles.phoneInputBtnDisabled]}
+                disabled={!canUseManual}
+                onPress={() => {
+                  const phone = normalizePhone(manualPhone);
+                  setSelectedContact({ id: -1, name: phone, phone, avatar: phone.slice(-2), color: Colors.primary });
+                  setStep('amount');
+                }}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel={`${c.name}, +237 ${c.phone}`}
+                accessibilityLabel="Continuer"
               >
-                <Avatar initials={c.avatar} size={44} color={c.color} bg={c.color + '20'} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.contactName}>{c.name}</Text>
-                  <Text style={styles.contactPhone}>+237 {c.phone}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+                <Ionicons name="arrow-forward" size={18} color={Colors.white} />
               </TouchableOpacity>
-            ))}
+            </View>
+
+            {/* Contacts récents (dérivés de l'historique) */}
+            {recentContacts.length > 0 && (
+              <>
+                <Text style={[styles.sectionLabel, { marginTop: Spacing.xl }]}>Contacts récents</Text>
+                {recentContacts.map((c) => (
+                  <TouchableOpacity
+                    key={c.phone}
+                    style={styles.contactRow}
+                    onPress={() => {
+                      setSelectedContact({ id: -1, name: c.name, phone: c.phone, avatar: c.initials, color: c.color });
+                      setStep('amount');
+                    }}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${c.name}, ${c.phone}`}
+                  >
+                    <Avatar initials={c.initials} size={44} color={c.color} bg={c.color + '20'} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.contactName}>{c.name}</Text>
+                      <Text style={styles.contactPhone}>{c.phone}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
           </ScrollView>
         );
+      }
 
       case 'amount':
         return (
@@ -259,8 +317,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               Envoi de {amt.toLocaleString('fr-FR')} FCFA à {selectedContact?.name}
             </Text>
 
-            {pinError && (
-              <Text style={styles.pinErrorText}>PIN incorrect</Text>
+            {(pinError || sendError) && (
+              <Text style={styles.pinErrorText}>{sendError ?? pinErrMsg}</Text>
             )}
 
             <Animated.View style={[styles.pinDots, { transform: [{ translateX: shake }] }]}>
@@ -270,16 +328,14 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                   style={[
                     styles.pinDot,
                     pin.length > i
-                      ? [styles.pinDotFilled, pinError && { backgroundColor: Colors.red }]
+                      ? [styles.pinDotFilled, (pinError || sendError) && { backgroundColor: Colors.red }]
                       : styles.pinDotEmpty,
                   ]}
                 />
               ))}
             </Animated.View>
 
-            <Text style={styles.pinHint}>
-              PIN de démo : <Text style={{ color: Colors.primary }}>123456</Text>
-            </Text>
+            {sending && <ActivityIndicator color={Colors.primary} style={{ marginBottom: Spacing.md }} />}
 
             <View style={styles.pinGrid}>
               {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((k, i) => {
@@ -289,11 +345,11 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                     key={i}
                     style={[styles.pinKey, k === '' && styles.pinKeyEmpty]}
                     onPress={() => {
-                      if (k === '') return;
+                      if (k === '' || sending) return;
                       if (isBackspace) setPin(p => p.slice(0, -1));
                       else handlePin(k);
                     }}
-                    disabled={k === ''}
+                    disabled={k === '' || sending}
                     activeOpacity={0.7}
                     accessibilityRole={k === '' ? undefined : 'button'}
                     accessibilityLabel={k === '' ? undefined : isBackspace ? 'Supprimer' : k}
@@ -324,7 +380,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
             {/* Receipt */}
             <View style={styles.receipt}>
               {[
-                ['De', 'Jean-Paul Mbarga'],
+                ['De', user.name],
                 ['À', selectedContact?.name ?? ''],
                 ['Montant', `${amt.toLocaleString('fr-FR')} FCFA`],
                 ['Frais', `${FRAIS} FCFA`],
@@ -414,6 +470,19 @@ const styles = StyleSheet.create({
     fontWeight: Typography.bold, letterSpacing: 1,
     textTransform: 'uppercase', marginBottom: Spacing.sm,
   },
+  phoneInputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md,
+  },
+  phoneInput: {
+    flex: 1, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, padding: Spacing.md,
+    color: Colors.text, fontSize: Typography.base,
+  },
+  phoneInputBtn: {
+    width: 44, height: 44, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  phoneInputBtnDisabled: { backgroundColor: Colors.border },
   contactRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
