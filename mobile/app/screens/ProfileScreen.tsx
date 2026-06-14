@@ -62,9 +62,10 @@ const formatDob = (raw: string) => {
 
 interface ProfileScreenProps {
   onLogout: () => void;
+  onMerchant?: () => void;
 }
 
-export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
+export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenProps) {
   const storeUser = useStore((s) => s.user);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -234,6 +235,9 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
           <View style={styles.profileBadges}>
             <Badge label={kyc.label} icon={kyc.icon} color={kyc.color} bg={kyc.bg} />
             <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
+            {me?.role === 'MERCHANT' && (
+              <Badge label="Marchand" icon="storefront-outline" color={Colors.yellow} bg={Colors.yellow + '20'} />
+            )}
           </View>
         </View>
       </LinearGradient>
@@ -333,6 +337,28 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
               <Text style={styles.statLabel}>Membre depuis</Text>
             </View>
           </View>
+
+          {/* Tableau de bord commerçant */}
+          {me?.role === 'MERCHANT' && onMerchant && (
+            <View style={styles.menuGroup}>
+              <Text style={styles.groupLabel}>Espace commerçant</Text>
+              <Pressable
+                style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+                onPress={onMerchant}
+                accessibilityRole="button"
+                accessibilityLabel="Tableau de bord commerçant"
+              >
+                <View style={[styles.menuItemIcon, { backgroundColor: Colors.yellow + '20' }]}>
+                  <Ionicons name="storefront-outline" size={20} color={Colors.yellow} />
+                </View>
+                <View style={styles.menuItemInfo}>
+                  <Text style={styles.menuItemLabel}>Tableau de bord marchand</Text>
+                  <Text style={styles.menuItemDesc}>Stats, transactions et QR dynamique</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+          )}
 
           {/* Sécurité */}
           <View style={styles.menuGroup}>

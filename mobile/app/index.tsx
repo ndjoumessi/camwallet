@@ -16,6 +16,7 @@ import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import MerchantScreen from './screens/MerchantScreen';
 import { useStore } from './store/useStore';
 import { registerForPushNotifications } from '../src/lib/notifications';
 
@@ -31,6 +32,7 @@ const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: key
 export default function App() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [showMerchant, setShowMerchant] = useState(false);
 
   const restoreSession = useStore((s) => s.restoreSession);
   const logout = useStore((s) => s.logout);
@@ -106,16 +108,23 @@ export default function App() {
 
       {/* Screen content */}
       <View style={styles.content}>
-        {activeTab === 'home' && <HomeScreen />}
-        {activeTab === 'history' && <HistoryScreen />}
-        {activeTab === 'profile' && (
-          <ProfileScreen
-            onLogout={() => {
-              logout();
-              setActiveTab('home');
-              setPhase('login');
-            }}
-          />
+        {showMerchant ? (
+          <MerchantScreen onBack={() => setShowMerchant(false)} />
+        ) : (
+          <>
+            {activeTab === 'home' && <HomeScreen />}
+            {activeTab === 'history' && <HistoryScreen />}
+            {activeTab === 'profile' && (
+              <ProfileScreen
+                onLogout={() => {
+                  logout();
+                  setActiveTab('home');
+                  setPhase('login');
+                }}
+                onMerchant={() => setShowMerchant(true)}
+              />
+            )}
+          </>
         )}
       </View>
 

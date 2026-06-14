@@ -267,6 +267,9 @@ export const userApi = {
 
   registerPushToken: (pushToken: string) =>
     api.post('/users/push-token', { pushToken }).then((r) => r.data),
+
+  deleteAccount: () =>
+    api.delete<{ ok: boolean }>('/users/me').then((r) => r.data),
 };
 
 export interface KycStatusResponse {
@@ -310,6 +313,40 @@ export const transactionsApi = {
   p2p: (phone: string, amount: number, description?: string) =>
     api
       .post<ApiTransaction>('/transactions/p2p', { phone, amount, description })
+      .then((r) => r.data),
+};
+
+export interface MerchantPeriodStats {
+  count: number;
+  amount: number;
+  fees: number;
+}
+
+export interface MerchantStatsResponse {
+  balance: number;
+  day: MerchantPeriodStats;
+  week: { count: number; amount: number };
+  month: { count: number; amount: number };
+}
+
+export interface MerchantTransaction {
+  id: string;
+  type: ApiTransactionType;
+  amount: number;
+  fee: number;
+  status: ApiTransactionStatus;
+  description: string | null;
+  createdAt: string;
+  sender: ApiParty | null;
+}
+
+export const merchantApi = {
+  getStats: () =>
+    api.get<MerchantStatsResponse>('/merchant/stats').then((r) => r.data),
+
+  getTransactions: (page = 1, limit = 20) =>
+    api
+      .get<Paginated<MerchantTransaction>>('/merchant/transactions', { params: { page, limit } })
       .then((r) => r.data),
 };
 
