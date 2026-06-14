@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,7 +38,11 @@ export class WebhooksService {
   private verifyOmSignature(rawBody: Buffer, signature: string): void {
     const secret = this.config.get<string>('OM_WEBHOOK_SECRET');
     if (!secret) {
-      this.logger.warn('[SÉCU] OM_WEBHOOK_SECRET non configuré — validation HMAC désactivée');
+      // Fail-closed en production — jamais de webhook non authentifié en prod
+      if (this.config.get('NODE_ENV') === 'production') {
+        throw new InternalServerErrorException('OM_WEBHOOK_SECRET requis en production');
+      }
+      this.logger.warn('[SÉCU] OM_WEBHOOK_SECRET non configuré — validation HMAC désactivée (dev uniquement)');
       return;
     }
     if (!signature) {
@@ -55,7 +59,8 @@ export class WebhooksService {
       valid = false;
     }
     if (!valid) {
-      this.logger.warn(`Signature OM invalide : reçu=${signature} attendu=${expected}`);
+      // Ne pas logger le HMAC attendu (oracle de signature)
+      this.logger.warn(`Signature OM invalide : reçu=${signature.slice(0, 8)}…`);
       throw new UnauthorizedException('Signature webhook Orange Money invalide');
     }
   }
@@ -63,7 +68,10 @@ export class WebhooksService {
   private verifyMtnToken(token: string): void {
     const secret = this.config.get<string>('MTN_WEBHOOK_SECRET');
     if (!secret) {
-      this.logger.warn('[SÉCU] MTN_WEBHOOK_SECRET non configuré — validation token désactivée');
+      if (this.config.get('NODE_ENV') === 'production') {
+        throw new InternalServerErrorException('MTN_WEBHOOK_SECRET requis en production');
+      }
+      this.logger.warn('[SÉCU] MTN_WEBHOOK_SECRET non configuré — validation token désactivée (dev uniquement)');
       return;
     }
     if (!token) {

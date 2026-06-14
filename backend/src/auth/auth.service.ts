@@ -224,8 +224,8 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) throw new UnauthorizedException();
 
-    // Vérification de la version de token — invalide les sessions déconnectées
-    if (typeof payload.tv === 'number' && payload.tv !== user.tokenVersion) {
+    // Fail-closed : absence de tv (token pré-migration) === rejet systématique
+    if (payload.tv !== user.tokenVersion) {
       throw new UnauthorizedException('Session expirée — reconnectez-vous');
     }
 
