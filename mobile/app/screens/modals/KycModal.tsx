@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   Image,
   Alert,
-  ActivityIndicator,
+  Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { Button } from '../../components/ui';
+import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
+import { Button, IconButton } from '../../components/ui';
 import { kycApi } from '../../../src/lib/api';
 
 type StepKey = 'idFront' | 'idBack' | 'selfie';
@@ -69,12 +71,32 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
 
   const granted = permission?.granted ?? false;
 
+  // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(enter, {
+        toValue: 1,
+        damping: Animation.spring.damping,
+        stiffness: Animation.spring.stiffness,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      enter.setValue(0);
+    }
+  }, [visible, enter]);
+  const animStyle = {
+    opacity: enter,
+    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={close}>
-      <View style={styles.sheet}>
+      <SafeAreaView style={styles.sheet} edges={['top']}>
+        <Animated.View style={[styles.flex, animStyle]}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Vérification d'identité</Text>
-          <TouchableOpacity onPress={close} style={styles.closeBtn}><Text style={styles.closeBtnText}>✕</Text></TouchableOpacity>
+          <IconButton icon="close" onPress={close} accessibilityLabel="Fermer" />
         </View>
 
         {/* Progression */}
@@ -92,7 +114,7 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
           <View style={styles.cameraBox}>
             {!granted ? (
               <View style={styles.placeholder}>
-                <Text style={{ fontSize: 36 }}>📷</Text>
+                <Ionicons name="camera" size={36} color={Colors.textMuted} />
                 <Text style={styles.placeholderText}>Autorisation caméra requise</Text>
               </View>
             ) : shots[step.key] ? (
@@ -104,16 +126,23 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
 
           {!granted ? (
             <View style={{ width: '100%', paddingHorizontal: Spacing.xl }}>
-              <Button label="Autoriser la caméra" onPress={requestPermission} />
+              <Button label="Autoriser la caméra" icon="camera" onPress={requestPermission} fullWidth />
             </View>
           ) : (
             <View style={{ width: '100%', paddingHorizontal: Spacing.xl, gap: Spacing.sm }}>
               {shots[step.key] ? (
-                <TouchableOpacity style={styles.retake} onPress={() => setShots((p) => ({ ...p, [step.key]: undefined }))}>
-                  <Text style={styles.retakeText}>↻ Reprendre cette photo</Text>
+                <TouchableOpacity
+                  style={styles.retake}
+                  onPress={() => setShots((p) => ({ ...p, [step.key]: undefined }))}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Reprendre cette photo"
+                >
+                  <Ionicons name="refresh" size={16} color={Colors.yellow} />
+                  <Text style={styles.retakeText}>Reprendre cette photo</Text>
                 </TouchableOpacity>
               ) : (
-                <Button label="📸 Capturer" onPress={capture} />
+                <Button label="Capturer" icon="camera" onPress={capture} fullWidth />
               )}
             </View>
           )}
@@ -121,7 +150,15 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
           {/* Vignettes */}
           <View style={styles.thumbs}>
             {STEPS.map((s, i) => (
-              <TouchableOpacity key={s.key} onPress={() => setStepIndex(i)} style={styles.thumbWrap}>
+              <TouchableOpacity
+                key={s.key}
+                onPress={() => setStepIndex(i)}
+                style={styles.thumbWrap}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={s.title}
+                accessibilityState={{ selected: i === stepIndex }}
+              >
                 <View style={[styles.thumb, { borderColor: shots[s.key] ? Colors.primary : Colors.border }]}>
                   {shots[s.key] ? <Image source={{ uri: shots[s.key] }} style={styles.thumbImg} /> : <Text style={styles.thumbIdx}>{i + 1}</Text>}
                 </View>
@@ -133,26 +170,28 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
           <View style={{ width: '100%', paddingHorizontal: Spacing.xl, marginTop: Spacing.md }}>
             <Button
               label={submitting ? 'Envoi…' : 'Soumettre le KYC'}
+              icon="shield-checkmark-outline"
               onPress={submit}
+              loading={submitting}
               disabled={!allCaptured || submitting}
+              fullWidth
             />
-            {submitting && <ActivityIndicator color={Colors.primary} style={{ marginTop: Spacing.sm }} />}
           </View>
         </View>
-      </View>
+        </Animated.View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: Colors.surface },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center' },
-  closeBtnText: { color: Colors.textSoft, fontSize: Typography.base },
   progress: { flexDirection: 'row', gap: 8, justifyContent: 'center', paddingTop: Spacing.lg },
   dot: { width: 40, height: 4, borderRadius: 2 },
   body: { flex: 1, alignItems: 'center', paddingTop: Spacing.lg, gap: Spacing.sm },
@@ -164,7 +203,7 @@ const styles = StyleSheet.create({
   },
   placeholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm } as any,
   placeholderText: { color: Colors.textMuted, fontSize: Typography.sm },
-  retake: { alignItems: 'center', padding: Spacing.sm },
+  retake: { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', minHeight: 44, padding: Spacing.sm },
   retakeText: { color: Colors.yellow, fontSize: Typography.base, fontWeight: Typography.semibold },
   thumbs: { flexDirection: 'row', gap: Spacing.lg, marginTop: Spacing.md },
   thumbWrap: { alignItems: 'center', gap: 4 },

@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   TextInput,
   ScrollView,
   Dimensions,
@@ -11,7 +11,9 @@ import {
   Platform,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Button } from '../components/ui';
 
@@ -19,19 +21,19 @@ const { width } = Dimensions.get('window');
 
 const SLIDES = [
   {
-    icon: '📱',
+    icon: 'phone-portrait-outline' as const,
     title: 'Paiements instantanés',
     desc: "Scannez un QR Code et payez en 3 secondes, n'importe où au Cameroun.",
     gradient: ['#0d2a1f', Colors.bg],
   },
   {
-    icon: '🔒',
+    icon: 'lock-closed-outline' as const,
     title: 'Sécurisé & fiable',
     desc: 'Chiffrement militaire, PIN à 6 chiffres et alertes SMS en temps réel.',
     gradient: ['#0a1628', Colors.bg],
   },
   {
-    icon: '⚡',
+    icon: 'flash' as const,
     title: 'Rechargez facilement',
     desc: 'Via MTN MoMo, Orange Money ou agents partenaires près de chez vous.',
     gradient: ['#1a1505', Colors.bg],
@@ -118,142 +120,170 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
     const s = SLIDES[slideIndex];
     return (
       <LinearGradient colors={s.gradient as [string, string]} style={styles.container}>
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          pagingEnabled
-          scrollEnabled={false}
-          showsHorizontalScrollIndicator={false}
-        >
-          {SLIDES.map((slide, i) => (
-            <View key={i} style={[styles.slide, { width }]}>
-              <View style={styles.slideContent}>
-                <Text style={styles.slideIcon}>{slide.icon}</Text>
-                <Text style={styles.slideTitle}>{slide.title}</Text>
-                <Text style={styles.slideDesc}>{slide.desc}</Text>
+        <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            pagingEnabled
+            scrollEnabled={false}
+            showsHorizontalScrollIndicator={false}
+          >
+            {SLIDES.map((slide, i) => (
+              <View key={i} style={[styles.slide, { width }]}>
+                <View style={styles.slideContent}>
+                  <View style={styles.slideIconWrap}>
+                    <Ionicons name={slide.icon} size={64} color={Colors.primary} />
+                  </View>
+                  <Text style={styles.slideTitle}>{slide.title}</Text>
+                  <Text style={styles.slideDesc}>{slide.desc}</Text>
+                </View>
               </View>
-            </View>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
 
-        {/* Dots */}
-        <View style={styles.dots}>
-          {SLIDES.map((_, i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                i === slideIndex ? styles.dotActive : styles.dotInactive,
-              ]}
+          {/* Dots */}
+          <View style={styles.dots}>
+            {SLIDES.map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.dot,
+                  i === slideIndex ? styles.dotActive : styles.dotInactive,
+                ]}
+              />
+            ))}
+          </View>
+
+          <View style={styles.actions}>
+            <Button
+              label={slideIndex < 2 ? 'Suivant' : 'Créer mon compte'}
+              icon={slideIndex < 2 ? 'arrow-forward' : undefined}
+              onPress={slideToNext}
             />
-          ))}
-        </View>
-
-        <View style={styles.actions}>
-          <Button
-            label={slideIndex < 2 ? 'Suivant →' : 'Créer mon compte'}
-            onPress={slideToNext}
-          />
-          {slideIndex === 0 && (
-            <TouchableOpacity onPress={() => setStep('phone')} style={styles.skipBtn}>
-              <Text style={styles.skipText}>Passer</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+            {slideIndex === 0 && (
+              <Pressable
+                onPress={() => setStep('phone')}
+                style={({ pressed }) => [styles.skipBtn, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Passer l'introduction"
+              >
+                <Text style={styles.skipText}>Passer</Text>
+              </Pressable>
+            )}
+          </View>
+        </SafeAreaView>
       </LinearGradient>
     );
   }
 
   if (step === 'phone') {
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={styles.formContainer}>
-          <Text style={styles.stepIcon}>📞</Text>
-          <Text style={styles.stepTitle}>Votre numéro</Text>
-          <Text style={styles.stepDesc}>Nous envoyons un SMS de vérification</Text>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.formContainer}>
+            <View style={styles.stepIconWrap}>
+              <Ionicons name="call-outline" size={36} color={Colors.primary} />
+            </View>
+            <Text style={styles.stepTitle}>Votre numéro</Text>
+            <Text style={styles.stepDesc}>Nous envoyons un SMS de vérification</Text>
 
-          <View style={styles.inputRow}>
-            <Text style={styles.inputPrefix}>🇨🇲 +237</Text>
-            <TextInput
-              style={styles.input}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="6XX XX XX XX"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="phone-pad"
-              maxLength={9}
-              autoFocus
+            <View style={styles.inputRow}>
+              <Text style={styles.inputPrefix}>+237</Text>
+              <TextInput
+                style={styles.input}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="6XX XX XX XX"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="phone-pad"
+                maxLength={9}
+                autoFocus
+              />
+            </View>
+
+            <Button
+              label="Envoyer le code SMS"
+              onPress={sendOtp}
+              loading={loading}
+              disabled={phone.length < 9}
             />
+
+            <Text style={styles.termsText}>
+              En continuant, vous acceptez nos{' '}
+              <Text style={styles.termsLink}>Conditions d'utilisation</Text>
+            </Text>
           </View>
-
-          <Button
-            label="Envoyer le code SMS"
-            onPress={sendOtp}
-            loading={loading}
-            disabled={phone.length < 9}
-          />
-
-          <Text style={styles.termsText}>
-            En continuant, vous acceptez nos{' '}
-            <Text style={styles.termsLink}>Conditions d'utilisation</Text>
-          </Text>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 
   if (step === 'otp') {
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <View style={styles.formContainer}>
-          <Text style={styles.stepIcon}>💬</Text>
-          <Text style={styles.stepTitle}>Code de vérification</Text>
-          <Text style={styles.stepDesc}>
-            Entrez le code envoyé au +237 {phone}
-          </Text>
-
-          <Animated.View style={{ transform: [{ translateX: shake }] }}>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={[styles.input, styles.otpInput]}
-                value={otp}
-                onChangeText={setOtp}
-                placeholder="••••••"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="numeric"
-                maxLength={6}
-                autoFocus
-              />
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.formContainer}>
+            <View style={styles.stepIconWrap}>
+              <Ionicons name="chatbubble-ellipses-outline" size={36} color={Colors.primary} />
             </View>
-          </Animated.View>
-
-          <View style={styles.demoHint}>
-            <Text style={styles.demoHintText}>
-              Code de démo : <Text style={{ color: Colors.primary, fontWeight: Typography.bold }}>847291</Text>
+            <Text style={styles.stepTitle}>Code de vérification</Text>
+            <Text style={styles.stepDesc}>
+              Entrez le code envoyé au +237 {phone}
             </Text>
+
+            <Animated.View style={{ transform: [{ translateX: shake }] }}>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={[styles.input, styles.otpInput]}
+                  value={otp}
+                  onChangeText={setOtp}
+                  placeholder="••••••"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="numeric"
+                  maxLength={6}
+                  autoFocus
+                />
+              </View>
+            </Animated.View>
+
+            <View style={styles.demoHint}>
+              <Text style={styles.demoHintText}>
+                Code de démo : <Text style={{ color: Colors.primary, fontWeight: Typography.bold }}>847291</Text>
+              </Text>
+            </View>
+
+            <Button label="Vérifier" onPress={verifyOtp} disabled={otp.length < 6} />
+
+            <Pressable
+              onPress={() => setStep('phone')}
+              style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Modifier le numéro"
+            >
+              <View style={styles.backRow}>
+                <Ionicons name="arrow-back" size={16} color={Colors.textMuted} />
+                <Text style={styles.backText}>Modifier le numéro</Text>
+              </View>
+            </Pressable>
           </View>
-
-          <Button label="Vérifier" onPress={verifyOtp} disabled={otp.length < 6} />
-
-          <TouchableOpacity onPress={() => setStep('phone')} style={styles.backBtn}>
-            <Text style={styles.backText}>← Modifier le numéro</Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     );
   }
 
   // PIN creation
   const currentPin = pinStep === 'create' ? pin : pinConfirm;
   return (
-    <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
-      <Text style={styles.stepIcon}>🔐</Text>
+    <SafeAreaView style={[styles.container, styles.pinContainer]} edges={['top', 'bottom']}>
+      <View style={styles.stepIconWrap}>
+        <Ionicons name="shield-checkmark-outline" size={36} color={Colors.primary} />
+      </View>
       <Text style={styles.stepTitle}>
         {pinStep === 'create' ? 'Créez votre PIN' : 'Confirmez votre PIN'}
       </Text>
@@ -278,27 +308,40 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
 
       {/* PIN keypad */}
       <View style={styles.pinGrid}>
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map((key, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[styles.pinKey, key === '' && styles.pinKeyEmpty]}
-            onPress={() => {
-              if (key === '') return;
-              if (key === '⌫') {
-                if (pinStep === 'create') setPin(p => p.slice(0, -1));
-                else setPinConfirm(p => p.slice(0, -1));
-              } else {
-                handlePin(key);
-              }
-            }}
-            disabled={key === ''}
-            activeOpacity={0.7}
-          >
-            {key !== '' && <Text style={styles.pinKeyText}>{key}</Text>}
-          </TouchableOpacity>
-        ))}
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].map((key, i) => {
+          const isDelete = key === 'del';
+          const isEmpty = key === '';
+          return (
+            <Pressable
+              key={i}
+              style={({ pressed }) => [
+                styles.pinKey,
+                isEmpty && styles.pinKeyEmpty,
+                !isEmpty && pressed && styles.pinKeyPressed,
+              ]}
+              onPress={() => {
+                if (isEmpty) return;
+                if (isDelete) {
+                  if (pinStep === 'create') setPin(p => p.slice(0, -1));
+                  else setPinConfirm(p => p.slice(0, -1));
+                } else {
+                  handlePin(key);
+                }
+              }}
+              disabled={isEmpty}
+              accessibilityRole="button"
+              accessibilityLabel={isDelete ? 'Supprimer' : isEmpty ? undefined : `Chiffre ${key}`}
+            >
+              {isDelete ? (
+                <Ionicons name="backspace-outline" size={24} color={Colors.text} />
+              ) : !isEmpty ? (
+                <Text style={styles.pinKeyText}>{key}</Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -307,6 +350,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.bg,
   },
+  flex: { flex: 1 },
+  pressed: { opacity: 0.7 },
   slide: {
     flex: 1,
     paddingHorizontal: Spacing.xxl,
@@ -318,7 +363,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.xxl,
   },
-  slideIcon: { fontSize: 80 },
+  slideIconWrap: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   slideTitle: {
     fontSize: Typography.xxl,
     fontWeight: Typography.black,
@@ -347,7 +399,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: Spacing.md,
   },
-  skipBtn: { alignItems: 'center', padding: Spacing.sm },
+  skipBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 44, padding: Spacing.sm },
   skipText: { color: Colors.textMuted, fontSize: Typography.base },
 
   // Form
@@ -357,7 +409,15 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     gap: Spacing.xl,
   },
-  stepIcon: { fontSize: 48, textAlign: 'center' },
+  stepIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
   stepTitle: {
     fontSize: Typography.xxl,
     fontWeight: Typography.black,
@@ -407,10 +467,15 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   termsLink: { color: Colors.primary },
-  backBtn: { alignItems: 'center', padding: Spacing.md },
+  backBtn: { alignItems: 'center', justifyContent: 'center', minHeight: 44, padding: Spacing.md },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   backText: { color: Colors.textMuted, fontSize: Typography.base },
 
   // PIN
+  pinContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   pinDots: {
     flexDirection: 'row',
     gap: 14,
@@ -439,6 +504,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  pinKeyPressed: {
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primary,
   },
   pinKeyEmpty: {
     backgroundColor: Colors.transparent,

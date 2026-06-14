@@ -10,25 +10,29 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as LocalAuthentication from 'expo-local-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
-import { Badge } from '../components/ui';
+import { Badge, Skeleton } from '../components/ui';
 import { userApi, authApi, MeResponse } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
 import KycModal from './modals/KycModal';
 
 const BIO_KEY = 'cw_biometric_enabled';
 
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
 // Mapping statut KYC → badge.
-const KYC_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  APPROVED: { label: '✓ Vérifié', color: Colors.primary, bg: Colors.primaryLight },
-  PENDING: { label: '⏳ En attente', color: Colors.yellow, bg: Colors.yellow + '20' },
-  SUBMITTED: { label: '⏳ En revue', color: Colors.yellow, bg: Colors.yellow + '20' },
-  REJECTED: { label: '✕ Rejeté', color: Colors.red, bg: Colors.errorBg },
+const KYC_BADGE: Record<string, { label: string; icon: IoniconName; color: string; bg: string }> = {
+  APPROVED: { label: 'Vérifié', icon: 'checkmark-circle', color: Colors.primary, bg: Colors.primaryLight },
+  PENDING: { label: 'En attente', icon: 'time-outline', color: Colors.yellow, bg: Colors.yellow + '20' },
+  SUBMITTED: { label: 'En revue', icon: 'time-outline', color: Colors.yellow, bg: Colors.yellow + '20' },
+  REJECTED: { label: 'Rejeté', icon: 'close-circle', color: Colors.red, bg: Colors.errorBg },
 };
 
 const initials = (name?: string | null, phone?: string) =>
@@ -179,43 +183,79 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile card */}
       <LinearGradient colors={['#0d2a1f', '#0a1628']} style={styles.profileCard}>
-        <TouchableOpacity onPress={pickAvatar} activeOpacity={0.8} style={styles.profileAvatar}>
+        <TouchableOpacity
+          onPress={pickAvatar}
+          activeOpacity={0.8}
+          style={styles.profileAvatar}
+          accessibilityRole="button"
+          accessibilityLabel="Changer la photo de profil"
+        >
           {me?.avatarUrl ? (
             <Image source={{ uri: me.avatarUrl }} style={styles.avatarImg} />
           ) : (
             <Text style={styles.profileAvatarText}>{initials(name, phone)}</Text>
           )}
           <View style={styles.avatarEditBadge}>
-            {uploading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.avatarEditIcon}>📷</Text>}
+            {uploading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="camera" size={12} color={Colors.text} />
+            )}
           </View>
         </TouchableOpacity>
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>{name}</Text>
           <Text style={styles.profilePhone}>+237 {phone}</Text>
           {me?.email ? <Text style={styles.profilePhone}>{me.email}</Text> : null}
-          {me?.city ? <Text style={styles.profilePhone}>📍 {me.city}</Text> : null}
+          {me?.city ? (
+            <View style={styles.profileLocation}>
+              <Ionicons name="location-outline" size={13} color={Colors.textMuted} />
+              <Text style={styles.profilePhone}>{me.city}</Text>
+            </View>
+          ) : null}
           <View style={styles.profileBadges}>
-            <Badge label={kyc.label} color={kyc.color} bg={kyc.bg} />
-            <Badge label="🇨🇲 XAF" color={Colors.blue} bg={Colors.infoBg} />
+            <Badge label={kyc.label} icon={kyc.icon} color={kyc.color} bg={kyc.bg} />
+            <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
           </View>
         </View>
       </LinearGradient>
 
       {error && <Text style={styles.errorText}>{error}</Text>}
       {loading && !me ? (
-        <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.xl }} />
+        <View style={styles.skeletonWrap}>
+          {/* Bouton Modifier */}
+          <Skeleton height={48} radius={BorderRadius.lg} style={{ marginBottom: Spacing.lg }} />
+          {/* Ligne de stats */}
+          <Skeleton height={88} radius={BorderRadius.lg} style={{ marginBottom: Spacing.xl }} />
+          {/* Items du menu */}
+          <Skeleton width="40%" height={12} style={{ marginBottom: Spacing.sm }} />
+          <Skeleton height={64} radius={BorderRadius.lg} style={{ marginBottom: Spacing.sm }} />
+          <Skeleton height={64} radius={BorderRadius.lg} />
+        </View>
       ) : (
         <>
-          <TouchableOpacity style={styles.editBtn} onPress={openEdit} activeOpacity={0.8}>
-            <Text style={styles.editBtnText}>✏️  Modifier le profil</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}
+            onPress={openEdit}
+            accessibilityRole="button"
+            accessibilityLabel="Modifier le profil"
+          >
+            <Ionicons name="create-outline" size={18} color={Colors.text} />
+            <Text style={styles.editBtnText}>Modifier le profil</Text>
+          </Pressable>
 
           {me && me.kycStatus !== 'APPROVED' && (
-            <TouchableOpacity style={styles.kycBtn} onPress={() => setKycOpen(true)} activeOpacity={0.85}>
+            <Pressable
+              style={({ pressed }) => [styles.kycBtn, pressed && styles.pressed]}
+              onPress={() => setKycOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Vérifier mon identité"
+            >
+              <Ionicons name="card-outline" size={18} color={Colors.yellow} />
               <Text style={styles.kycBtnText}>
-                {me.kycStatus === 'REJECTED' ? '🪪  Re-soumettre mon KYC' : me.kycStatus === 'SUBMITTED' ? '🪪  KYC en revue — re-soumettre' : '🪪  Vérifier mon identité (KYC)'}
+                {me.kycStatus === 'REJECTED' ? 'Re-soumettre mon KYC' : me.kycStatus === 'SUBMITTED' ? 'KYC en revue — re-soumettre' : 'Vérifier mon identité (KYC)'}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
 
           {/* Edit form (inline) */}
@@ -272,16 +312,25 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
           {/* Sécurité */}
           <View style={styles.menuGroup}>
             <Text style={styles.groupLabel}>Sécurité</Text>
-            <TouchableOpacity style={styles.menuItem} onPress={changePin} activeOpacity={0.7}>
-              <View style={styles.menuItemIcon}><Text style={{ fontSize: 20 }}>🔒</Text></View>
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
+              onPress={changePin}
+              accessibilityRole="button"
+              accessibilityLabel="Changer le PIN"
+            >
+              <View style={styles.menuItemIcon}>
+                <Ionicons name="lock-closed-outline" size={20} color={Colors.text} />
+              </View>
               <View style={styles.menuItemInfo}>
                 <Text style={styles.menuItemLabel}>Changer le PIN</Text>
                 <Text style={styles.menuItemDesc}>Code OTP requis</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
-            </TouchableOpacity>
+              <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
+            </Pressable>
             <View style={styles.menuItem}>
-              <View style={styles.menuItemIcon}><Text style={{ fontSize: 20 }}>🧬</Text></View>
+              <View style={styles.menuItemIcon}>
+                <Ionicons name="finger-print-outline" size={20} color={Colors.text} />
+              </View>
               <View style={styles.menuItemInfo}>
                 <Text style={styles.menuItemLabel}>Connexion biométrique</Text>
                 <Text style={styles.menuItemDesc}>Face ID / empreinte</Text>
@@ -291,6 +340,7 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
                 onValueChange={toggleBiometric}
                 trackColor={{ false: Colors.border, true: Colors.primary }}
                 thumbColor="#fff"
+                accessibilityLabel="Activer la connexion biométrique"
               />
             </View>
           </View>
@@ -298,11 +348,17 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
       )}
 
       {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
-        <Text style={styles.logoutText}>🚪 Se déconnecter</Text>
-      </TouchableOpacity>
+      <Pressable
+        style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
+        onPress={handleLogout}
+        accessibilityRole="button"
+        accessibilityLabel="Se déconnecter"
+      >
+        <Ionicons name="log-out-outline" size={18} color={Colors.red} />
+        <Text style={styles.logoutText}>Se déconnecter</Text>
+      </Pressable>
 
-      <Text style={styles.version}>CamWallet v1.2.0 · Marché Cameroun 🇨🇲</Text>
+      <Text style={styles.version}>CamWallet v1.2.0 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
@@ -328,20 +384,25 @@ const styles = StyleSheet.create({
     width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center',
   },
-  avatarEditIcon: { fontSize: 12 },
   profileAvatarText: { color: Colors.primary, fontWeight: Typography.black, fontSize: Typography.xl },
   profileInfo: { flex: 1, gap: 2 },
   profileName: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.black },
   profilePhone: { color: Colors.textMuted, fontSize: Typography.sm },
+  profileLocation: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   profileBadges: { flexDirection: 'row', gap: Spacing.sm, marginTop: 6, flexWrap: 'wrap' },
+  pressed: { opacity: 0.7 },
+  skeletonWrap: { paddingHorizontal: Spacing.lg, marginTop: Spacing.md },
   errorText: { color: Colors.red, textAlign: 'center', marginHorizontal: Spacing.lg, marginBottom: Spacing.sm },
   editBtn: {
+    flexDirection: 'row', gap: Spacing.sm,
     marginHorizontal: Spacing.lg, marginBottom: Spacing.lg,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
+    borderRadius: BorderRadius.lg, padding: Spacing.md,
+    alignItems: 'center', justifyContent: 'center',
   },
   editBtnText: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
   kycBtn: {
+    flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
     marginHorizontal: Spacing.lg, marginBottom: Spacing.lg, marginTop: -Spacing.sm,
     backgroundColor: Colors.yellow + '18', borderWidth: 1, borderColor: Colors.yellow + '50',
     borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
@@ -388,8 +449,8 @@ const styles = StyleSheet.create({
   menuItemInfo: { flex: 1 },
   menuItemLabel: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
   menuItemDesc: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
-  chevron: { color: Colors.textMuted, fontSize: 20 },
   logoutBtn: {
+    flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
     margin: Spacing.lg, marginTop: 0,
     backgroundColor: Colors.errorBg, borderWidth: 1, borderColor: Colors.red + '40',
     borderRadius: BorderRadius.lg, padding: Spacing.lg, alignItems: 'center',

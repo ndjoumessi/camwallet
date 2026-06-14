@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   TouchableOpacity,
   Share,
   ScrollView,
+  Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
-import { Button } from '../../components/ui';
+import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
+import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 
 interface ReceiveModalProps {
@@ -22,6 +25,25 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const { user } = useStore();
   const [activeTab, setActiveTab] = useState<'static' | 'dynamic'>('static');
   const [dynamicAmount, setDynamicAmount] = useState('');
+
+  // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(enter, {
+        toValue: 1,
+        damping: Animation.spring.damping,
+        stiffness: Animation.spring.stiffness,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      enter.setValue(0);
+    }
+  }, [visible, enter]);
+  const animStyle = {
+    opacity: enter,
+    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+  };
 
   const qrValue = `camwallet://pay?to=${user.phone.replace(/\s/g, '')}&name=${encodeURIComponent(user.name)}${dynamicAmount ? `&amount=${dynamicAmount}` : ''}`;
 
@@ -36,29 +58,39 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.sheet}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Recevoir de l'argent</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.sheet} edges={['top']}>
+        <Animated.View style={[styles.flex, animStyle]}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Recevoir de l'argent</Text>
+            <IconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" />
+          </View>
 
-        <ScrollView contentContainerStyle={styles.body}>
+          <ScrollView contentContainerStyle={styles.body}>
           {/* Tabs */}
           <View style={styles.tabBar}>
-            {(['static', 'dynamic'] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tab, activeTab === tab && styles.tabActive]}
-                onPress={() => setActiveTab(tab)}
-              >
-                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                  {tab === 'static' ? '🔒 QR Statique' : '⚡ QR Dynamique'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {(['static', 'dynamic'] as const).map((tab) => {
+              const active = activeTab === tab;
+              const label = tab === 'static' ? 'QR Statique' : 'QR Dynamique';
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.tab, active && styles.tabActive]}
+                  onPress={() => setActiveTab(tab)}
+                  activeOpacity={0.7}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={label}
+                >
+                  <Ionicons
+                    name={tab === 'static' ? 'lock-closed-outline' : 'flash'}
+                    size={14}
+                    color={active ? Colors.white : Colors.textMuted}
+                  />
+                  <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {/* QR Code */}
@@ -117,32 +149,29 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
           )}
 
           {/* Actions */}
-          <Button label="📤 Partager mon QR Code" onPress={handleShare} variant="secondary" style={{ marginBottom: Spacing.md }} />
-          <Button label="Fermer" onPress={onClose} variant="ghost" />
-        </ScrollView>
-      </View>
+          <Button label="Partager mon QR Code" icon="share-outline" onPress={handleShare} variant="secondary" fullWidth style={{ marginBottom: Spacing.md }} />
+          <Button label="Fermer" onPress={onClose} variant="ghost" fullWidth />
+          </ScrollView>
+        </Animated.View>
+      </SafeAreaView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: Colors.surface },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  closeBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center',
-  },
-  closeBtnText: { color: Colors.textSoft, fontSize: Typography.base },
   body: { padding: Spacing.xl, alignItems: 'center', gap: Spacing.xl },
   tabBar: {
     flexDirection: 'row', backgroundColor: Colors.card, borderRadius: BorderRadius.md,
     padding: 4, width: '100%',
   },
-  tab: { flex: 1, paddingVertical: 8, borderRadius: BorderRadius.sm, alignItems: 'center' },
+  tab: { flex: 1, flexDirection: 'row', gap: 6, paddingVertical: 10, borderRadius: BorderRadius.sm, alignItems: 'center', justifyContent: 'center' },
   tabActive: { backgroundColor: Colors.primary },
   tabText: { color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.medium },
   tabTextActive: { color: Colors.white, fontWeight: Typography.bold },
