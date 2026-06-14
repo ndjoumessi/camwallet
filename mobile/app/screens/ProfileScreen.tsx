@@ -555,7 +555,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>Supprimer mon compte</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v1.5.1 · Marché Cameroun</Text>
+      <Text style={styles.version}>CamWallet v1.6.0 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
