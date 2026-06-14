@@ -803,6 +803,21 @@ function KYCPage() {
                 </button>
               </div>
             </div>
+
+            {/* Prévisualisation des photos KYC */}
+            {k.kycDocument ? (
+              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                {([['idFrontUrl', 'CNI recto'], ['idBackUrl', 'CNI verso'], ['selfieUrl', 'Selfie']] as const).map(([key, cap]) => (
+                  <a key={key} href={k.kycDocument![key]} target="_blank" rel="noreferrer" style={{ flex: 1 }}>
+                    <img src={k.kycDocument![key]} alt={cap}
+                      style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+                    <div style={{ fontSize: 10, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: C.textMuted, fontSize: 12, marginTop: 10 }}>Aucun document soumis</div>
+            )}
           </div>
         ))}
         {!loading && !error && queue.length === 0 && (

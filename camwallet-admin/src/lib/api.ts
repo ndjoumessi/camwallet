@@ -119,7 +119,13 @@ export interface AdminKycEntry {
   fullName: string | null
   kycStatus: string
   createdAt: string
-  kycDocument: { status: string; submittedAt: string } | null
+  kycDocument: {
+    status: string
+    submittedAt: string
+    idFrontUrl: string
+    idBackUrl: string
+    selfieUrl: string
+  } | null
 }
 
 export interface AdminKyc {
