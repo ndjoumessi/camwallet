@@ -412,4 +412,100 @@ export class AdminService {
 
     return { period, days, series };
   }
+
+  // ─── Détail utilisateur (vue admin) ───────────────────────────────────────
+  async getUserDetail(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        phone: true,
+        fullName: true,
+        email: true,
+        avatarUrl: true,
+        dateOfBirth: true,
+        city: true,
+        role: true,
+        status: true,
+        kycStatus: true,
+        lastLoginAt: true,
+        createdAt: true,
+        wallet: { select: { balance: true, currency: true, isActive: true } },
+        kycDocument: {
+          select: {
+            idFrontUrl: true,
+            idBackUrl: true,
+            selfieUrl: true,
+            status: true,
+            reviewNote: true,
+            reviewedAt: true,
+            submittedAt: true,
+          },
+        },
+      },
+    });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    const [transactions, audit, sent, received] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { OR: [{ senderId: id }, { receiverId: id }] },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          sender: { select: { phone: true, fullName: true } },
+          receiver: { select: { phone: true, fullName: true } },
+        },
+      }),
+      this.prisma.auditLog.findMany({
+        where: { resource: `User:${id}` },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          action: true,
+          metadata: true,
+          createdAt: true,
+          user: { select: { fullName: true, email: true } },
+        },
+      }),
+      this.prisma.transaction.aggregate({
+        _count: { _all: true },
+        _sum: { amount: true },
+        where: { senderId: id, status: TransactionStatus.COMPLETED },
+      }),
+      this.prisma.transaction.aggregate({
+        _count: { _all: true },
+        _sum: { amount: true },
+        where: { receiverId: id, status: TransactionStatus.COMPLETED },
+      }),
+    ]);
+
+    return {
+      user,
+      transactions,
+      audit,
+      stats: {
+        transactionsCount: sent._count._all + received._count._all,
+        totalSent: sent._sum.amount ?? 0n,
+        totalReceived: received._sum.amount ?? 0n,
+      },
+    };
+  }
+
+  // Force la réinitialisation du PIN : le hash est vidé (l'utilisateur doit
+  // repasser par le flux « PIN oublié » / OTP) et les verrous sont levés.
+  async resetUserPin(adminId: string, userId: string) {
+    const exists = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Utilisateur introuvable');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { pinHash: '', pinAttempts: 0, lockedUntil: null },
+    });
+    await this.writeAudit(adminId, 'USER_PIN_RESET', `User:${userId}`);
+    return { ok: true };
+  }
 }
