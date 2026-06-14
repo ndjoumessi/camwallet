@@ -19,6 +19,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Badge } from '../components/ui';
 import { userApi, authApi, MeResponse } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
+import KycModal from './modals/KycModal';
 
 const BIO_KEY = 'cw_biometric_enabled';
 
@@ -53,6 +54,7 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [biometric, setBiometric] = useState(false);
+  const [kycOpen, setKycOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -208,6 +210,14 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
             <Text style={styles.editBtnText}>✏️  Modifier le profil</Text>
           </TouchableOpacity>
 
+          {me && me.kycStatus !== 'APPROVED' && (
+            <TouchableOpacity style={styles.kycBtn} onPress={() => setKycOpen(true)} activeOpacity={0.85}>
+              <Text style={styles.kycBtnText}>
+                {me.kycStatus === 'REJECTED' ? '🪪  Re-soumettre mon KYC' : me.kycStatus === 'SUBMITTED' ? '🪪  KYC en revue — re-soumettre' : '🪪  Vérifier mon identité (KYC)'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {/* Edit form (inline) */}
           {editing && (
             <View style={styles.editCard}>
@@ -292,8 +302,10 @@ export default function ProfileScreen({ onLogout }: ProfileScreenProps) {
         <Text style={styles.logoutText}>🚪 Se déconnecter</Text>
       </TouchableOpacity>
 
-      <Text style={styles.version}>CamWallet v1.1.0 · Marché Cameroun 🇨🇲</Text>
+      <Text style={styles.version}>CamWallet v1.2.0 · Marché Cameroun 🇨🇲</Text>
       <View style={{ height: 80 }} />
+
+      <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
     </ScrollView>
   );
 }
@@ -329,6 +341,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
   },
   editBtnText: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
+  kycBtn: {
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.lg, marginTop: -Spacing.sm,
+    backgroundColor: Colors.yellow + '18', borderWidth: 1, borderColor: Colors.yellow + '50',
+    borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
+  },
+  kycBtnText: { color: Colors.yellow, fontSize: Typography.base, fontWeight: Typography.bold },
   editCard: {
     marginHorizontal: Spacing.lg, marginBottom: Spacing.xl,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,

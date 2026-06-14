@@ -269,6 +269,28 @@ export const userApi = {
     api.post('/users/push-token', { pushToken }).then((r) => r.data),
 };
 
+export interface KycStatusResponse {
+  kycStatus: string;
+  document: { status: string; reviewNote: string | null; submittedAt: string; reviewedAt: string | null } | null;
+}
+
+export const kycApi = {
+  getStatus: () => api.get<KycStatusResponse>('/kyc/status').then((r) => r.data),
+
+  // Soumet les 3 photos (URIs expo-camera) en multipart.
+  submit: (uris: { idFront: string; idBack: string; selfie: string }) => {
+    const form = new FormData();
+    (['idFront', 'idBack', 'selfie'] as const).forEach((key) => {
+      form.append(key, { uri: uris[key], name: `${key}.jpg`, type: 'image/jpeg' } as any);
+    });
+    return api
+      .post<{ status: string }>('/kyc/submit', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data);
+  },
+};
+
 export const walletApi = {
   getBalance: () => api.get<BalanceResponse>('/wallets/balance').then((r) => r.data),
 
