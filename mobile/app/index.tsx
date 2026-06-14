@@ -19,6 +19,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import MerchantScreen from './screens/MerchantScreen';
 import { useStore } from './store/useStore';
 import { registerForPushNotifications } from '../src/lib/notifications';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
@@ -29,10 +30,11 @@ const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: key
   { id: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profil' },
 ];
 
-export default function App() {
+function AppContent() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [showMerchant, setShowMerchant] = useState(false);
+  const { colors: TC } = useTheme();
 
   const restoreSession = useStore((s) => s.restoreSession);
   const logout = useStore((s) => s.logout);
@@ -80,8 +82,8 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: TC.bg }]} edges={['top', 'bottom']}>
+      <StatusBar barStyle={TC.bg === '#F8FAFC' ? 'dark-content' : 'light-content'} backgroundColor={TC.bg} />
 
       {/* Top bar */}
       <View style={styles.topBar}>
@@ -155,6 +157,14 @@ export default function App() {
         })}
       </View>
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 
