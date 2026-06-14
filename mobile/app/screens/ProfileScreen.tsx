@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   Pressable,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -80,6 +81,9 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [biometric, setBiometric] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const { mode: themeMode, toggleTheme } = useTheme();
+  const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'pin'>('idle');
+  const [deletePin, setDeletePin] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -193,6 +197,40 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     ]);
   };
 
+  const handleDeleteAccount = async () => {
+    // Étape 1 : première confirmation
+    if (deleteStep === 'idle') {
+      setDeleteStep('confirm');
+      return;
+    }
+    // Étape 2 : vérification PIN (deleteStep === 'pin')
+    if (deletePin.length !== 6) {
+      Alert.alert('PIN invalide', 'Saisissez votre PIN à 6 chiffres.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      // Vérification du PIN via login — si le login échoue, le PIN est incorrect.
+      const phone = me?.phone;
+      if (!phone) throw new Error('Téléphone introuvable');
+      await authApi.login(phone, deletePin);
+      // PIN correct : supprimer le compte
+      await userApi.deleteAccount();
+      onLogout();
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur de suppression';
+      if (msg.toLowerCase().includes('pin') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('invalide')) {
+        Alert.alert('PIN incorrect', 'Le code saisi ne correspond pas à votre PIN.');
+      } else {
+        Alert.alert('Erreur', msg);
+      }
+    } finally {
+      setDeleting(false);
+      setDeletePin('');
+      setDeleteStep('idle');
+    }
+  };
+
   const name = me?.fullName ?? storeUser?.name ?? 'Utilisateur';
   const phone = me?.phone ?? '';
   const kyc = KYC_BADGE[me?.kycStatus ?? 'PENDING'] ?? KYC_BADGE.PENDING;
@@ -201,6 +239,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     : '—';
 
   return (
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile card */}
       <LinearGradient colors={['#0d2a1f', '#0a1628']} style={styles.profileCard}>
@@ -427,11 +466,75 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.logoutText}>Se déconnecter</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v1.4.0 · Marché Cameroun</Text>
+      {/* Suppression de compte */}
+      <Pressable
+        style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
+        onPress={() => setDeleteStep('confirm')}
+        accessibilityRole="button"
+        accessibilityLabel="Supprimer le compte"
+      >
+        <Ionicons name="trash-outline" size={16} color={Colors.red} />
+        <Text style={styles.deleteText}>Supprimer mon compte</Text>
+      </Pressable>
+
+      <Text style={styles.version}>CamWallet v1.5.0 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
     </ScrollView>
+
+    {/* Modal 1 : première confirmation */}
+    <Modal visible={deleteStep === 'confirm'} transparent animationType="fade" onRequestClose={() => setDeleteStep('idle')}>
+      <View style={styles.deleteOverlay}>
+        <View style={styles.deleteModalCard}>
+          <Ionicons name="warning-outline" size={36} color={Colors.red} />
+          <Text style={styles.deleteModalTitle}>Supprimer le compte ?</Text>
+          <Text style={styles.deleteModalDesc}>
+            Cette action est irréversible. Toutes vos données seront désactivées. Votre solde restant sera perdu.
+          </Text>
+          <TouchableOpacity style={styles.deleteProceedBtn} onPress={() => setDeleteStep('pin')}>
+            <Text style={styles.deleteProceedText}>Oui, continuer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setDeleteStep('idle')}>
+            <Text style={styles.deleteCancelText}>Annuler</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+
+    {/* Modal 2 : confirmation PIN */}
+    <Modal visible={deleteStep === 'pin'} transparent animationType="slide" onRequestClose={() => { setDeleteStep('idle'); setDeletePin(''); }}>
+      <View style={styles.deleteOverlay}>
+        <View style={styles.deleteModalCard}>
+          <Ionicons name="lock-closed-outline" size={32} color={Colors.red} />
+          <Text style={styles.deleteModalTitle}>Confirmez avec votre PIN</Text>
+          <Text style={styles.deleteModalDesc}>Saisissez votre PIN à 6 chiffres pour confirmer la suppression définitive.</Text>
+          <TextInput
+            style={styles.pinInput}
+            value={deletePin}
+            onChangeText={(v) => setDeletePin(v.replace(/\D/g, '').slice(0, 6))}
+            placeholder="• • • • • •"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="numeric"
+            secureTextEntry
+            maxLength={6}
+            autoFocus
+            accessibilityLabel="PIN de confirmation suppression"
+          />
+          <TouchableOpacity
+            style={[styles.deleteProceedBtn, deleting && { opacity: 0.6 }]}
+            onPress={handleDeleteAccount}
+            disabled={deleting}
+          >
+            <Text style={styles.deleteProceedText}>{deleting ? 'Suppression…' : 'Supprimer définitivement'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { setDeleteStep('idle'); setDeletePin(''); }}>
+            <Text style={styles.deleteCancelText}>Annuler</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+    </View>
   );
 }
 
@@ -528,5 +631,35 @@ const styles = StyleSheet.create({
   version: {
     color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center',
     marginBottom: Spacing.md,
+  },
+  deleteBtn: {
+    flexDirection: 'row', gap: Spacing.sm, justifyContent: 'center',
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.lg, marginTop: -Spacing.sm,
+    borderWidth: 1, borderColor: Colors.red + '30',
+    borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
+  },
+  deleteText: { color: Colors.red, fontSize: Typography.sm, fontWeight: Typography.semibold },
+  deleteOverlay: {
+    flex: 1, backgroundColor: Colors.overlay,
+    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+  },
+  deleteModalCard: {
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.red + '40',
+    borderRadius: BorderRadius.xl, padding: Spacing.xl,
+    width: '100%', alignItems: 'center', gap: Spacing.md,
+  },
+  deleteModalTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.black, textAlign: 'center' },
+  deleteModalDesc: { color: Colors.textSoft, fontSize: Typography.sm, textAlign: 'center', lineHeight: 20 },
+  deleteProceedBtn: {
+    backgroundColor: Colors.red, borderRadius: BorderRadius.sm,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.xl,
+    width: '100%', alignItems: 'center',
+  },
+  deleteProceedText: { color: '#fff', fontWeight: Typography.bold, fontSize: Typography.base },
+  deleteCancelText: { color: Colors.textMuted, fontSize: Typography.base, padding: Spacing.sm },
+  pinInput: {
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text,
+    fontSize: Typography.xl, textAlign: 'center', letterSpacing: 8, width: '100%',
   },
 });
