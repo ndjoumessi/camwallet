@@ -1,0 +1,74 @@
+# Changelog
+
+Toutes les évolutions notables de CamWallet sont documentées dans ce fichier.
+
+Le format s'appuie sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
+et le projet suit le [versionnement sémantique](https://semver.org/lang/fr/).
+
+## [1.0.0] — 2026-06-14
+
+Première version stable de **CamWallet** — portefeuille prépayé QR pour le
+Cameroun, adossé à Orange Money et MTN Mobile Money. Le solde est un crédit
+interne (« Crédit QR »), sans licence bancaire BEAC/COBAC.
+
+Le monorepo réunit trois sous-projets indépendants : `backend/` (API NestJS +
+Prisma + PostgreSQL), `mobile/` (application Expo / React Native) et
+`camwallet-admin/` (tableau de bord React + Vite).
+
+### Ajouté
+
+#### Backend (API NestJS)
+- API REST sous le préfixe global `api/v1`, documentation Swagger sur `/api/docs`
+  (hors production), `ValidationPipe` global (`whitelist` + `forbidNonWhitelisted`)
+  et throttling (10 req / 60 s).
+- Modules par domaine : `auth`, `users`, `wallets`, `transactions`, `qr`,
+  `webhooks`, `admin` et module global `prisma`.
+- Authentification téléphone + PIN à 6 chiffres : inscription OTP en 3 étapes
+  (`register` → `verify-otp` → `set-pin`), connexion avec verrouillage après
+  3 échecs, JWT access/refresh séparés et `POST /auth/refresh`.
+- Montants stockés en **BigInt centimes de FCFA** ; mutations de solde atomiques
+  via `prisma.$transaction` (P2P, paiement QR, crédit webhook). Commission
+  marchand QR de 0,5 %.
+- Flux asynchrone Orange Money / MTN MoMo : ingestion des webhooks avec
+  persistance de chaque évènement (`WebhookEvent`) avant traitement.
+- `AuditLog` pour la traçabilité réglementaire (ANIF).
+
+#### Mobile (Expo / React Native)
+- Application connectée à l'API réelle (client axios avec Bearer et
+  rafraîchissement automatique des tokens sur 401).
+- Écran de connexion, restauration de session et flux d'application.
+- Montée de version **Expo SDK 52 → 54** (React 19, React Native 0.81).
+
+#### Tableau de bord admin (React + Vite)
+- Connexion administrateur (`POST /auth/login-admin`) et garde d'accès par rôle.
+- Client API en `fetch` natif : stockage des tokens, rafraîchissement
+  automatique sur 401, conversion centimes → FCFA à la frontière.
+- Pages branchées aux données réelles : **Dashboard** (KPIs, répartition par
+  type, transactions récentes, tendances), **Utilisateurs** (recherche et
+  filtre statut côté serveur), **Transactions** (filtre par type), **Alertes**
+  (signalements dérivés des données réelles), **KYC** (file d'attente) et
+  **Finances** (frais, solde plateforme, volume par type).
+- Actions de modération : blocage / réactivation d'un compte et
+  approbation / rejet KYC, chacune tracée dans l'`AuditLog` ; journal d'audit
+  consultable (`GET /admin/audit`).
+- Hook `useFetch` partagé (chargement / erreur / refetch) et rafraîchissement
+  sans démontage des pages (préserve recherche, filtre et défilement).
+- Tendances période sur période (30 j vs 30 j précédents) affichées dans les
+  KPI ; formatage FCFA avec séparateur de milliers.
+
+### Sécurité
+- Connexion admin : comparaison à temps constant des identifiants, refus si la
+  configuration est absente, verrouillage anti-bruteforce (5 essais → 15 min).
+- Sessions admin révocables : les tokens portent une empreinte des identifiants
+  (`adminCredHash`) revalidée au rafraîchissement ; la rotation de
+  `ADMIN_PASSWORD` invalide les tokens déjà émis.
+- CORS restreint à `admin.camwallet.cm` / `app.camwallet.cm` en production.
+
+### Notes
+- Vérification de signature des webhooks Orange Money / MTN MoMo encore stubbée
+  (`TODO`) — les secrets existent en environnement mais ne sont pas validés.
+- Les graphiques temporels mensuels du Dashboard restent des données de
+  démonstration (`· démo`) : seules les tendances période sur période sont
+  calculées côté backend.
+
+[1.0.0]: https://github.com/ndjoumessi/camwallet/releases/tag/v1.0.0
