@@ -303,8 +303,8 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: BorderRadius.full,
-    paddingVertical: 3,
+    borderRadius: 20,
+    paddingVertical: 4,
     paddingHorizontal: 10,
   },
   badgeText: { fontSize: Typography.xs, fontWeight: Typography.bold, letterSpacing: 0.5 },

@@ -15,7 +15,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // Types exposés (conservés pour les écrans)
 // ─────────────────────────────────────────────────────────────────────────────
-export type TransactionType = 'sent' | 'received' | 'recharge' | 'withdrawal' | 'refund';
+export type TransactionType = 'sent' | 'received' | 'recharge' | 'withdrawal' | 'refund' | 'qr_payment';
 
 export interface Transaction {
   id: string;
@@ -78,19 +78,21 @@ function mapTransaction(t: ApiTransaction, meId: string | null): Transaction {
   if (t.type === 'RECHARGE') type = 'recharge';
   else if (t.type === 'WITHDRAWAL') type = 'withdrawal';
   else if (t.type === 'REFUND') type = 'refund';
+  else if (t.type === 'QR_PAYMENT') type = isIncoming ? 'received' : 'qr_payment';
   else type = isIncoming ? 'received' : 'sent';
 
   let name: string;
   if (type === 'recharge') name = 'Recharge Mobile Money';
   else if (type === 'withdrawal') name = 'Retrait Mobile Money';
   else if (type === 'refund') name = 'Remboursement';
+  else if (type === 'qr_payment') name = 'Paiement QR';
   else {
     const party = isIncoming ? t.sender : t.receiver;
     name = party?.fullName || party?.phone || '—';
   }
 
   const fcfa = toFcfa(t.amount);
-  const outgoing = type === 'sent' || type === 'withdrawal';
+  const outgoing = type === 'sent' || type === 'withdrawal' || type === 'qr_payment';
 
   return {
     id: t.id,

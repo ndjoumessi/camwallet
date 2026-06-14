@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
+import { txMeta } from '../constants/txMeta';
 import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
 import SendModal from './modals/SendModal';
@@ -36,12 +37,6 @@ export default function HomeScreen() {
   }, []);
 
   const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
-  const txColor = (type: string) =>
-    type === 'received' || type === 'recharge'
-      ? Colors.primary
-      : type === 'withdrawal'
-      ? Colors.orange
-      : Colors.textSoft;
 
   const ACTION_BTNS: { icon: keyof typeof Ionicons.glyphMap; label: string; color: string; modal: ModalType }[] = [
     { icon: 'arrow-up', label: 'Envoyer', color: Colors.blue, modal: 'send' },
@@ -49,12 +44,6 @@ export default function HomeScreen() {
     { icon: 'flash', label: 'Recharger', color: Colors.yellow, modal: 'recharge' },
     { icon: 'scan-outline', label: 'Scanner', color: Colors.purple, modal: 'scan' },
   ];
-
-  const txIcon = (type: string): keyof typeof Ionicons.glyphMap =>
-    type === 'received' ? 'arrow-down'
-      : type === 'recharge' ? 'flash'
-      : type === 'withdrawal' ? 'cash-outline'
-      : 'arrow-up';
 
   return (
     <View style={styles.container}>
@@ -159,25 +148,26 @@ export default function HomeScreen() {
 
         {/* Transactions récentes */}
         <SectionTitle label="Transactions récentes" />
-        {transactions.slice(0, 5).map((tx) => (
-          <View key={tx.id} style={styles.txRow}>
-            <View
-              style={[
-                styles.txIcon,
-                { backgroundColor: txColor(tx.type) + '18' },
-              ]}
-            >
-              <Ionicons name={txIcon(tx.type)} size={18} color={txColor(tx.type)} />
+        {transactions.slice(0, 5).map((tx) => {
+          const meta = txMeta(tx.type);
+          return (
+            <View key={tx.id} style={styles.txRow}>
+              <View style={[styles.txIcon, { backgroundColor: meta.amountColor + '22' }]}>
+                <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={18} color={meta.amountColor} />
+              </View>
+              <View style={styles.txInfo}>
+                <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
+                <Text style={styles.txDate}>{tx.date}</Text>
+              </View>
+              <View style={styles.txRight}>
+                <Text style={[styles.txAmount, { color: meta.amountColor }]}>
+                  {tx.amount > 0 ? '+' : ''}{fmt(tx.amount)}
+                </Text>
+                <Badge label={meta.label} color={meta.badgeText} bg={meta.badgeBg} />
+              </View>
             </View>
-            <View style={styles.txInfo}>
-              <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
-              <Text style={styles.txDate}>{tx.date}</Text>
-            </View>
-            <Text style={[styles.txAmount, { color: txColor(tx.type) }]}>
-              {tx.amount > 0 ? '+' : ''}{fmt(tx.amount)}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -332,5 +322,6 @@ const styles = StyleSheet.create({
     fontWeight: Typography.semibold,
   },
   txDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
-  txAmount: { fontSize: Typography.base, fontWeight: Typography.bold, flexShrink: 0 },
+  txRight: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
+  txAmount: { fontSize: Typography.base, fontWeight: Typography.bold },
 });

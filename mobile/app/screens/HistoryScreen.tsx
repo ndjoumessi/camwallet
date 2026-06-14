@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
-import { IconButton } from '../components/ui';
+import { txMeta } from '../constants/txMeta';
+import { Badge, IconButton } from '../components/ui';
 import { useStore } from '../store/useStore';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -21,21 +22,10 @@ export default function HistoryScreen() {
   const [activeFilter, setActiveFilter] = useState('Tout');
   const [search, setSearch] = useState('');
 
-  const TX_META: Record<string, { label: string; color: string; badgeBg: string; badgeText: string; icon: IoniconName }> = {
-    received:   { label: 'Reçu',            color: Colors.primary,   badgeBg: Colors.successBg,  badgeText: Colors.primary,   icon: 'arrow-down' },
-    recharge:   { label: 'Recharge',        color: Colors.primary,   badgeBg: Colors.successBg,  badgeText: Colors.primary,   icon: 'flash' },
-    refund:     { label: 'Remboursement',   color: Colors.blue,      badgeBg: Colors.infoBg,     badgeText: Colors.blue,      icon: 'arrow-undo-outline' },
-    sent:       { label: 'Envoyé',          color: Colors.textSoft,  badgeBg: Colors.surface,    badgeText: Colors.textSoft,  icon: 'arrow-up' },
-    withdrawal: { label: 'Retrait',         color: Colors.orange,    badgeBg: Colors.orangeBg,   badgeText: Colors.orange,    icon: 'cash-outline' },
-  };
-
-  const txMeta = (type: string) =>
-    TX_META[type] ?? { label: type, color: Colors.textSoft, badgeBg: Colors.surface, badgeText: Colors.textSoft, icon: 'help-circle-outline' as IoniconName };
-
   const filtered = transactions.filter((tx) => {
     const matchFilter =
       activeFilter === 'Tout' ||
-      (activeFilter === 'Envois' && tx.type === 'sent') ||
+      (activeFilter === 'Envois' && (tx.type === 'sent' || tx.type === 'qr_payment')) ||
       (activeFilter === 'Reçus' && (tx.type === 'received' || tx.type === 'refund')) ||
       (activeFilter === 'Recharges' && tx.type === 'recharge') ||
       (activeFilter === 'Retraits' && tx.type === 'withdrawal');
@@ -110,22 +100,22 @@ export default function HistoryScreen() {
               accessibilityRole="button"
               accessibilityLabel={`${txMeta(tx.type).label} ${tx.name}, ${fmt(tx.amount)}`}
             >
-              <View style={[styles.txIcon, { backgroundColor: txMeta(tx.type).color + '18' }]}>
-                <Ionicons name={txMeta(tx.type).icon} size={20} color={txMeta(tx.type).color} />
+              <View style={[styles.txIcon, { backgroundColor: txMeta(tx.type).amountColor + '22' }]}>
+                <Ionicons name={txMeta(tx.type).icon as IoniconName} size={20} color={txMeta(tx.type).amountColor} />
               </View>
               <View style={styles.txInfo}>
                 <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
                 <Text style={styles.txDate}>{tx.date}</Text>
               </View>
               <View style={styles.txRight}>
-                <Text style={[styles.txAmount, { color: txMeta(tx.type).color }]}>
+                <Text style={[styles.txAmount, { color: txMeta(tx.type).amountColor }]}>
                   {tx.amount > 0 ? '+' : ''}{fmt(tx.amount)}
                 </Text>
-                <View style={[styles.txStatus, { backgroundColor: txMeta(tx.type).badgeBg }]}>
-                  <Text style={[styles.txStatusText, { color: txMeta(tx.type).badgeText }]}>
-                    {txMeta(tx.type).label}
-                  </Text>
-                </View>
+                <Badge
+                  label={txMeta(tx.type).label}
+                  color={txMeta(tx.type).badgeText}
+                  bg={txMeta(tx.type).badgeBg}
+                />
               </View>
             </Pressable>
           ))
@@ -170,10 +160,6 @@ const styles = StyleSheet.create({
   txDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
   txRight: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   txAmount: { fontSize: Typography.base, fontWeight: Typography.bold },
-  txStatus: {
-    borderRadius: BorderRadius.full, paddingHorizontal: 8, paddingVertical: 2,
-  },
-  txStatusText: { fontSize: Typography.xs, fontWeight: Typography.medium },
   empty: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
 });
