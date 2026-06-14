@@ -6,6 +6,12 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 
+// Les montants/soldes sont des BigInt (centimes FCFA). JSON.stringify ne sait
+// pas sérialiser un BigInt — on le convertit en nombre pour toutes les réponses.
+(BigInt.prototype as any).toJSON = function () {
+  return Number(this);
+};
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);

@@ -171,7 +171,6 @@ const styles = StyleSheet.create({
   cornerBR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderColor: Colors.primary },
   scanLine: {
     position: 'absolute', left: 0, right: 0, height: 2,
-    background: undefined,
     backgroundColor: Colors.primary,
     opacity: 0.8,
     shadowColor: Colors.primary,

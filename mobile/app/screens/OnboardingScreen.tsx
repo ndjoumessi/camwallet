@@ -21,7 +21,7 @@ const SLIDES = [
   {
     icon: '📱',
     title: 'Paiements instantanés',
-    desc: 'Scannez un QR Code et payez en 3 secondes, n'importe où au Cameroun.',
+    desc: "Scannez un QR Code et payez en 3 secondes, n'importe où au Cameroun.",
     gradient: ['#0d2a1f', Colors.bg],
   },
   {

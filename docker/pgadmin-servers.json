@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "CamWallet Dev",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "camwallet_dev",
+      "Username": "camwallet",
+      "SSLMode": "prefer",
+      "Comment": "PostgreSQL local CamWallet (mot de passe: password)"
+    }
+  }
+}

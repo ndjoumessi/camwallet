@@ -42,6 +42,13 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Renouveler les tokens via le refresh token' })
+  refresh(@Body('refreshToken') refreshToken: string) {
+    return this.authService.refresh(refreshToken);
+  }
+
   @Post('pin-reset/request')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 2 } })
