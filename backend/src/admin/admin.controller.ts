@@ -1,9 +1,20 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Body,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './guards/admin.guard';
 import { AdminService } from './admin.service';
 import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
+import { ReviewKycDto } from './dto/review-kyc.dto';
+import { SetUserStatusDto } from './dto/set-user-status.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -38,5 +49,43 @@ export class AdminController {
     @Query('type') type?: TransactionType,
   ) {
     return this.adminService.getTransactions(+page, +limit, status, type);
+  }
+
+  @Patch('users/:id/status')
+  @ApiOperation({ summary: 'Modifier le statut d’un utilisateur (bloquer / réactiver)' })
+  setUserStatus(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() dto: SetUserStatusDto,
+  ) {
+    return this.adminService.setUserStatus(req.user.id, id, dto.status);
+  }
+
+  @Get('kyc')
+  @ApiOperation({ summary: 'File d’attente KYC' })
+  kyc() {
+    return this.adminService.getKyc();
+  }
+
+  @Patch('kyc/:userId')
+  @ApiOperation({ summary: 'Approuver / rejeter une demande KYC' })
+  reviewKyc(
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Body() dto: ReviewKycDto,
+  ) {
+    return this.adminService.reviewKyc(req.user.id, userId, dto);
+  }
+
+  @Get('alerts')
+  @ApiOperation({ summary: 'Alertes et transactions signalées (données réelles)' })
+  alerts() {
+    return this.adminService.getAlerts();
+  }
+
+  @Get('audit')
+  @ApiOperation({ summary: 'Journal d’audit des actions admin' })
+  audit() {
+    return this.adminService.getAudit();
   }
 }

@@ -8,6 +8,7 @@ import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError,
   getStats, getUsers, getTransactions,
+  getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -43,34 +44,13 @@ const REVENUE_DATA = [
   { date: 'Juil', commissions: 415000, retraits: 207500, abonnements: 140000 },
 ]
 
-const TRANSACTIONS = [
-  { id: 'TX001', type: 'P2P', from: 'Marie Ngono', to: 'Jean-Paul Mbarga', amount: 15000, status: 'success', date: '14/06/2026 14:32', risk: 'low' },
-  { id: 'TX002', type: 'QR', from: 'Rodrigue Mbé', to: 'Supermarché Mahima', amount: 8500, status: 'success', date: '14/06/2026 11:05', risk: 'low' },
-  { id: 'TX003', type: 'RECHARGE', from: 'MTN MoMo', to: 'Awa Fanta', amount: 50000, status: 'pending', date: '14/06/2026 09:20', risk: 'med' },
-  { id: 'TX004', type: 'RETRAIT', from: 'Sylvain Kotto', to: 'Orange Money', amount: 20000, status: 'success', date: '13/06/2026 16:45', risk: 'low' },
-  { id: 'TX005', type: 'P2P', from: 'Unknown User', to: 'Paul Biya Jr', amount: 95000, status: 'flagged', date: '13/06/2026 15:10', risk: 'high' },
-  { id: 'TX006', type: 'QR', from: 'Alice Bello', to: 'Restaurant Ngon', amount: 12500, status: 'success', date: '13/06/2026 13:22', risk: 'low' },
-  { id: 'TX007', type: 'RECHARGE', from: 'Orange Money', to: 'Claude Fonkou', amount: 100000, status: 'failed', date: '13/06/2026 10:00', risk: 'med' },
-  { id: 'TX008', type: 'P2P', from: 'Thierry Ndi', to: 'Christine Samba', amount: 5000, status: 'success', date: '12/06/2026 18:30', risk: 'low' },
-]
-
-const KYC_QUEUE = [
-  { id: 'K001', name: 'Rodrigue Mbé', phone: '681234567', submitted: '14/06/2026', type: 'CNI + Selfie', status: 'pending' },
-  { id: 'K002', name: 'Christine Samba', phone: '674445566', submitted: '13/06/2026', type: 'Passeport + Selfie', status: 'pending' },
-  { id: 'K003', name: 'Thierry Ndi', phone: '699876543', submitted: '12/06/2026', type: 'CNI + Selfie', status: 'review' },
-  { id: 'K004', name: 'Claude Fonkou', phone: '655123456', submitted: '11/06/2026', type: 'CNI + Selfie', status: 'pending' },
-]
-
-const ALERTS = [
-  { id: 'A001', type: 'error', title: 'Activité suspecte détectée', desc: 'TX005 — 95 000 FCFA vers compte inconnu', time: 'Il y a 2 min' },
-  { id: 'A002', type: 'warn', title: 'KYC expiré', desc: '3 utilisateurs avec documents expirés', time: 'Il y a 15 min' },
-  { id: 'A003', type: 'warn', title: 'Solde opérateur bas', desc: 'Réserve MTN MoMo < 500 000 FCFA', time: 'Il y a 1h' },
-  { id: 'A004', type: 'info', title: 'Webhook OM retardé', desc: 'Délai moyen webhook Orange Money: 4.2s', time: 'Il y a 3h' },
-]
-
 // ── Formatters ────────────────────────────────────────────
 const fmt = (n: number) => n.toLocaleString('fr-FR') + ' FCFA'
 const fmtM = (n: number) => (n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : (n / 1000).toFixed(0) + 'k') + ' FCFA'
+
+// Convertit une variation backend (%) en props delta/deltaUp du KPICard (#8).
+const trendProps = (t: number | null | undefined) =>
+  t == null ? {} : { delta: `${Math.abs(t)} %`, deltaUp: t >= 0 }
 
 // ── Mapping enums backend → clés des badges UI ────────────
 const USER_STATUS_BADGE: Record<string, string> = {
@@ -130,6 +110,7 @@ const RefreshContext = createContext(0)
 // n'efface pas les données de l'autre.
 function useFetch<T>(fn: () => Promise<T>, deps: unknown[]) {
   const refreshNonce = useContext(RefreshContext)
+  const [localNonce, setLocalNonce] = useState(0)
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -145,11 +126,11 @@ function useFetch<T>(fn: () => Promise<T>, deps: unknown[]) {
       })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-    // fn est volontairement hors deps (recréée à chaque rendu) ; le nonce force le refetch.
+    // fn est volontairement hors deps (recréée à chaque rendu) ; les nonces forcent le refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, refreshNonce])
+  }, [...deps, refreshNonce, localNonce])
 
-  return { data, loading, error }
+  return { data, loading, error, refetch: () => setLocalNonce((n) => n + 1) }
 }
 
 // Valeur debouncée (utilisée pour la recherche serveur).
@@ -185,21 +166,6 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function RiskBadge({ risk }: { risk: string }) {
-  const map: Record<string, { bg: string, text: string }> = {
-    low: { bg: '#00C89618', text: C.green },
-    med: { bg: C.yellowLight, text: '#B89000' },
-    high: { bg: C.redLight, text: C.red },
-  }
-  const s = map[risk] ?? { bg: '#333', text: '#888' }
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: s.bg, color: s.text }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: s.text, display: 'inline-block' }} />
-      {risk === 'low' ? 'Faible' : risk === 'med' ? 'Moyen' : 'Élevé'}
-    </span>
-  )
-}
-
 function TxTypeBadge({ type }: { type: string }) {
   const map: Record<string, { bg: string, text: string }> = {
     P2P: { bg: C.blueLight, text: C.blue },
@@ -225,10 +191,10 @@ function KPICard({ label, value, delta, deltaUp, icon, color = C.green, sub }: {
         <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{label}</span>
         <span style={{ fontSize: 20 }}>{icon}</span>
       </div>
-      <div style={{ fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
+      <div style={{ fontSize: 26, fontWeight: 900, color, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
       {delta && (
         <div style={{ fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
-          {deltaUp ? '↑' : '↓'} {delta} vs mois dernier
+          {deltaUp ? '↑' : '↓'} {delta} vs 30 j préc.
         </div>
       )}
       {sub && <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{sub}</div>}
@@ -279,11 +245,14 @@ function DashboardPage() {
       {stats && (
       <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
         <KPICard label="Volume complété" value={fmt(toFcfa(stats.volume.completedAmount))} icon="💰"
+          {...trendProps(stats.trends.volume)}
           sub={`Frais perçus : ${fmt(toFcfa(stats.volume.collectedFees))}`} />
         <KPICard label="Solde plateforme" value={fmt(toFcfa(stats.totalBalance))} icon="🏦" color={C.purple} />
-        <KPICard label="Utilisateurs" value={stats.users.total.toLocaleString('fr-FR')} icon="👥"
+        <KPICard label="Utilisateurs" value={stats.users.total.toLocaleString('fr-FR')} icon="👥" color={C.green}
+          {...trendProps(stats.trends.users)}
           sub={stats.users.byRole.map((r) => `${r.count} ${r.role.toLowerCase()}`).join(' · ')} />
         <KPICard label="Transactions" value={stats.transactions.total.toLocaleString('fr-FR')} icon="⚡" color={C.blue}
+          {...trendProps(stats.trends.transactions)}
           sub={`${stats.transactions.pending} en attente`} />
       </div>
       )}
@@ -411,21 +380,27 @@ function DashboardPage() {
 }
 
 function AlertsPage() {
+  const { data, loading, error } = useFetch(() => getAlerts(), [])
+  const alerts = data?.alerts ?? []
+  const flagged = data?.flagged ?? []
+
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Alertes & Surveillance</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>4 alertes actives — Dernière mise à jour: il y a 2 min</p>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{alerts.length} alerte(s) active(s) — données en temps réel</p>
       </div>
+
+      {(loading || error) && <StateRow loading={loading} error={error} />}
 
       {/* Alert cards */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-        {ALERTS.map(a => {
+        {alerts.map(a => {
           const cfg = {
-            error: { bg: C.redLight, border: C.red, icon: '🚨', tColor: C.red },
-            warn: { bg: C.yellowLight, border: C.yellow, icon: '⚠️', tColor: '#B89000' },
-            info: { bg: C.blueLight, border: C.blue, icon: 'ℹ️', tColor: C.blue },
-          }[a.type] ?? { bg: '#333', border: '#888', icon: '•', tColor: '#888' }
+            error: { bg: C.redLight, border: C.red, icon: '🚨' },
+            warn: { bg: C.yellowLight, border: C.yellow, icon: '⚠️' },
+            info: { bg: C.blueLight, border: C.blue, icon: 'ℹ️' },
+          }[a.type] ?? { bg: '#333', border: '#888', icon: '•' }
           return (
             <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: cfg.bg, borderLeft: `3px solid ${cfg.border}`, borderRadius: 12, padding: '14px 16px' }}>
               <span style={{ fontSize: 18, flexShrink: 0 }}>{cfg.icon}</span>
@@ -433,46 +408,39 @@ function AlertsPage() {
                 <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{a.title}</div>
                 <div style={{ color: C.textSoft, fontSize: 12 }}>{a.desc}</div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                <span style={{ color: C.textMuted, fontSize: 11 }}>{a.time}</span>
-                <button style={{ fontSize: 11, color: cfg.tColor, background: 'none', border: `1px solid ${cfg.border}`, borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontWeight: 600 }}>
-                  Traiter
-                </button>
-              </div>
             </div>
           )
         })}
       </div>
 
-      {/* Suspicious transactions */}
+      {/* Flagged transactions (échecs + gros montants, 7 derniers jours) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
         <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>⚠️ Transactions signalées</h3>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              {['Réf.', 'Montant', 'De', 'Date', 'Risque', 'Action'].map(h => (
+              {['Réf.', 'Type', 'Montant', 'De', 'À', 'Statut', 'Date'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', padding: '0 12px 10px' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {TRANSACTIONS.filter(t => t.risk !== 'low').map(tx => (
+            {flagged.map(tx => (
               <tr key={tx.id} style={{ borderTop: `1px solid ${C.border}` }}>
-                <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.id}</td>
-                <td style={{ padding: '10px 12px', color: C.yellow, fontWeight: 700 }}>{fmt(tx.amount)}</td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{tx.from}</td>
-                <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{tx.date}</td>
-                <td style={{ padding: '10px 12px' }}><RiskBadge risk={tx.risk} /></td>
-                <td style={{ padding: '10px 12px' }}>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontWeight: 600 }}>Approuver</button>
-                    <button style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
-                  </div>
-                </td>
+                <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
+                <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
+                <td style={{ padding: '10px 12px', color: C.yellow, fontWeight: 700 }}>{fmt(toFcfa(tx.amount))}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
+                <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
+                <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        {!loading && !error && flagged.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 24, color: C.textMuted }}>Aucune transaction signalée</div>
+        )}
       </div>
     </div>
   )
@@ -484,12 +452,24 @@ function UsersPage() {
   const debouncedSearch = useDebounced(search.trim(), 350)
 
   // Recherche + filtre statut côté serveur.
-  const { data, loading, error } = useFetch(
+  const { data, loading, error, refetch } = useFetch(
     () => getUsers({ limit: 50, search: debouncedSearch || undefined, status: USER_STATUS_FILTER[filter] }),
     [debouncedSearch, filter],
   )
   const users = data?.data ?? []
   const total = data?.meta.total ?? 0
+
+  const [acting, setActing] = useState<string | null>(null)
+  // Bloquer / réactiver un compte (action tracée côté backend dans l'AuditLog).
+  const toggleBlock = async (u: { id: string; status: string }) => {
+    setActing(u.id)
+    try {
+      await setUserStatus(u.id, u.status === 'LOCKED' ? 'ACTIVE' : 'LOCKED')
+      refetch()
+    } finally {
+      setActing(null)
+    }
+  }
 
   const FILTERS: { key: string; label: string }[] = [
     { key: 'all', label: 'Tous' },
@@ -538,7 +518,7 @@ function UsersPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
-              {['Utilisateur', 'Téléphone', 'Solde', 'Statut', 'KYC', 'Inscrit'].map(h => (
+              {['Utilisateur', 'Téléphone', 'Solde', 'Statut', 'KYC', 'Inscrit', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
             </tr>
@@ -562,6 +542,21 @@ function UsersPage() {
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} /></td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></td>
                 <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(u.createdAt)}</td>
+                <td style={{ padding: '12px 14px' }}>
+                  {u.role === 'ADMIN' ? (
+                    <span style={{ color: C.textMuted, fontSize: 11 }}>—</span>
+                  ) : u.status === 'LOCKED' ? (
+                    <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                      style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
+                      Débloquer
+                    </button>
+                  ) : (
+                    <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                      style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
+                      Bloquer
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -576,28 +571,39 @@ function UsersPage() {
 }
 
 function KYCPage() {
+  const { data, loading, error, refetch } = useFetch(() => getKyc(), [])
+  const queue = data?.pending ?? []
+  const counts = data?.counts ?? { pending: 0, approved30: 0, rejected30: 0 }
+  const [acting, setActing] = useState<string | null>(null)
+
+  const decide = async (userId: string, decision: 'APPROVED' | 'REJECTED') => {
+    setActing(userId)
+    try {
+      await reviewKyc(userId, decision)
+      refetch()
+    } finally {
+      setActing(null)
+    }
+  }
+
+  const stats = [
+    { label: 'En attente', value: counts.pending, color: C.yellow, icon: '⏳' },
+    { label: 'Approuvés (30j)', value: counts.approved30, color: C.green, icon: '✅' },
+    { label: 'Rejetés (30j)', value: counts.rejected30, color: C.red, icon: '❌' },
+  ]
+
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vérification KYC</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{KYC_QUEUE.length} demandes en attente</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ fontSize: 12, padding: '8px 14px', borderRadius: 8, cursor: 'pointer', background: C.card, border: `1px solid ${C.border}`, color: C.textSoft, fontWeight: 600 }}>
-            Filtrer par date
-          </button>
-        </div>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vérification KYC</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{counts.pending} demande(s) en attente</p>
       </div>
+
+      {(loading || error) && <StateRow loading={loading} error={error} />}
 
       {/* Stats row */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'En attente', value: '4', color: C.yellow, icon: '⏳' },
-          { label: 'Approuvés (30j)', value: '142', color: C.green, icon: '✅' },
-          { label: 'Rejetés (30j)', value: '18', color: C.red, icon: '❌' },
-          { label: 'Taux validation', value: '88.7%', color: C.blue, icon: '📊' },
-        ].map(s => (
+        {stats.map(s => (
           <div key={s.label} style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
@@ -610,34 +616,36 @@ function KYCPage() {
 
       {/* Queue */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {KYC_QUEUE.map(k => (
+        {queue.map(k => (
           <div key={k.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                 <div style={{ width: 48, height: 48, borderRadius: 24, background: C.blue + '20', border: `2px solid ${C.blue}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: C.blue }}>
-                  {k.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  {initials(k.fullName)}
                 </div>
                 <div>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{k.name}</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>+237 {k.phone} · Soumis le {k.submitted}</div>
-                  <div style={{ color: C.blue, fontSize: 12, marginTop: 3, fontWeight: 600 }}>📄 {k.type}</div>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{k.fullName ?? 'Sans nom'}</div>
+                  <div style={{ color: C.textMuted, fontSize: 12 }}>{k.phone} · Inscrit le {fmtDate(k.createdAt)}</div>
+                  {k.kycDocument && <div style={{ color: C.blue, fontSize: 12, marginTop: 3, fontWeight: 600 }}>📄 Document soumis le {fmtDate(k.kycDocument.submittedAt)}</div>}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <StatusBadge status={k.status} />
-                <button style={{ fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>
+                <StatusBadge status={KYC_STATUS_BADGE[k.kycStatus] ?? k.kycStatus} />
+                <button onClick={() => decide(k.id, 'APPROVED')} disabled={acting === k.id}
+                  style={{ fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
                   ✓ Approuver
                 </button>
-                <button style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>
+                <button onClick={() => decide(k.id, 'REJECTED')} disabled={acting === k.id}
+                  style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
                   ✕ Rejeter
-                </button>
-                <button style={{ fontSize: 12, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>
-                  👁 Documents
                 </button>
               </div>
             </div>
           </div>
         ))}
+        {!loading && !error && queue.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucune demande KYC en attente</div>
+        )}
       </div>
     </div>
   )
@@ -714,84 +722,77 @@ function TransactionsPage() {
 }
 
 function FinancePage() {
+  const { data: stats, loading, error } = useFetch(() => getStats(), [])
+
+  const byType = (stats?.transactions.byType ?? []).map((t) => ({
+    name: TX_TYPE_LABEL[t.type] ?? t.type,
+    volume: toFcfa(t.volume),
+    count: t.count,
+    color: TX_TYPE_COLOR[t.type] ?? C.textMuted,
+  }))
+
+  const kpis = stats
+    ? [
+        { label: 'Frais perçus', value: fmt(toFcfa(stats.volume.collectedFees)), icon: '💰', color: C.green },
+        { label: 'Volume complété', value: fmt(toFcfa(stats.volume.completedAmount)), icon: '📈', color: C.blue, trend: stats.trends.volume },
+        { label: 'Solde plateforme', value: fmt(toFcfa(stats.totalBalance)), icon: '🏦', color: C.purple },
+        { label: 'Transactions', value: stats.transactions.total.toLocaleString('fr-FR'), icon: '⚡', color: C.yellow, trend: stats.trends.transactions },
+      ]
+    : []
+
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Finances & Revenus</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Juillet 2026 — Vue financière complète</p>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
       </div>
 
-      {/* Revenue KPIs */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-        {[
-          { label: 'Commissions (mois)', value: '415 000 FCFA', delta: '+22%', icon: '💰', color: C.green },
-          { label: 'Frais de retrait', value: '207 500 FCFA', delta: '+18%', icon: '🏧', color: C.blue },
-          { label: 'Abonnements Pro', value: '140 000 FCFA', delta: '+40%', icon: '⭐', color: C.yellow },
-          { label: 'Solde plateforme', value: '28,4M FCFA', delta: '+31%', icon: '🏦', color: C.purple },
-        ].map(s => (
-          <div key={s.label} style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
-              <span>{s.icon}</span>
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 900, color: s.color, marginBottom: 4 }}>{s.value}</div>
-            <div style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>↑ {s.delta} vs mois dernier</div>
-          </div>
-        ))}
-      </div>
+      {(loading || error) && <StateRow loading={loading} error={error} />}
 
-      {/* Revenue chart */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
-        <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Évolution des revenus</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={REVENUE_DATA}>
-            <defs>
-              {[['gradComm', C.green], ['gradRet', C.blue], ['gradAbo', C.yellow]].map(([id, color]) => (
-                <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={color as string} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={color as string} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-            <XAxis dataKey="date" stroke={C.textMuted} fontSize={11} />
-            <YAxis stroke={C.textMuted} fontSize={11} tickFormatter={v => (v / 1000).toFixed(0) + 'k'} />
-            <Tooltip content={<ChartTooltip />} />
-            <Legend />
-            <Area type="monotone" dataKey="commissions" stroke={C.green} fill="url(#gradComm)" name="Commissions" />
-            <Area type="monotone" dataKey="retraits" stroke={C.blue} fill="url(#gradRet)" name="Retraits" />
-            <Area type="monotone" dataKey="abonnements" stroke={C.yellow} fill="url(#gradAbo)" name="Abonnements" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {/* KPIs financiers (réels) */}
+      {stats && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+          {kpis.map((s) => (
+            <KPICard key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} {...trendProps(s.trend)} />
+          ))}
+        </div>
+      )}
 
-      {/* Operator balances */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-        <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Soldes opérateurs</h3>
-        {[
-          { name: 'MTN Mobile Money', ussd: '*126#', balance: 4200000, limit: 10000000, color: C.yellow, icon: '📲' },
-          { name: 'Orange Money', ussd: '*144#', balance: 6800000, limit: 10000000, color: '#FF6600', icon: '🟠' },
-        ].map(op => (
-          <div key={op.name} style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+      {/* Volume par type de transaction (réel) */}
+      {stats && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
+          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Volume par type de transaction</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={byType}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+              <XAxis dataKey="name" stroke={C.textMuted} fontSize={11} />
+              <YAxis stroke={C.textMuted} fontSize={11} tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k')} />
+              <Tooltip content={<ChartTooltip />} />
+              <Bar dataKey="volume" name="Volume" radius={[4, 4, 0, 0]}>
+                {byType.map((d, i) => <Cell key={i} fill={d.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Détail par type (réel) */}
+      {stats && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
+          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Détail par type</h3>
+          {byType.length === 0 && <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction</div>}
+          {byType.map((d) => (
+            <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 20 }}>{op.icon}</span>
-                <div>
-                  <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{op.name}</div>
-                  <div style={{ color: C.textMuted, fontSize: 11 }}>{op.ussd}</div>
-                </div>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color }} />
+                <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{d.name}</span>
+                <span style={{ color: C.textMuted, fontSize: 12 }}>· {d.count} tx</span>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ color: op.color, fontWeight: 700, fontSize: 15 }}>{(op.balance / 1000000).toFixed(1)}M FCFA</div>
-                <div style={{ color: C.textMuted, fontSize: 11 }}>/ {(op.limit / 1000000).toFixed(0)}M max</div>
-              </div>
+              <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{fmt(d.volume)}</span>
             </div>
-            <div style={{ height: 6, borderRadius: 3, background: C.border, overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 3, background: op.color, width: `${(op.balance / op.limit) * 100}%`, transition: 'width 0.5s ease' }} />
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -799,9 +800,9 @@ function FinancePage() {
 // ── Sidebar nav items ─────────────────────────────────────
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: '⊞', group: 'Vue générale' },
-  { id: 'alerts', label: 'Alertes', icon: '⚠️', badge: 4, group: 'Vue générale' },
+  { id: 'alerts', label: 'Alertes', icon: '⚠️', group: 'Vue générale' },
   { id: 'users', label: 'Utilisateurs', icon: '👥', group: 'Utilisateurs' },
-  { id: 'kyc', label: 'Vérification KYC', icon: '📋', badge: 4, group: 'Utilisateurs' },
+  { id: 'kyc', label: 'Vérification KYC', icon: '📋', group: 'Utilisateurs' },
   { id: 'transactions', label: 'Transactions', icon: '⚡', group: 'Finances' },
   { id: 'finance', label: 'Finances & Revenus', icon: '💰', group: 'Finances' },
 ]

@@ -189,7 +189,15 @@ export class AuthService {
     // Succès : réinitialiser le compteur et lier le token aux identifiants courants.
     this.adminAttempts.delete(key);
     this.logger.log(`Connexion admin : ${dto.email}`);
-    return this.generateTokens('admin', 'ADMIN', { adminCredHash: this.adminCredHash() });
+
+    // On rattache le token au compte admin réel (s'il existe en base) afin que
+    // les actions admin soient traçables dans l'AuditLog. Sinon, sentinelle 'admin'.
+    const adminUser = await this.prisma.user.findFirst({
+      where: { email: { equals: adminEmail, mode: 'insensitive' }, role: 'ADMIN' },
+      select: { id: true },
+    });
+    const sub = adminUser?.id ?? 'admin';
+    return this.generateTokens(sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
   }
 
   // ─── Refresh token ────────────────────────────────────────────────────────
@@ -217,7 +225,7 @@ export class AuthService {
       if (!payload.adminCredHash || payload.adminCredHash !== this.adminCredHash()) {
         throw new UnauthorizedException('Session administrateur expirée');
       }
-      return this.generateTokens('admin', 'ADMIN', { adminCredHash: this.adminCredHash() });
+      return this.generateTokens(payload.sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
     }
     return this.refreshTokens(payload.sub);
   }
