@@ -79,10 +79,10 @@ mobile: ## Expo (mobile/) en mode interactif — reste actif, hot reload (Metro 
 	cd mobile && npx expo start
 
 dev-all: ## Lance backend (watch) + admin (vite) + expo EN PARALLÈLE, hot reload partout
-	@command -v npx >/dev/null 2>&1 || { echo "❌ npx (Node) requis"; exit 1; }
+	@command -v npm >/dev/null 2>&1 || { echo "❌ npm (Node) requis"; exit 1; }
 	@echo "$(CYAN)🚀 backend :3000 · admin :3001 · expo :8081 — Ctrl-C arrête tout$(RESET)"
 	@echo "$(CYAN)ℹ️  La base doit tourner (lancez 'make db' une fois si besoin).$(RESET)"
-	npx --yes concurrently --kill-others --names "backend,admin,mobile" \
+	npm exec --yes -- concurrently --kill-others --names "backend,admin,mobile" \
 		--prefix-colors "blue,magenta,green" \
 		"cd $(BACKEND) && npm run start:dev" \
 		"cd camwallet-admin && npm run dev" \
