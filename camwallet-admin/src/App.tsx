@@ -9,6 +9,7 @@ import {
   hasSession, logout, toFcfa, SessionExpiredError,
   getStats, getUsers, getTransactions, getTimeseries,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
+  getUserDetail, resetUserPin,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -452,6 +453,151 @@ function AlertsPage() {
   )
 }
 
+// ── Vue détail utilisateur (modal) ────────────────────────
+function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClose: () => void; onChanged: () => void }) {
+  const { data, loading, error, refetch } = useFetch(() => getUserDetail(userId), [userId])
+  const [acting, setActing] = useState(false)
+  const u = data?.user
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setActing(true)
+    try {
+      await fn()
+      refetch()
+      onChanged()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Action échouée')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const overlay: React.CSSProperties = {
+    position: 'fixed', inset: 0, background: '#000A', zIndex: 50,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto',
+  }
+  const panel: React.CSSProperties = {
+    background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16,
+    width: 'min(820px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 24,
+  }
+  const label = (t: string) => <div style={{ fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{t}</div>
+  const photo = (src: string, cap: string) => (
+    <a href={src} target="_blank" rel="noreferrer" style={{ flex: 1 }}>
+      <img src={src} alt={cap} style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+      <div style={{ fontSize: 10, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
+    </a>
+  )
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={panel} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Détail utilisateur</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 20, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        {(loading || error) && <StateRow loading={loading} error={error} />}
+
+        {u && data && (
+          <>
+            {/* En-tête */}
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ width: 56, height: 56, borderRadius: 28, overflow: 'hidden', background: C.green + '20', border: `2px solid ${C.green}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: C.green, flexShrink: 0 }}>
+                {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(u.fullName)}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: C.text, fontWeight: 700, fontSize: 16 }}>{u.fullName ?? 'Sans nom'}</div>
+                <div style={{ color: C.textSoft, fontFamily: 'monospace', fontSize: 13 }}>{u.phone}</div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} />
+                  <StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} />
+                </div>
+              </div>
+            </div>
+
+            {/* Infos */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+              <div>{label('Email')}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
+              <div>{label('Ville')}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
+              <div>{label('Naissance')}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
+              <div>{label('Solde')}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{fmt(toFcfa(u.wallet?.balance ?? 0))}</span></div>
+              <div>{label('Dernière connexion')}<span style={{ color: C.text, fontSize: 13 }}>{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</span></div>
+              <div>{label('Inscrit le')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.createdAt)}</span></div>
+              <div>{label('Transactions')}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
+              <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.totalSent))}</span></div>
+              <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.totalReceived))}</span></div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+              {u.role !== 'ADMIN' && (u.status === 'LOCKED' ? (
+                <button disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'))}
+                  style={{ fontSize: 12, color: C.green, background: C.greenLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
+              ) : (
+                <button disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'LOCKED'))}
+                  style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
+              ))}
+              <button disabled={acting} onClick={() => { if (confirm('Forcer la réinitialisation du PIN ?')) run(() => resetUserPin(u.id)) }}
+                style={{ fontSize: 12, color: C.yellow, background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
+              {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
+                <>
+                  <button disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'))}
+                    style={{ fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>✓ Approuver KYC</button>
+                  <button disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'))}
+                    style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>✕ Rejeter KYC</button>
+                </>
+              )}
+            </div>
+
+            {/* Document KYC */}
+            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Document KYC</h3>
+            {u.kycDocument ? (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+                {photo(u.kycDocument.idFrontUrl, 'CNI recto')}
+                {photo(u.kycDocument.idBackUrl, 'CNI verso')}
+                {photo(u.kycDocument.selfieUrl, 'Selfie')}
+              </div>
+            ) : (
+              <div style={{ color: C.textMuted, fontSize: 12, marginBottom: 20 }}>Aucun document soumis</div>
+            )}
+
+            {/* Transactions */}
+            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Transactions récentes</h3>
+            <div style={{ marginBottom: 20 }}>
+              {data.transactions.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune transaction</div>}
+              {data.transactions.map((tx) => (
+                <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
+                    <span style={{ color: C.textSoft }}>{partyLabel(tx.sender, 'Opérateur')} → {partyLabel(tx.receiver, 'Opérateur')}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} />
+                    <span style={{ color: C.text, fontWeight: 600 }}>{fmt(toFcfa(tx.amount))}</span>
+                    <span style={{ color: C.textMuted }}>{fmtDate(tx.createdAt)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Audit */}
+            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Journal d'audit</h3>
+            <div>
+              {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune action enregistrée</div>}
+              {data.audit.map((a) => (
+                <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+                  <span style={{ color: C.textSoft }}>{a.action}{a.metadata?.note ? ` — ${a.metadata.note}` : ''}</span>
+                  <span style={{ color: C.textMuted }}>{(a.user?.email ?? 'admin')} · {fmtDate(a.createdAt)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function UsersPage() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -466,6 +612,7 @@ function UsersPage() {
   const total = data?.meta.total ?? 0
 
   const [acting, setActing] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   // Bloquer / réactiver un compte (action tracée côté backend dans l'AuditLog).
   const toggleBlock = async (u: { id: string; status: string }) => {
     setActing(u.id)
@@ -531,7 +678,8 @@ function UsersPage() {
           </thead>
           <tbody>
             {users.map(u => (
-              <tr key={u.id} style={{ borderTop: `1px solid ${C.border}` }}>
+              <tr key={u.id} onClick={() => setSelected(u.id)}
+                style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                 <td style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 16, background: C.green + '20', border: `2px solid ${C.green}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: C.green, flexShrink: 0 }}>
@@ -548,20 +696,24 @@ function UsersPage() {
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} /></td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></td>
                 <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(u.createdAt)}</td>
-                <td style={{ padding: '12px 14px' }}>
-                  {u.role === 'ADMIN' ? (
-                    <span style={{ color: C.textMuted, fontSize: 11 }}>—</span>
-                  ) : u.status === 'LOCKED' ? (
-                    <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
-                      style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
-                      Débloquer
+                <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button onClick={() => setSelected(u.id)}
+                      style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
+                      Détails
                     </button>
-                  ) : (
-                    <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
-                      style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
-                      Bloquer
-                    </button>
-                  )}
+                    {u.role === 'ADMIN' ? null : u.status === 'LOCKED' ? (
+                      <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                        style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
+                        Débloquer
+                      </button>
+                    ) : (
+                      <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                        style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
+                        Bloquer
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -572,6 +724,10 @@ function UsersPage() {
         )}
         <StateRow loading={loading} error={error} />
       </div>
+
+      {selected && (
+        <UserDetailModal userId={selected} onClose={() => setSelected(null)} onChanged={refetch} />
+      )}
     </div>
   )
 }

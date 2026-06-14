@@ -250,3 +250,31 @@ export function setUserStatus(userId: string, status: 'ACTIVE' | 'LOCKED' | 'SUS
     body: JSON.stringify({ status }),
   })
 }
+
+export function resetUserPin(userId: string) {
+  return request(`/admin/users/${userId}/reset-pin`, { method: 'POST' })
+}
+
+export interface AdminUserDetail {
+  user: AdminUser & {
+    avatarUrl: string | null
+    dateOfBirth: string | null
+    city: string | null
+    lastLoginAt: string | null
+    kycDocument: {
+      idFrontUrl: string
+      idBackUrl: string
+      selfieUrl: string
+      status: string
+      reviewNote: string | null
+      reviewedAt: string | null
+      submittedAt: string
+    } | null
+  }
+  transactions: AdminTransaction[]
+  audit: AdminAuditEntry[]
+  stats: { transactionsCount: number; totalSent: number; totalReceived: number }
+}
+
+export const getUserDetail = (id: string) =>
+  request<AdminUserDetail>(`/admin/users/${id}`)

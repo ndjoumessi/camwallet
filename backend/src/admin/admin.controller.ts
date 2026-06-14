@@ -1,10 +1,13 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Param,
   Body,
   Query,
+  HttpCode,
+  HttpStatus,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -46,6 +49,12 @@ export class AdminController {
     return this.adminService.getUsers(+page, +limit, search, status);
   }
 
+  @Get('users/:id')
+  @ApiOperation({ summary: 'Détail utilisateur (infos, KYC, transactions, audit)' })
+  userDetail(@Param('id') id: string) {
+    return this.adminService.getUserDetail(id);
+  }
+
   @Get('transactions')
   @ApiOperation({ summary: 'Liste paginée des transactions' })
   transactions(
@@ -65,6 +74,13 @@ export class AdminController {
     @Body() dto: SetUserStatusDto,
   ) {
     return this.adminService.setUserStatus(req.user.id, id, dto.status);
+  }
+
+  @Post('users/:id/reset-pin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Forcer la réinitialisation du PIN d’un utilisateur' })
+  resetPin(@Request() req: any, @Param('id') id: string) {
+    return this.adminService.resetUserPin(req.user.id, id);
   }
 
   @Get('kyc')

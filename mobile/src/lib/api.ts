@@ -189,10 +189,22 @@ export interface MeResponse {
   phoneCode: string;
   fullName: string | null;
   email: string | null;
+  avatarUrl: string | null;
+  dateOfBirth: string | null;
+  city: string | null;
   role: string;
   status: string;
   kycStatus: string;
+  createdAt: string;
   wallet: { balance: number; currency: string; isActive: boolean } | null;
+  stats: { transactionsCount: number; totalSent: number; totalReceived: number };
+}
+
+export interface UpdateProfilePayload {
+  fullName?: string;
+  email?: string;
+  city?: string;
+  dateOfBirth?: string;
 }
 
 export type MobileOperator = 'ORANGE_MONEY' | 'MTN_MOMO';
@@ -223,11 +235,35 @@ export const authApi = {
     return data;
   },
 
+  // Déclenche l'envoi d'un OTP SMS pour réinitialiser le PIN.
+  requestPinReset: (phone: string) =>
+    api
+      .post<{ message: string; userId: string }>('/auth/pin-reset/request', { phone })
+      .then((r) => r.data),
+
   logout: () => clearTokens(),
 };
 
 export const userApi = {
   getMe: () => api.get<MeResponse>('/users/me').then((r) => r.data),
+
+  updateProfile: (payload: UpdateProfilePayload) =>
+    api.patch<MeResponse>('/users/profile', payload).then((r) => r.data),
+
+  // Upload de la photo de profil (multipart). `uri` provient d'expo-image-picker.
+  uploadAvatar: (uri: string) => {
+    const form = new FormData();
+    const name = uri.split('/').pop() ?? 'avatar.jpg';
+    const ext = (name.split('.').pop() ?? 'jpg').toLowerCase();
+    const type = ext === 'png' ? 'image/png' : 'image/jpeg';
+    // RN FormData accepte { uri, name, type }.
+    form.append('file', { uri, name, type } as any);
+    return api
+      .post<{ avatarUrl: string }>('/users/avatar', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data);
+  },
 
   registerPushToken: (pushToken: string) =>
     api.post('/users/push-token', { pushToken }).then((r) => r.data),

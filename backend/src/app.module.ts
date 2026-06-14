@@ -10,6 +10,7 @@ import { QrModule } from './qr/qr.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
@@ -36,6 +37,7 @@ import { PrismaModule } from './prisma/prisma.module';
     WebhooksModule,
     AdminModule,
     NotificationsModule,
+    CloudinaryModule,
   ],
 })
 export class AppModule {}

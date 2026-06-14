@@ -4,6 +4,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { TransactionStatus } from '@prisma/client';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 // Champs renvoyés au client — jamais le pinHash.
@@ -13,6 +14,9 @@ const SAFE_USER_SELECT = {
   phoneCode: true,
   fullName: true,
   email: true,
+  avatarUrl: true,
+  dateOfBirth: true,
+  city: true,
   role: true,
   status: true,
   kycStatus: true,
@@ -28,12 +32,29 @@ export class UsersService {
   constructor(private prisma: PrismaService) {}
 
   async getMe(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: SAFE_USER_SELECT,
-    });
+    const [user, sent, received] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: SAFE_USER_SELECT }),
+      this.prisma.transaction.aggregate({
+        _count: { _all: true },
+        _sum: { amount: true },
+        where: { senderId: userId, status: TransactionStatus.COMPLETED },
+      }),
+      this.prisma.transaction.aggregate({
+        _count: { _all: true },
+        _sum: { amount: true },
+        where: { receiverId: userId, status: TransactionStatus.COMPLETED },
+      }),
+    ]);
     if (!user) throw new NotFoundException('Utilisateur introuvable');
-    return user;
+
+    return {
+      ...user,
+      stats: {
+        transactionsCount: sent._count._all + received._count._all,
+        totalSent: sent._sum.amount ?? 0n,
+        totalReceived: received._sum.amount ?? 0n,
+      },
+    };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -52,9 +73,20 @@ export class UsersService {
       data: {
         ...(dto.fullName !== undefined && { fullName: dto.fullName }),
         ...(dto.email !== undefined && { email: dto.email }),
+        ...(dto.dateOfBirth !== undefined && { dateOfBirth: new Date(dto.dateOfBirth) }),
+        ...(dto.city !== undefined && { city: dto.city }),
       },
       select: SAFE_USER_SELECT,
     });
+  }
+
+  // Met à jour la photo de profil (URL Cloudinary ou data URI).
+  async setAvatar(userId: string, avatarUrl: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+    });
+    return { avatarUrl };
   }
 
   // Enregistre le jeton push Expo de l'utilisateur (appelé après le login mobile).
