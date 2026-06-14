@@ -100,6 +100,8 @@ export interface AuthTokens {
 }
 
 export interface AdminStats {
+  // Variation en % (30j vs 30j précédents) ; null si pas de base de comparaison.
+  trends: { users: number | null; transactions: number | null; volume: number | null }
   users: { total: number; byRole: { role: string; count: number }[] }
   transactions: {
     total: number
@@ -109,6 +111,41 @@ export interface AdminStats {
   }
   volume: { completedAmount: number; collectedFees: number } // centimes
   totalBalance: number // centimes
+}
+
+export interface AdminKycEntry {
+  id: string
+  phone: string
+  fullName: string | null
+  kycStatus: string
+  createdAt: string
+  kycDocument: { status: string; submittedAt: string } | null
+}
+
+export interface AdminKyc {
+  pending: AdminKycEntry[]
+  counts: { pending: number; approved30: number; rejected30: number }
+}
+
+export interface AdminAlert {
+  id: string
+  type: 'error' | 'warn' | 'info'
+  title: string
+  desc: string
+}
+
+export interface AdminAlerts {
+  alerts: AdminAlert[]
+  flagged: AdminTransaction[]
+}
+
+export interface AdminAuditEntry {
+  id: string
+  action: string
+  resource: string | null
+  metadata: Record<string, any> | null
+  createdAt: string
+  user: { fullName: string | null; email: string | null } | null
 }
 
 export interface AdminUser {
@@ -176,4 +213,24 @@ export function getTransactions(
   params: { page?: number; limit?: number; type?: string; status?: string } = {},
 ) {
   return request<Paginated<AdminTransaction>>(`/admin/transactions${buildQuery(params)}`)
+}
+
+export const getKyc = () => request<AdminKyc>('/admin/kyc')
+
+export const getAlerts = () => request<AdminAlerts>('/admin/alerts')
+
+export const getAudit = () => request<AdminAuditEntry[]>('/admin/audit')
+
+export function reviewKyc(userId: string, decision: 'APPROVED' | 'REJECTED', note?: string) {
+  return request(`/admin/kyc/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ decision, note }),
+  })
+}
+
+export function setUserStatus(userId: string, status: 'ACTIVE' | 'LOCKED' | 'SUSPENDED') {
+  return request(`/admin/users/${userId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
 }

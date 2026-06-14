@@ -1,6 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
+import {
+  TransactionStatus,
+  TransactionType,
+  UserStatus,
+  KycStatus,
+} from '@prisma/client';
+import { ReviewKycDto } from './dto/review-kyc.dto';
 
 @Injectable()
 export class AdminService {
@@ -8,6 +14,15 @@ export class AdminService {
 
   // ─── Statistiques globales ──────────────────────────────────────────────────
   async getStats() {
+    // Fenêtres glissantes pour les tendances (30 derniers jours vs 30 précédents).
+    const now = Date.now();
+    const d30 = new Date(now - 30 * 24 * 3600 * 1000);
+    const d60 = new Date(now - 60 * 24 * 3600 * 1000);
+    const completed = (gte: Date, lt?: Date) => ({
+      status: TransactionStatus.COMPLETED,
+      createdAt: lt ? { gte, lt } : { gte },
+    });
+
     const [
       totalUsers,
       totalTransactions,
@@ -17,6 +32,12 @@ export class AdminService {
       byType,
       byStatus,
       byRole,
+      usersCur,
+      usersPrev,
+      txCur,
+      txPrev,
+      volCur,
+      volPrev,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.transaction.count(),
@@ -41,9 +62,24 @@ export class AdminService {
         by: ['role'],
         _count: { _all: true },
       }),
+      this.prisma.user.count({ where: { createdAt: { gte: d30 } } }),
+      this.prisma.user.count({ where: { createdAt: { gte: d60, lt: d30 } } }),
+      this.prisma.transaction.count({ where: { createdAt: { gte: d30 } } }),
+      this.prisma.transaction.count({ where: { createdAt: { gte: d60, lt: d30 } } }),
+      this.prisma.transaction.aggregate({ _sum: { amount: true }, where: completed(d30) }),
+      this.prisma.transaction.aggregate({ _sum: { amount: true }, where: completed(d60, d30) }),
     ]);
 
+    // Variation en % (période courante vs précédente). null si pas de base de comparaison.
+    const pct = (cur: number, prev: number): number | null =>
+      prev > 0 ? Math.round(((cur - prev) / prev) * 100) : cur > 0 ? 100 : null;
+
     return {
+      trends: {
+        users: pct(usersCur, usersPrev),
+        transactions: pct(txCur, txPrev),
+        volume: pct(Number(volCur._sum.amount ?? 0), Number(volPrev._sum.amount ?? 0)),
+      },
       users: {
         total: totalUsers,
         byRole: byRole.map((r) => ({ role: r.role, count: r._count._all })),
@@ -138,5 +174,194 @@ export class AdminService {
       data: transactions,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  // ─── Audit ──────────────────────────────────────────────────────────────────
+  // Trace une action admin. L'acteur est l'id du compte admin réel (sinon null
+  // pour la sentinelle 'admin' — userId étant nullable).
+  private async writeAudit(
+    actorId: string | undefined,
+    action: string,
+    resource?: string,
+    metadata?: Record<string, any>,
+  ) {
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorId && actorId !== 'admin' ? actorId : null,
+        action,
+        resource,
+        metadata: metadata ?? undefined,
+      },
+    });
+  }
+
+  // 50 dernières actions admin (blocages, décisions KYC).
+  async getAudit(limit = 50) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        OR: [
+          { action: { startsWith: 'USER_STATUS_' } },
+          { action: { startsWith: 'KYC_' } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        action: true,
+        resource: true,
+        metadata: true,
+        createdAt: true,
+        user: { select: { fullName: true, email: true } },
+      },
+    });
+  }
+
+  // ─── Modération utilisateur ───────────────────────────────────────────────
+  async setUserStatus(adminId: string, userId: string, status: UserStatus) {
+    const exists = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Utilisateur introuvable');
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status,
+        // Réactiver lève aussi le verrou anti-bruteforce éventuel.
+        ...(status === UserStatus.ACTIVE ? { lockedUntil: null, pinAttempts: 0 } : {}),
+      },
+      select: { id: true, fullName: true, status: true },
+    });
+    await this.writeAudit(adminId, `USER_STATUS_${status}`, `User:${userId}`);
+    return user;
+  }
+
+  // ─── KYC ──────────────────────────────────────────────────────────────────
+  async getKyc() {
+    const pending = await this.prisma.user.findMany({
+      where: { kycStatus: { in: [KycStatus.PENDING, KycStatus.SUBMITTED] } },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        phone: true,
+        fullName: true,
+        kycStatus: true,
+        createdAt: true,
+        kycDocument: { select: { status: true, submittedAt: true } },
+      },
+    });
+
+    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const [approved30, rejected30] = await Promise.all([
+      this.prisma.kycDocument.count({
+        where: { status: KycStatus.APPROVED, reviewedAt: { gte: d30 } },
+      }),
+      this.prisma.kycDocument.count({
+        where: { status: KycStatus.REJECTED, reviewedAt: { gte: d30 } },
+      }),
+    ]);
+
+    return {
+      pending,
+      counts: { pending: pending.length, approved30, rejected30 },
+    };
+  }
+
+  async reviewKyc(adminId: string, userId: string, dto: ReviewKycDto) {
+    const exists = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Utilisateur introuvable');
+
+    const newStatus = dto.decision as KycStatus; // APPROVED | REJECTED
+    const user = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id: userId },
+        data: { kycStatus: newStatus },
+        select: { id: true, fullName: true, kycStatus: true },
+      });
+      // Le document peut ne pas exister (flux d'upload non encore branché).
+      await tx.kycDocument.updateMany({
+        where: { userId },
+        data: {
+          status: newStatus,
+          reviewedBy: adminId,
+          reviewedAt: new Date(),
+          reviewNote: dto.note,
+        },
+      });
+      return u;
+    });
+
+    await this.writeAudit(adminId, `KYC_${dto.decision}`, `User:${userId}`, {
+      note: dto.note,
+    });
+    return user;
+  }
+
+  // ─── Alertes (dérivées des données réelles) ───────────────────────────────
+  async getAlerts() {
+    const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    const LARGE = 5_000_000n; // 50 000 FCFA en centimes
+
+    const [failedCount, stalePending, restrictedUsers, flagged] = await Promise.all([
+      this.prisma.transaction.count({
+        where: { status: TransactionStatus.FAILED, createdAt: { gte: d7 } },
+      }),
+      this.prisma.transaction.count({
+        where: { status: TransactionStatus.PENDING, createdAt: { lt: oneHourAgo } },
+      }),
+      this.prisma.user.count({
+        where: { status: { in: [UserStatus.LOCKED, UserStatus.SUSPENDED] } },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          createdAt: { gte: d7 },
+          OR: [{ status: TransactionStatus.FAILED }, { amount: { gte: LARGE } }],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          sender: { select: { phone: true, fullName: true } },
+          receiver: { select: { phone: true, fullName: true } },
+        },
+      }),
+    ]);
+
+    const alerts: { id: string; type: 'error' | 'warn' | 'info'; title: string; desc: string }[] = [];
+    if (failedCount > 0)
+      alerts.push({
+        id: 'failed',
+        type: 'error',
+        title: 'Transactions échouées',
+        desc: `${failedCount} échec(s) sur les 7 derniers jours`,
+      });
+    if (stalePending > 0)
+      alerts.push({
+        id: 'pending',
+        type: 'warn',
+        title: 'Transactions en attente',
+        desc: `${stalePending} transaction(s) bloquée(s) depuis plus d'une heure`,
+      });
+    if (restrictedUsers > 0)
+      alerts.push({
+        id: 'users',
+        type: 'warn',
+        title: 'Comptes restreints',
+        desc: `${restrictedUsers} compte(s) bloqué(s) ou suspendu(s)`,
+      });
+    if (alerts.length === 0)
+      alerts.push({
+        id: 'ok',
+        type: 'info',
+        title: 'Aucune anomalie',
+        desc: 'Aucune alerte active sur la période',
+      });
+
+    return { alerts, flagged };
   }
 }
