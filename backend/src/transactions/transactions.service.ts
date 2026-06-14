@@ -5,13 +5,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { TransactionType, TransactionStatus, MobileOperator } from '@prisma/client';
 
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifications: NotificationsService,
+  ) {}
 
   // ─── Paiement P2P (CamWallet → CamWallet) ────────────────────────────────
   async p2p(senderId: string, receiverPhone: string, amount: bigint, description?: string) {
@@ -24,7 +28,7 @@ export class TransactionsService {
     if (receiver.id === senderId) throw new BadRequestException('Vous ne pouvez pas vous envoyer de l\'argent');
 
     // Transaction ACID — débit/crédit atomique
-    return this.prisma.$transaction(async (tx) => {
+    const transaction = await this.prisma.$transaction(async (tx) => {
       const senderWallet = await tx.wallet.findUnique({
         where: { userId: senderId },
       });
@@ -46,7 +50,7 @@ export class TransactionsService {
       });
 
       // Enregistrement transaction
-      const transaction = await tx.transaction.create({
+      const created = await tx.transaction.create({
         data: {
           type: TransactionType.P2P,
           status: TransactionStatus.COMPLETED,
@@ -59,8 +63,21 @@ export class TransactionsService {
       });
 
       this.logger.log(`P2P ${amount} FCFA : ${senderId} → ${receiver.id}`);
-      return transaction;
+      return created;
     });
+
+    // Notification push au destinataire (hors transaction, non bloquant).
+    const sender = await this.prisma.user.findUnique({
+      where: { id: senderId },
+      select: { fullName: true },
+    });
+    void this.notifications.notifyTransactionReceived(receiver.id, {
+      type: 'P2P',
+      amountCentimes: amount,
+      from: sender?.fullName,
+    });
+
+    return transaction;
   }
 
   // ─── Paiement par QR ──────────────────────────────────────────────────────
@@ -82,7 +99,7 @@ export class TransactionsService {
 
     if (!amount || amount <= 0n) throw new BadRequestException('Montant invalide');
 
-    return this.prisma.$transaction(async (tx) => {
+    const transaction = await this.prisma.$transaction(async (tx) => {
       const payerWallet = await tx.wallet.findUnique({ where: { userId: payerId } });
       if (!payerWallet || payerWallet.balance < amount!) {
         throw new BadRequestException('Solde insuffisant');
@@ -109,7 +126,7 @@ export class TransactionsService {
         });
       }
 
-      const transaction = await tx.transaction.create({
+      const created = await tx.transaction.create({
         data: {
           type: TransactionType.QR_PAYMENT,
           status: TransactionStatus.COMPLETED,
@@ -122,8 +139,16 @@ export class TransactionsService {
         },
       });
 
-      return transaction;
+      return { created, net: amount! - fee };
     });
+
+    // Notification push au marchand bénéficiaire (montant net, hors transaction).
+    void this.notifications.notifyTransactionReceived(qrCode.userId, {
+      type: 'QR_PAYMENT',
+      amountCentimes: transaction.net,
+    });
+
+    return transaction.created;
   }
 
   // ─── Historique utilisateur ───────────────────────────────────────────────

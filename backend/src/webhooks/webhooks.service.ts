@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   MobileOperator,
   TransactionStatus,
@@ -15,6 +16,7 @@ export class WebhooksService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private notifications: NotificationsService,
   ) {}
 
   async handleOrangeMoney(payload: any, signature: string) {
@@ -112,6 +114,14 @@ export class WebhooksService {
     this.logger.log(
       `✅ ${tx.type} confirmée : ${tx.amount} XAF (ref=${tx.operatorRef})`,
     );
+
+    // Notification push après crédit d'une recharge (hors transaction, non bloquant).
+    if (tx.type === TransactionType.RECHARGE && tx.receiverId) {
+      void this.notifications.notifyTransactionReceived(tx.receiverId, {
+        type: 'RECHARGE',
+        amountCentimes: tx.amount,
+      });
+    }
   }
 
   // ─── Échec opérateur ────────────────────────────────────────────────────────

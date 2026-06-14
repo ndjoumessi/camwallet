@@ -55,7 +55,8 @@
           "faceIDPermission": "CamWallet utilise Face ID pour sécuriser l'accès."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-notifications"
     ],
     "scheme": "camwallet",
     "experiments": {
