@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,11 +19,13 @@ interface SendModalProps {
   onClose: () => void;
   onSuccess: (msg: string) => void;
   initialContact?: number;
+  // Destinataire pré-rempli depuis un QR Code scanné.
+  initialRecipient?: { name?: string; phone: string; amount?: string } | null;
 }
 
 const FRAIS = 10;
 
-export default function SendModal({ visible, onClose, onSuccess, initialContact }: SendModalProps) {
+export default function SendModal({ visible, onClose, onSuccess, initialContact, initialRecipient }: SendModalProps) {
   const { contacts, balance, setBalance, addTransaction } = useStore();
   const [step, setStep] = useState<'contact' | 'amount' | 'pin' | 'done'>('contact');
   const [selectedContact, setSelectedContact] = useState(
@@ -34,6 +36,20 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact 
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
   const shake = useRef(new Animated.Value(0)).current;
+
+  // Pré-remplit le destinataire depuis un QR scanné et saute à l'étape montant.
+  useEffect(() => {
+    if (!visible || !initialRecipient) return;
+    const phone = initialRecipient.phone.replace(/^\+?237/, '').trim();
+    const name = initialRecipient.name ?? `+237 ${phone}`;
+    const avatar = (initialRecipient.name
+      ? initialRecipient.name.split(/\s+/).map((n) => n[0]).join('')
+      : phone
+    ).slice(0, 2).toUpperCase();
+    setSelectedContact({ id: -1, name, phone, avatar, color: Colors.primary } as any);
+    if (initialRecipient.amount) setAmount(initialRecipient.amount.replace(/\D/g, ''));
+    setStep('amount');
+  }, [visible, initialRecipient]);
 
   const ref = `TX_${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
   const dateStr = new Date().toLocaleString('fr-FR', {
