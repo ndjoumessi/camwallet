@@ -13,7 +13,6 @@ export const Colors = {
   yellow: '#F5C542',
   red: '#FF4D6D',
   purple: '#A78BFA',
-  orange: '#F97316',
 
   // Backgrounds
   bg: '#0A0F1E',

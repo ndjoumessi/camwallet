@@ -131,6 +131,20 @@ export class AuthService {
     return this.generateTokens(user.id, user.role);
   }
 
+  // Échange un refresh token valide contre une nouvelle paire de tokens.
+  async refresh(refreshToken: string) {
+    if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
+    let payload: { sub: string; role?: string };
+    try {
+      payload = this.jwtService.verify(refreshToken, {
+        secret: this.config.get('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Refresh token invalide ou expiré');
+    }
+    return this.refreshTokens(payload.sub);
+  }
+
   // ─── Reset PIN via OTP ────────────────────────────────────────────────────
   async requestPinReset(phone: string) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
