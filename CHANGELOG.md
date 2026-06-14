@@ -5,6 +5,34 @@ Toutes les évolutions notables de CamWallet sont documentées dans ce fichier.
 Le format s'appuie sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et le projet suit le [versionnement sémantique](https://semver.org/lang/fr/).
 
+## [1.2.0] — 2026-06-14
+
+Profil utilisateur enrichi sur les trois couches, plus l'outillage de dev.
+
+### Ajouté
+
+#### Backend
+- Champs `User.avatarUrl / dateOfBirth / city` (migration).
+- `PATCH /users/profile` : validation `class-validator` (nom, email, ville, date de naissance).
+- `GET /users/me` : profil complet + solde + statistiques (nombre de transactions, total envoyé/reçu).
+- `POST /users/avatar` : upload image via Cloudinary (`CloudinaryModule`), avec repli data URI en dev. Type validé par signature binaire (PNG/JPEG/WEBP).
+- `GET /admin/users/:id` : détail (infos, document KYC, transactions, audit, stats) ; `POST /admin/users/:id/reset-pin`.
+
+#### Mobile
+- `ProfileScreen` branché sur l'API : photo de profil (avec initiales en repli, upload galerie via `expo-image-picker`), infos, badge KYC, formulaire d'édition inline, statistiques, section sécurité (changement de PIN par OTP, bascule biométrie).
+
+#### Admin
+- Vue détail utilisateur (modal) au clic sur une ligne : infos complètes, photos KYC, historique des transactions, journal d'audit, et actions inline (bloquer/débloquer, réinitialiser le PIN, approuver/rejeter le KYC).
+
+#### Outillage
+- `Makefile` : `make mobile` (Expo), `make admin` (Vite dev), `make backend-dev`, et `make dev-all` (backend watch + admin + Expo en parallèle via `concurrently`, hot reload partout).
+- `CLAUDE.md` mis à jour (frontends connectés à l'API, modules `notifications`/`cloudinary`, auth admin durcie, surface d'API).
+
+### Sécurité
+- Upload avatar : validation du type par signature binaire (rejet SVG / non-image) ; pas de champ URL libre dans `PATCH /users/profile`.
+
+[1.2.0]: https://github.com/ndjoumessi/camwallet/releases/tag/v1.2.0
+
 ## [1.1.0] — 2026-06-14
 
 Trois nouvelles fonctionnalités : scan QR réel, notifications push et

@@ -8,11 +8,11 @@ CamWallet is a QR-based prepaid payment app for Cameroon, backed by Orange Money
 
 Monorepo with three independent sub-projects (no workspace tooling — each has its own `package.json` and `node_modules`):
 
-- `backend/` — NestJS + Prisma + PostgreSQL REST API. **This is the only project wired to a real datastore.**
-- `mobile/` — React Native + Expo app. Currently a **mock prototype**: screens read from a hardcoded Zustand store (`mobile/app/store/useStore.ts`), not from the API.
-- `camwallet-admin/` — React + Vite + Recharts dashboard. Also a **mock prototype**: all data is hardcoded inline in `camwallet-admin/src/App.tsx`.
+- `backend/` — NestJS + Prisma + PostgreSQL REST API. The source of truth and the only datastore.
+- `mobile/` — React Native + Expo (SDK 54, React 19, RN 0.81). **Wired to the real API** via `mobile/src/lib/api.ts` (axios + auto-refresh). Auth, profile, QR scan and push notifications are real. A few screens still read demo data from the Zustand store (`mobile/app/store/useStore.ts`) — notably `HomeScreen` balance/contacts and the `SendModal` send flow — so don't assume every screen is API-backed yet.
+- `camwallet-admin/` — React + Vite + Recharts dashboard. **Wired to the real API** via `camwallet-admin/src/lib/api.ts` (native `fetch` + auto-refresh). All pages (dashboard, users, transactions, alerts, KYC, finance) read from the API; the monthly demo arrays are gone.
 
-When asked to "connect" or "wire up" the frontends, expect to be building the API integration layer from scratch — it does not exist yet.
+The frontend↔API integration layer **exists** now (it was built out across the admin and mobile clients). When adding features, extend the existing `src/lib/api.ts` client in each frontend rather than starting from scratch.
 
 ## Commands
 
@@ -30,13 +30,15 @@ npm run test -- path/to.spec.ts # run a single test file
 npm run test:e2e                # e2e tests (test/jest-e2e.json)
 npm run lint                    # eslint --fix
 ```
+After any `schema.prisma` change, run `prisma migrate dev` (regenerates the client) **and restart `start:dev`** — the running watcher holds the old generated client in memory until restarted.
 
 ### mobile
 ```bash
 npm install
-npx expo start                  # then scan QR with Expo Go
+npx expo start                  # then scan QR with Expo Go (Metro on :8081)
 npm run android | ios | web
 ```
+Native modules in use: `expo-camera` (QR scan), `expo-notifications` (push), `expo-image-picker` (avatar), `expo-local-authentication` (biometrics). Camera/push/biometrics/gallery need a real device; code degrades gracefully on simulator / Expo Go.
 
 ### camwallet-admin
 ```bash
@@ -44,40 +46,59 @@ npm install
 npm run dev                     # http://localhost:3001
 npm run build                   # tsc + vite build
 ```
+There is **no `tsconfig.json`** in the admin project, so the `tsc` step in `build` is effectively a no-op and Vite (esbuild) does not type-check. Validate admin changes with `npm run build` (catches syntax/transform errors); unused-var/type errors will not fail the build.
 
 ## Backend architecture
 
-Standard NestJS module-per-domain layout under `backend/src/`: `auth`, `users`, `wallets`, `transactions`, `qr`, `webhooks`, `admin`, plus a global `prisma` module. `AppModule` wires them together with global `ConfigModule` and `ThrottlerModule` (10 req / 60s).
+NestJS module-per-domain layout under `backend/src/`: `auth`, `users`, `wallets`, `transactions`, `qr`, `webhooks`, `admin`, plus global modules `prisma`, `notifications` (Expo push), and `cloudinary` (image upload). `AppModule` wires them with global `ConfigModule` and `ThrottlerModule` (10 req / 60s).
 
 Bootstrap conventions (`main.ts`) that affect every route:
 - Global prefix `api/v1` — all endpoints live under `/api/v1/...`.
 - Global `ValidationPipe` with `whitelist` + `forbidNonWhitelisted` — DTOs reject unknown fields, so request bodies must match the `class-validator` DTOs exactly.
+- A global `BigInt.prototype.toJSON` converts every BigInt to **Number** in JSON responses (so amounts arrive as numbers in centimes — see below).
 - Swagger UI is mounted at `/api/docs` only when `NODE_ENV !== 'production'`.
 - CORS is `*` in dev, locked to `admin.camwallet.cm` / `app.camwallet.cm` in production.
 
 ### Money is stored as BigInt centimes — this is the #1 gotcha
-All amounts in the database and backend (`Wallet.balance`, `Transaction.amount`/`fee`, limits) are `BigInt` in **centimes of FCFA** (1 FCFA = 100). Example: `10000` = 100 FCFA. This avoids floating-point errors on financial values. Always use `bigint` literals (`5n`, `1000n`) in arithmetic. Note the two mock frontends use plain JS numbers in **whole FCFA** — any real integration must convert at the boundary.
+All amounts in the database and backend (`Wallet.balance`, `Transaction.amount`/`fee`, limits) are `BigInt` in **centimes of FCFA** (1 FCFA = 100). Example: `10000` = 100 FCFA. This avoids floating-point errors. Always use `bigint` literals (`5n`, `1000n`) in arithmetic. Responses serialize BigInt → Number (centimes); **both frontends convert centimes → whole FCFA at the boundary** (`toFcfa` in each `src/lib/api.ts`). The mobile demo store still uses whole-FCFA numbers.
 
 ### Financial integrity
-Balance mutations (P2P, QR payment, webhook crediting) must be atomic. They run inside `prisma.$transaction(...)` doing debit + credit + transaction-record insert together — see `transactions/transactions.service.ts`. Preserve this pattern for any new money-moving flow; never debit/credit in separate awaits. The merchant commission on QR payments is computed as `(amount * 5n) / 1000n` (0.5%).
+Balance mutations (P2P, QR payment, webhook crediting) must be atomic — `prisma.$transaction(...)` doing debit + credit + transaction-record insert together (`transactions/transactions.service.ts`). Never debit/credit in separate awaits. Merchant commission on QR payments is `(amount * 5n) / 1000n` (0.5%). Side effects that must not break the money flow (e.g. push notifications) run **after** the `$transaction` resolves and are fire-and-forget.
 
 ### Auth flow
-Phone + 6-digit PIN, not email/password (admin is the exception). Registration is a 3-step OTP flow: `register` (creates user + empty wallet, sends OTP) → `verifyOtp` → `setPin` (bcrypt cost 12, issues JWTs). Login compares the PIN; after `MAX_PIN_ATTEMPTS` (3) failures the account is locked for 30 minutes via `User.lockedUntil`. JWTs use separate access/refresh secrets from config; the `JwtStrategy` is in `auth/strategies/`.
+Phone + 6-digit PIN for users; email + password for admin. User registration is a 3-step OTP flow: `register` → `verifyOtp` → `setPin` (bcrypt cost 12, issues JWTs). Login compares the PIN; after `MAX_PIN_ATTEMPTS` (3) failures the account locks 30 min (`User.lockedUntil`). JWTs use separate access/refresh secrets; `JwtStrategy` is stateless (returns `{ id: sub, role }`, no DB lookup); `AdminGuard` checks `role === ADMIN`.
+
+**Admin auth** (`POST /auth/login-admin`): validates `email`/`password` against `ADMIN_EMAIL`/`ADMIN_PASSWORD` config with a **constant-time compare** (SHA-256 + `timingSafeEqual`), an in-memory per-email **lockout** (5 attempts → 15 min), and rejects when the config is unset. The issued token's `sub` is the real seeded ADMIN user's id (so admin actions are attributable in `AuditLog`) and carries an `adminCredHash` claim; `/auth/refresh` re-validates that hash, so rotating `ADMIN_PASSWORD` invalidates already-issued admin tokens.
+
+### Notifications & uploads
+- `notifications/notifications.service.ts` sends Expo push via the Expo Push API after each **received** credit (P2P, QR payment, recharge). Non-blocking. Users register their Expo token via `POST /users/push-token` (stored on `User.pushToken`).
+- `cloudinary/cloudinary.service.ts` uploads images (avatars). Validates the real type by **magic-byte signature** (PNG/JPEG/WEBP only — never the client MIME, so SVG/script payloads are rejected). When Cloudinary env is unset/placeholder it falls back to a base64 **data URI**, so avatar upload works in dev without credentials.
 
 ### Webhooks
-`webhooks/webhooks.service.ts` ingests Orange Money / MTN MoMo callbacks. Every raw event is persisted to `WebhookEvent` for audit before processing; a `SUCCESSFUL` event matches a `PENDING` transaction by `operatorRef` and credits the wallet atomically. **Signature/token verification is stubbed (`TODO`)** — `OM_WEBHOOK_SECRET` / `MTN_WEBHOOK_SECRET` exist in env but are not yet validated.
+`webhooks/webhooks.service.ts` ingests Orange Money / MTN MoMo callbacks. Every raw event is persisted to `WebhookEvent` before processing; a `SUCCESSFUL` event matches a `PENDING` transaction by `operatorRef` and credits atomically. **Signature/token verification is still stubbed (`TODO`)** — `OM_WEBHOOK_SECRET` / `MTN_WEBHOOK_SECRET` exist in env but are not validated.
 
 ### Data model
-`schema.prisma` is the source of truth. Central tables: `User` → `Wallet` (1:1) and `Transaction` (sender/receiver self-relations on User). `AuditLog` exists for ANIF regulatory traceability. After editing `schema.prisma`, run `prisma:generate` and create a migration.
+`schema.prisma` is the source of truth. Central tables: `User` → `Wallet` (1:1), `Transaction` (sender/receiver self-relations), `KycDocument` (1:1), `AuditLog` (ANIF traceability; `userId` nullable). `User` carries `role`, `status`, `kycStatus`, plus `pushToken`, `avatarUrl`, `dateOfBirth`, `city`. After editing `schema.prisma`, run a migration + `prisma:generate` and restart the dev server.
+
+### API surface (selected)
+- **auth**: `register`, `verify-otp`, `set-pin`, `login`, `login-admin`, `refresh`, `pin-reset/request`.
+- **users** (JWT): `GET /users/me` (profile + wallet + stats: tx count, total sent/received), `PATCH /users/profile` (fullName, email, dateOfBirth, city), `POST /users/avatar` (multipart upload), `POST /users/push-token`.
+- **admin** (JWT + AdminGuard): `GET /admin/stats`, `GET /admin/stats/timeseries?period=7d|30d|90d`, `GET /admin/users` (search + `status` filter), `GET /admin/users/:id` (detail: info, KYC doc, transactions, audit, stats), `PATCH /admin/users/:id/status` (block/unblock), `POST /admin/users/:id/reset-pin`, `GET /admin/kyc` + `PATCH /admin/kyc/:userId` (approve/reject), `GET /admin/transactions`, `GET /admin/alerts`, `GET /admin/audit`. Admin moderation actions write to `AuditLog`.
+
+## Frontend integration
+
+Both frontends have a `src/lib/api.ts` client: token storage (mobile = `expo-secure-store`; admin = `localStorage`), Bearer header, and **single-flight refresh on 401**. The admin uses a shared `useFetch(fn, deps)` hook (`App.tsx`) returning `{ data, loading, error, refetch }`, a `RefreshContext` nonce for the "Actualiser" button, and `buildQuery` for query strings. The admin is a single large `App.tsx` with inline styles and a `C` design-token object; convert centimes→FCFA via `toFcfa` and format with `toLocaleString('fr-FR')`.
 
 ## Environment
 
-Each sub-project needs a `.env` copied from its example. Only `backend/.env.example` is committed (the README references a `mobile/.env.example` that does not exist — `EXPO_PUBLIC_API_URL` is the relevant mobile var). Backend env covers: `DATABASE_URL`, JWT secrets, AfricasTalking SMS (OTP), Orange Money + MTN MoMo API credentials, Cloudinary (KYC document storage), and admin credentials.
+Each sub-project needs a `.env` from its example. `backend/.env.example` and `camwallet-admin/.env.example` are committed. Relevant vars: mobile `EXPO_PUBLIC_API_URL` (origin, `/api/v1` appended), admin `VITE_API_URL` (defaults to `http://localhost:3000`). Backend env: `DATABASE_URL`, JWT secrets, AfricasTalking SMS (OTP), Orange Money + MTN MoMo credentials, Cloudinary, and `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 
-Dev test credentials (from README): PIN `123456`, OTP `847291`, admin `admin@camwallet.cm` / `Admin@2025!`.
+Dev test credentials (seed): user `+237677000001`, merchant `+237699000002`, all PIN `123456`; admin `admin@camwallet.cm` / `Admin@2025!`.
 
 ## Notes
 
 - The backend `tsconfig.json` is loose (`strictNullChecks: false`, `noImplicitAny: false`) — code uses non-null assertions (`amount!`) freely.
+- The admin has **no `tsconfig.json`**; rely on `vite build` to catch errors.
 - `mobile/` declares `expo-router` but `app/index.tsx` is a manual `splash → onboard → app` phase + tab-switch state machine, not file-based routing. Don't assume route files map to screens.
+- In zsh, `$UID` is a readonly variable — don't use `UID` as a shell var name when scripting curl tests against user ids.
 - The whole codebase (comments, log messages, user-facing strings) is in French — match that when editing.
