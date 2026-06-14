@@ -9,6 +9,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { QrModule } from './qr/qr.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AdminModule } from './admin/admin.module';
+import { KycModule } from './kyc/kyc.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -36,6 +37,7 @@ import { PrismaModule } from './prisma/prisma.module';
     QrModule,
     WebhooksModule,
     AdminModule,
+    KycModule,
     NotificationsModule,
     CloudinaryModule,
   ],

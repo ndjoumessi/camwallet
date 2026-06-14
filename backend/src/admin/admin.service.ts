@@ -249,7 +249,15 @@ export class AdminService {
         fullName: true,
         kycStatus: true,
         createdAt: true,
-        kycDocument: { select: { status: true, submittedAt: true } },
+        kycDocument: {
+          select: {
+            status: true,
+            submittedAt: true,
+            idFrontUrl: true,
+            idBackUrl: true,
+            selfieUrl: true,
+          },
+        },
       },
     });
 
