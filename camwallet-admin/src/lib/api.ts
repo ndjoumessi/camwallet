@@ -156,26 +156,24 @@ export const logout = () => clearTokens()
 
 export const getStats = () => request<AdminStats>('/admin/stats')
 
+// Construit une query string en ignorant les valeurs vides/undefined.
+function buildQuery(params: Record<string, string | number | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '') q.set(k, String(v))
+  }
+  const qs = q.toString()
+  return qs ? `?${qs}` : ''
+}
+
 export function getUsers(
   params: { page?: number; limit?: number; search?: string; status?: string } = {},
 ) {
-  const q = new URLSearchParams()
-  if (params.page) q.set('page', String(params.page))
-  if (params.limit) q.set('limit', String(params.limit))
-  if (params.search) q.set('search', params.search)
-  if (params.status) q.set('status', params.status)
-  const qs = q.toString()
-  return request<Paginated<AdminUser>>(`/admin/users${qs ? `?${qs}` : ''}`)
+  return request<Paginated<AdminUser>>(`/admin/users${buildQuery(params)}`)
 }
 
 export function getTransactions(
   params: { page?: number; limit?: number; type?: string; status?: string } = {},
 ) {
-  const q = new URLSearchParams()
-  if (params.page) q.set('page', String(params.page))
-  if (params.limit) q.set('limit', String(params.limit))
-  if (params.type) q.set('type', params.type)
-  if (params.status) q.set('status', params.status)
-  const qs = q.toString()
-  return request<Paginated<AdminTransaction>>(`/admin/transactions${qs ? `?${qs}` : ''}`)
+  return request<Paginated<AdminTransaction>>(`/admin/transactions${buildQuery(params)}`)
 }

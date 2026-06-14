@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -8,7 +8,6 @@ import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError,
   getStats, getUsers, getTransactions,
-  type AdminStats, type AdminUser, type AdminTransaction,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -121,6 +120,48 @@ function StateRow({ loading, error, empty }: { loading: boolean; error: string |
   return null
 }
 
+// Signal global de rafraîchissement : le bouton « Actualiser » incrémente ce
+// nonce ; chaque useFetch monté le surveille et recharge, sans démonter les
+// pages (l'état UI — recherche, filtre, scroll — est donc préservé).
+const RefreshContext = createContext(0)
+
+// Hook de chargement partagé : centralise loading / error / annulation et
+// expose refetch(). Chaque source est indépendante — l'échec de l'une
+// n'efface pas les données de l'autre.
+function useFetch<T>(fn: () => Promise<T>, deps: unknown[]) {
+  const refreshNonce = useContext(RefreshContext)
+  const [data, setData] = useState<T | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    fn()
+      .then((d) => { if (alive) { setData(d); setError(null) } })
+      .catch((e) => {
+        if (alive && !(e instanceof SessionExpiredError))
+          setError(e instanceof Error ? e.message : 'Erreur de chargement')
+      })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+    // fn est volontairement hors deps (recréée à chaque rendu) ; le nonce force le refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, refreshNonce])
+
+  return { data, loading, error }
+}
+
+// Valeur debouncée (utilisée pour la recherche serveur).
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return debounced
+}
+
 // ── Status badges ─────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string, text: string, label: string }> = {
@@ -212,26 +253,12 @@ const ChartTooltip = ({ active, payload, label }: any) => {
 
 // ── Pages ────────────────────────────────────────────────
 function DashboardPage() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [recent, setRecent] = useState<AdminTransaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    Promise.all([getStats(), getTransactions({ limit: 5 })])
-      .then(([s, tx]) => {
-        if (!alive) return
-        setStats(s)
-        setRecent(tx.data)
-      })
-      .catch((e) => {
-        if (alive && !(e instanceof SessionExpiredError))
-          setError(e instanceof Error ? e.message : 'Erreur de chargement')
-      })
-      .finally(() => alive && setLoading(false))
-    return () => { alive = false }
-  }, [])
+  // Sources indépendantes : l'échec de l'une n'efface pas l'autre.
+  const { data: stats, loading: statsLoading, error: statsError } = useFetch(() => getStats(), [])
+  const { data: recentData, loading: recentLoading, error: recentError } = useFetch(
+    () => getTransactions({ limit: 5 }), [],
+  )
+  const recent = recentData?.data ?? []
 
   const donut = (stats?.transactions.byType ?? []).map((t) => ({
     name: TX_TYPE_LABEL[t.type] ?? t.type,
@@ -246,7 +273,7 @@ function DashboardPage() {
         <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
       </div>
 
-      {(loading || error) && <StateRow loading={loading} error={error} />}
+      {(statsLoading || statsError) && <StateRow loading={statsLoading} error={statsError} />}
 
       {/* KPIs */}
       {stats && (
@@ -375,6 +402,9 @@ function DashboardPage() {
             ))}
           </tbody>
         </table>
+        {(recentLoading || recentError || recent.length === 0) && (
+          <StateRow loading={recentLoading} error={recentError} empty={!recentLoading && !recentError ? 'Aucune transaction' : undefined} />
+        )}
       </div>
     </div>
   )
@@ -449,33 +479,17 @@ function AlertsPage() {
 }
 
 function UsersPage() {
-  const [users, setUsers] = useState<AdminUser[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const debouncedSearch = useDebounced(search.trim(), 350)
 
-  // Recherche + filtre statut côté serveur, debouncés.
-  useEffect(() => {
-    let alive = true
-    setLoading(true)
-    const t = setTimeout(() => {
-      getUsers({ limit: 50, search: search.trim() || undefined, status: USER_STATUS_FILTER[filter] })
-        .then((res) => {
-          if (!alive) return
-          setUsers(res.data)
-          setTotal(res.meta.total)
-          setError(null)
-        })
-        .catch((e) => {
-          if (alive && !(e instanceof SessionExpiredError))
-            setError(e instanceof Error ? e.message : 'Erreur de chargement')
-        })
-        .finally(() => alive && setLoading(false))
-    }, 350)
-    return () => { alive = false; clearTimeout(t) }
-  }, [search, filter])
+  // Recherche + filtre statut côté serveur.
+  const { data, loading, error } = useFetch(
+    () => getUsers({ limit: 50, search: debouncedSearch || undefined, status: USER_STATUS_FILTER[filter] }),
+    [debouncedSearch, filter],
+  )
+  const users = data?.data ?? []
+  const total = data?.meta.total ?? 0
 
   const FILTERS: { key: string; label: string }[] = [
     { key: 'all', label: 'Tous' },
@@ -630,29 +644,14 @@ function KYCPage() {
 }
 
 function TransactionsPage() {
-  const [txs, setTxs] = useState<AdminTransaction[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [txFilter, setTxFilter] = useState('all')
 
-  useEffect(() => {
-    let alive = true
-    setLoading(true)
-    getTransactions({ limit: 50, type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter] })
-      .then((res) => {
-        if (!alive) return
-        setTxs(res.data)
-        setTotal(res.meta.total)
-        setError(null)
-      })
-      .catch((e) => {
-        if (alive && !(e instanceof SessionExpiredError))
-          setError(e instanceof Error ? e.message : 'Erreur de chargement')
-      })
-      .finally(() => alive && setLoading(false))
-    return () => { alive = false }
-  }, [txFilter])
+  const { data, loading, error } = useFetch(
+    () => getTransactions({ limit: 50, type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter] }),
+    [txFilter],
+  )
+  const txs = data?.data ?? []
+  const total = data?.meta.total ?? 0
 
   return (
     <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
@@ -813,7 +812,7 @@ const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances']
 export default function App() {
   const [authed, setAuthed] = useState(hasSession())
   const [activePage, setActivePage] = useState('dashboard')
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshNonce, setRefreshNonce] = useState(0)
 
   const handleLogout = useCallback(() => {
     logout()
@@ -844,6 +843,7 @@ export default function App() {
   }
 
   return (
+    <RefreshContext.Provider value={refreshNonce}>
     <div style={{ display: 'flex', height: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", color: C.text }}>
       {/* Sidebar */}
       <aside style={{ width: 230, background: C.surface, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
@@ -913,7 +913,7 @@ export default function App() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
-              onClick={() => setRefreshKey(k => k + 1)}
+              onClick={() => setRefreshNonce(n => n + 1)}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
               🔄 Actualiser
             </button>
@@ -929,10 +929,11 @@ export default function App() {
         </div>
 
         {/* Page content */}
-        <div key={refreshKey} style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
           {renderPage()}
         </div>
       </main>
     </div>
+    </RefreshContext.Provider>
   )
 }
