@@ -1,9 +1,16 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react'
+import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
+import {
+  LayoutGrid, AlertTriangle, Users as UsersIcon, ClipboardCheck, Zap, Wallet,
+  Landmark, TrendingUp, RefreshCw, LogOut, Search, Clock, CheckCircle2, XCircle,
+  FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
+  X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
+  type LucideIcon,
+} from 'lucide-react'
 import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError,
@@ -85,6 +92,42 @@ function StateRow({ loading, error, empty }: { loading: boolean; error: string |
 // pages (l'état UI — recherche, filtre, scroll — est donc préservé).
 const RefreshContext = createContext(0)
 
+// ── Toasts (feedback d'action : succès / erreur) ──────────
+type Toast = { id: number; msg: string; type: 'success' | 'error' }
+const ToastContext = createContext<(msg: string, type?: 'success' | 'error') => void>(() => {})
+const useToast = () => useContext(ToastContext)
+let toastSeq = 0
+
+function ToastHost({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number) => void }) {
+  return (
+    <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 200, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {toasts.map((t) => {
+        const ok = t.type === 'success'
+        const Icon = ok ? CheckCircle2 : XCircle
+        return (
+          <div
+            key={t.id}
+            className="cw-toast"
+            role="status"
+            aria-live="polite"
+            onClick={() => dismiss(t.id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+              minWidth: 240, maxWidth: 360, padding: '12px 14px', borderRadius: 12,
+              background: C.surface, border: `1px solid ${ok ? C.green : C.red}55`,
+              boxShadow: '0 10px 30px -10px #000A', color: C.text, fontSize: 13, fontWeight: 600,
+            }}
+          >
+            <Icon size={18} color={ok ? C.green : C.red} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>{t.msg}</span>
+            <X size={15} color={C.textMuted} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // Hook de chargement partagé : centralise loading / error / annulation et
 // expose refetch(). Chaque source est indépendante — l'échec de l'une
 // n'efface pas les données de l'autre.
@@ -125,24 +168,25 @@ function useDebounced<T>(value: T, ms: number): T {
 
 // ── Status badges ─────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { bg: string, text: string, label: string }> = {
+  const map: Record<string, { bg: string, text: string, label: string, icon?: LucideIcon }> = {
     success: { bg: '#00C89618', text: C.green, label: 'Succès' },
     pending: { bg: C.yellowLight, text: '#B89000', label: 'En attente' },
     failed: { bg: C.redLight, text: C.red, label: 'Échoué' },
-    flagged: { bg: '#A78BFA18', text: C.purple, label: '🚨 Signalé' },
-    verified: { bg: '#00C89618', text: C.green, label: '✓ Vérifié' },
-    blocked: { bg: C.redLight, text: C.red, label: '🔒 Bloqué' },
+    flagged: { bg: '#A78BFA18', text: C.purple, label: 'Signalé', icon: Siren },
+    verified: { bg: '#00C89618', text: C.green, label: 'Vérifié', icon: CheckCircle2 },
+    blocked: { bg: C.redLight, text: C.red, label: 'Bloqué', icon: Lock },
     suspended: { bg: '#A78BFA18', text: C.purple, label: 'Suspendu' },
     approved: { bg: '#00C89618', text: C.green, label: 'Approuvé' },
     rejected: { bg: C.redLight, text: C.red, label: 'Rejeté' },
     review: { bg: C.yellowLight, text: '#B89000', label: 'Révision' },
   }
   const s = map[status] ?? { bg: '#333', text: '#888', label: status }
+  const Icon = s.icon
   return (
     <span style={{
-      display: 'inline-block', padding: '3px 10px', borderRadius: 20,
+      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20,
       fontSize: 11, fontWeight: 600, background: s.bg, color: s.text,
-    }}>{s.label}</span>
+    }}>{Icon && <Icon size={11} />}{s.label}</span>
   )
 }
 
@@ -162,19 +206,30 @@ function TxTypeBadge({ type }: { type: string }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────
-function KPICard({ label, value, delta, deltaUp, icon, color = C.green, sub }: {
-  label: string, value: string, delta?: string, deltaUp?: boolean, icon: string, color?: string, sub?: string
+function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, sub }: {
+  label: string, value: string, delta?: string, deltaUp?: boolean, icon: LucideIcon, color?: string, sub?: string
 }) {
+  const TrendIcon = deltaUp ? ArrowUpRight : ArrowDownRight
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', flex: 1, minWidth: 0 }}>
+    <div
+      className="cw-card"
+      style={{
+        background: `linear-gradient(140deg, ${color}12 0%, ${C.card} 55%)`,
+        border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', minWidth: 0,
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{label}</span>
-        <span style={{ fontSize: 20 }}>{icon}</span>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34,
+          borderRadius: 10, background: color + '1F', color, flexShrink: 0,
+        }}><Icon size={18} /></span>
       </div>
       <div style={{ fontSize: 26, fontWeight: 900, color, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
       {delta && (
-        <div style={{ fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
-          {deltaUp ? '↑' : '↓'} {delta} vs 30 j préc.
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
+          <TrendIcon size={14} className={deltaUp ? 'cw-trend-up' : 'cw-trend-down'} />
+          {delta} vs 30 j préc.
         </div>
       )}
       {sub && <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{sub}</div>}
@@ -229,7 +284,7 @@ function DashboardPage() {
   }))
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vue d'ensemble</h1>
         <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
@@ -239,22 +294,22 @@ function DashboardPage() {
 
       {/* KPIs */}
       {stats && (
-      <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        <KPICard label="Volume complété" value={fmt(toFcfa(stats.volume.completedAmount))} icon="💰"
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginBottom: 24 }}>
+        <KPICard label="Volume complété" value={fmt(toFcfa(stats.volume.completedAmount))} icon={Wallet}
           {...trendProps(stats.trends.volume)}
           sub={`Frais perçus : ${fmt(toFcfa(stats.volume.collectedFees))}`} />
-        <KPICard label="Solde plateforme" value={fmt(toFcfa(stats.totalBalance))} icon="🏦" color={C.purple} />
-        <KPICard label="Utilisateurs" value={stats.users.total.toLocaleString('fr-FR')} icon="👥" color={C.green}
+        <KPICard label="Solde plateforme" value={fmt(toFcfa(stats.totalBalance))} icon={Landmark} color={C.purple} />
+        <KPICard label="Utilisateurs" value={stats.users.total.toLocaleString('fr-FR')} icon={UsersIcon} color={C.green}
           {...trendProps(stats.trends.users)}
           sub={stats.users.byRole.map((r) => `${r.count} ${r.role.toLowerCase()}`).join(' · ')} />
-        <KPICard label="Transactions" value={stats.transactions.total.toLocaleString('fr-FR')} icon="⚡" color={C.blue}
+        <KPICard label="Transactions" value={stats.transactions.total.toLocaleString('fr-FR')} icon={Zap} color={C.blue}
           {...trendProps(stats.trends.transactions)}
           sub={`${stats.transactions.pending} en attente`} />
       </div>
       )}
 
       {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
         {/* Volume area chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -263,6 +318,7 @@ function DashboardPage() {
               {PERIODS.map((p) => (
                 <button
                   key={p.key}
+                  className="cw-chip"
                   onClick={() => setPeriod(p.key)}
                   style={{
                     fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: period === p.key ? 700 : 500,
@@ -317,7 +373,7 @@ function DashboardPage() {
       </div>
 
       {/* Revenue & Users row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         {/* Revenue bar */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus (frais perçus) par jour</h3>
@@ -352,11 +408,12 @@ function DashboardPage() {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions récentes</h3>
-          <button style={{ fontSize: 12, color: C.green, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-            Voir tout →
+          <button className="cw-link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.green, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+            Voir tout <ArrowRight size={14} />
           </button>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="cw-tablewrap">
+        <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
               {['Réf.', 'Type', 'De', 'À', 'Montant', 'Statut', 'Date'].map(h => (
@@ -366,7 +423,7 @@ function DashboardPage() {
           </thead>
           <tbody>
             {recent.map(tx => (
-              <tr key={tx.id} style={{ borderTop: `1px solid ${C.border}` }}>
+              <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
@@ -378,6 +435,7 @@ function DashboardPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {(recentLoading || recentError || recent.length === 0) && (
           <StateRow loading={recentLoading} error={recentError} empty={!recentLoading && !recentError ? 'Aucune transaction' : undefined} />
         )}
@@ -392,7 +450,7 @@ function AlertsPage() {
   const flagged = data?.flagged ?? []
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Alertes & Surveillance</h1>
         <p style={{ color: C.textMuted, fontSize: 13 }}>{alerts.length} alerte(s) active(s) — données en temps réel</p>
@@ -404,13 +462,14 @@ function AlertsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
         {alerts.map(a => {
           const cfg = {
-            error: { bg: C.redLight, border: C.red, icon: '🚨' },
-            warn: { bg: C.yellowLight, border: C.yellow, icon: '⚠️' },
-            info: { bg: C.blueLight, border: C.blue, icon: 'ℹ️' },
-          }[a.type] ?? { bg: '#333', border: '#888', icon: '•' }
+            error: { bg: C.redLight, border: C.red, icon: Siren },
+            warn: { bg: C.yellowLight, border: C.yellow, icon: AlertTriangle },
+            info: { bg: C.blueLight, border: C.blue, icon: Info },
+          }[a.type] ?? { bg: '#333', border: '#888', icon: Info }
+          const AlertIcon = cfg.icon
           return (
             <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: cfg.bg, borderLeft: `3px solid ${cfg.border}`, borderRadius: 12, padding: '14px 16px' }}>
-              <span style={{ fontSize: 18, flexShrink: 0 }}>{cfg.icon}</span>
+              <AlertIcon size={18} color={cfg.border} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{a.title}</div>
                 <div style={{ color: C.textSoft, fontSize: 12 }}>{a.desc}</div>
@@ -422,8 +481,11 @@ function AlertsPage() {
 
       {/* Flagged transactions (échecs + gros montants, 7 derniers jours) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-        <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>⚠️ Transactions signalées</h3>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
+          <AlertTriangle size={16} color={C.yellow} /> Transactions signalées
+        </h3>
+        <div className="cw-tablewrap">
+        <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
               {['Réf.', 'Type', 'Montant', 'De', 'À', 'Statut', 'Date'].map(h => (
@@ -433,7 +495,7 @@ function AlertsPage() {
           </thead>
           <tbody>
             {flagged.map(tx => (
-              <tr key={tx.id} style={{ borderTop: `1px solid ${C.border}` }}>
+              <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '10px 12px', color: C.yellow, fontWeight: 700 }}>{fmt(toFcfa(tx.amount))}</td>
@@ -445,6 +507,7 @@ function AlertsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {!loading && !error && flagged.length === 0 && (
           <div style={{ textAlign: 'center', padding: 24, color: C.textMuted }}>Aucune transaction signalée</div>
         )}
@@ -457,16 +520,18 @@ function AlertsPage() {
 function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClose: () => void; onChanged: () => void }) {
   const { data, loading, error, refetch } = useFetch(() => getUserDetail(userId), [userId])
   const [acting, setActing] = useState(false)
+  const toast = useToast()
   const u = data?.user
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const run = async (fn: () => Promise<unknown>, okMsg = 'Action effectuée') => {
     setActing(true)
     try {
       await fn()
       refetch()
       onChanged()
+      toast(okMsg, 'success')
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Action échouée')
+      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
     } finally {
       setActing(false)
     }
@@ -493,7 +558,10 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <h2 style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Détail utilisateur</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: 20, cursor: 'pointer' }}>✕</button>
+          <button className="cw-iconbtn" onClick={onClose} aria-label="Fermer"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 9, background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}>
+            <X size={20} />
+          </button>
         </div>
 
         {(loading || error) && <StateRow loading={loading} error={error} />}
@@ -516,7 +584,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             </div>
 
             {/* Infos */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
               <div>{label('Email')}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
               <div>{label('Ville')}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
               <div>{label('Naissance')}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
@@ -531,20 +599,20 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             {/* Actions */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
               {u.role !== 'ADMIN' && (u.status === 'LOCKED' ? (
-                <button disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'))}
+                <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'), 'Compte débloqué')}
                   style={{ fontSize: 12, color: C.green, background: C.greenLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
               ) : (
-                <button disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'LOCKED'))}
+                <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'LOCKED'), 'Compte bloqué')}
                   style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
               ))}
-              <button disabled={acting} onClick={() => { if (confirm('Forcer la réinitialisation du PIN ?')) run(() => resetUserPin(u.id)) }}
+              <button className="cw-btn" disabled={acting} onClick={() => { if (confirm('Forcer la réinitialisation du PIN ?')) run(() => resetUserPin(u.id), 'PIN réinitialisé') }}
                 style={{ fontSize: 12, color: C.yellow, background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
-                  <button disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'))}
-                    style={{ fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>✓ Approuver KYC</button>
-                  <button disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'))}
-                    style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}>✕ Rejeter KYC</button>
+                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'), 'KYC approuvé')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><Check size={14} /> Approuver KYC</button>
+                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'), 'KYC rejeté')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><X size={14} /> Rejeter KYC</button>
                 </>
               )}
             </div>
@@ -613,12 +681,27 @@ function UsersPage() {
 
   const [acting, setActing] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const toast = useToast()
+  // Tri client sur les lignes chargées.
+  const [sort, setSort] = useState<{ key: 'balance' | 'createdAt'; dir: 1 | -1 } | null>(null)
+  const sortedUsers = useMemo(() => {
+    if (!sort) return users
+    const v = (u: typeof users[number]) =>
+      sort.key === 'balance' ? Number(u.wallet?.balance ?? 0) : new Date(u.createdAt).getTime()
+    return [...users].sort((a, b) => (v(a) - v(b)) * sort.dir)
+  }, [users, sort])
+  const toggleSort = (key: 'balance' | 'createdAt') =>
+    setSort((s) => (s?.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 }))
+
   // Bloquer / réactiver un compte (action tracée côté backend dans l'AuditLog).
   const toggleBlock = async (u: { id: string; status: string }) => {
     setActing(u.id)
     try {
       await setUserStatus(u.id, u.status === 'LOCKED' ? 'ACTIVE' : 'LOCKED')
       refetch()
+      toast(u.status === 'LOCKED' ? 'Compte débloqué' : 'Compte bloqué', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
     } finally {
       setActing(null)
     }
@@ -632,7 +715,7 @@ function UsersPage() {
   ]
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Utilisateurs</h1>
@@ -643,17 +726,19 @@ function UsersPage() {
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', flex: 1, minWidth: 200 }}>
-          <span>🔍</span>
+          <Search size={16} color={C.textMuted} style={{ flexShrink: 0 }} />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Rechercher (nom ou téléphone)…"
+            aria-label="Rechercher un utilisateur"
             style={{ background: 'none', border: 'none', color: C.text, fontSize: 13, flex: 1, outline: 'none' }}
           />
         </div>
         {FILTERS.map(f => (
           <button
             key={f.key}
+            className="cw-chip"
             onClick={() => setFilter(f.key)}
             style={{
               fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: filter === f.key ? 700 : 500,
@@ -668,17 +753,28 @@ function UsersPage() {
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="cw-tablewrap">
+        <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
-              {['Utilisateur', 'Téléphone', 'Solde', 'Statut', 'KYC', 'Inscrit', 'Actions'].map(h => (
-                <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
+              {([
+                { h: 'Utilisateur' }, { h: 'Téléphone' }, { h: 'Solde', sk: 'balance' as const },
+                { h: 'Statut' }, { h: 'KYC' }, { h: 'Inscrit', sk: 'createdAt' as const }, { h: 'Actions' },
+              ]).map(({ h, sk }) => (
+                <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>
+                  {sk ? (
+                    <button className="cw-link" onClick={() => toggleSort(sk)} aria-label={`Trier par ${h}`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: 11, fontWeight: 600, color: sort?.key === sk ? C.green : C.textMuted }}>
+                      {h}{sort?.key === sk ? (sort.dir === -1 ? <ChevronDown size={13} /> : <ChevronUp size={13} />) : <ChevronsUpDown size={13} style={{ opacity: 0.45 }} />}
+                    </button>
+                  ) : h}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {users.map(u => (
-              <tr key={u.id} onClick={() => setSelected(u.id)}
+            {sortedUsers.map(u => (
+              <tr key={u.id} className="cw-row" onClick={() => setSelected(u.id)}
                 style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                 <td style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -698,17 +794,17 @@ function UsersPage() {
                 <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(u.createdAt)}</td>
                 <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button onClick={() => setSelected(u.id)}
+                    <button className="cw-btn" onClick={() => setSelected(u.id)}
                       style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                       Détails
                     </button>
                     {u.role === 'ADMIN' ? null : u.status === 'LOCKED' ? (
-                      <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                      <button className="cw-btn" onClick={() => toggleBlock(u)} disabled={acting === u.id}
                         style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
                         Débloquer
                       </button>
                     ) : (
-                      <button onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                      <button className="cw-btn" onClick={() => toggleBlock(u)} disabled={acting === u.id}
                         style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
                         Bloquer
                       </button>
@@ -719,6 +815,7 @@ function UsersPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {!loading && !error && users.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun utilisateur trouvé</div>
         )}
@@ -737,25 +834,29 @@ function KYCPage() {
   const queue = data?.pending ?? []
   const counts = data?.counts ?? { pending: 0, approved30: 0, rejected30: 0 }
   const [acting, setActing] = useState<string | null>(null)
+  const toast = useToast()
 
   const decide = async (userId: string, decision: 'APPROVED' | 'REJECTED') => {
     setActing(userId)
     try {
       await reviewKyc(userId, decision)
       refetch()
+      toast(decision === 'APPROVED' ? 'KYC approuvé' : 'KYC rejeté', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
     } finally {
       setActing(null)
     }
   }
 
-  const stats = [
-    { label: 'En attente', value: counts.pending, color: C.yellow, icon: '⏳' },
-    { label: 'Approuvés (30j)', value: counts.approved30, color: C.green, icon: '✅' },
-    { label: 'Rejetés (30j)', value: counts.rejected30, color: C.red, icon: '❌' },
+  const stats: { label: string; value: number; color: string; icon: LucideIcon }[] = [
+    { label: 'En attente', value: counts.pending, color: C.yellow, icon: Clock },
+    { label: 'Approuvés (30j)', value: counts.approved30, color: C.green, icon: CheckCircle2 },
+    { label: 'Rejetés (30j)', value: counts.rejected30, color: C.red, icon: XCircle },
   ]
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vérification KYC</h1>
         <p style={{ color: C.textMuted, fontSize: 13 }}>{counts.pending} demande(s) en attente</p>
@@ -764,16 +865,19 @@ function KYCPage() {
       {(loading || error) && <StateRow loading={loading} error={error} />}
 
       {/* Stats row */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-        {stats.map(s => (
-          <div key={s.label} style={{ flex: 1, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 24 }}>
+        {stats.map(s => {
+          const Icon = s.icon
+          return (
+          <div key={s.label} className="cw-card" style={{ background: `linear-gradient(140deg, ${s.color}12 0%, ${C.card} 55%)`, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
-              <span>{s.icon}</span>
+              <span style={{ display: 'inline-flex', width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', background: s.color + '1F', color: s.color }}><Icon size={16} /></span>
             </div>
             <div style={{ fontSize: 24, fontWeight: 900, color: s.color }}>{s.value}</div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Queue */}
@@ -788,18 +892,18 @@ function KYCPage() {
                 <div>
                   <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{k.fullName ?? 'Sans nom'}</div>
                   <div style={{ color: C.textMuted, fontSize: 12 }}>{k.phone} · Inscrit le {fmtDate(k.createdAt)}</div>
-                  {k.kycDocument && <div style={{ color: C.blue, fontSize: 12, marginTop: 3, fontWeight: 600 }}>📄 Document soumis le {fmtDate(k.kycDocument.submittedAt)}</div>}
+                  {k.kycDocument && <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.blue, fontSize: 12, marginTop: 3, fontWeight: 600 }}><FileText size={13} /> Document soumis le {fmtDate(k.kycDocument.submittedAt)}</div>}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <StatusBadge status={KYC_STATUS_BADGE[k.kycStatus] ?? k.kycStatus} />
-                <button onClick={() => decide(k.id, 'APPROVED')} disabled={acting === k.id}
-                  style={{ fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
-                  ✓ Approuver
+                <button className="cw-btn" onClick={() => decide(k.id, 'APPROVED')} disabled={acting === k.id}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
+                  <Check size={14} /> Approuver
                 </button>
-                <button onClick={() => decide(k.id, 'REJECTED')} disabled={acting === k.id}
-                  style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
-                  ✕ Rejeter
+                <button className="cw-btn" onClick={() => decide(k.id, 'REJECTED')} disabled={acting === k.id}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
+                  <X size={14} /> Rejeter
                 </button>
               </div>
             </div>
@@ -839,7 +943,7 @@ function TransactionsPage() {
   const total = data?.meta.total ?? 0
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Transactions</h1>
@@ -852,6 +956,7 @@ function TransactionsPage() {
         {['all', 'P2P', 'QR', 'RECHARGE', 'RETRAIT'].map(f => (
           <button
             key={f}
+            className="cw-chip"
             onClick={() => setTxFilter(f)}
             style={{
               fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
@@ -866,7 +971,8 @@ function TransactionsPage() {
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="cw-tablewrap">
+        <table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
               {['Réf.', 'Type', 'De', 'À', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
@@ -876,7 +982,7 @@ function TransactionsPage() {
           </thead>
           <tbody>
             {txs.map(tx => (
-              <tr key={tx.id} style={{ borderTop: `1px solid ${C.border}` }}>
+              <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '11px 14px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
@@ -889,6 +995,7 @@ function TransactionsPage() {
             ))}
           </tbody>
         </table>
+        </div>
         {!loading && !error && txs.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucune transaction</div>
         )}
@@ -908,17 +1015,17 @@ function FinancePage() {
     color: TX_TYPE_COLOR[t.type] ?? C.textMuted,
   }))
 
-  const kpis = stats
+  const kpis: { label: string; value: string; icon: LucideIcon; color: string; trend?: number | null }[] = stats
     ? [
-        { label: 'Frais perçus', value: fmt(toFcfa(stats.volume.collectedFees)), icon: '💰', color: C.green },
-        { label: 'Volume complété', value: fmt(toFcfa(stats.volume.completedAmount)), icon: '📈', color: C.blue, trend: stats.trends.volume },
-        { label: 'Solde plateforme', value: fmt(toFcfa(stats.totalBalance)), icon: '🏦', color: C.purple },
-        { label: 'Transactions', value: stats.transactions.total.toLocaleString('fr-FR'), icon: '⚡', color: C.yellow, trend: stats.trends.transactions },
+        { label: 'Frais perçus', value: fmt(toFcfa(stats.volume.collectedFees)), icon: Wallet, color: C.green },
+        { label: 'Volume complété', value: fmt(toFcfa(stats.volume.completedAmount)), icon: TrendingUp, color: C.blue, trend: stats.trends.volume },
+        { label: 'Solde plateforme', value: fmt(toFcfa(stats.totalBalance)), icon: Landmark, color: C.purple },
+        { label: 'Transactions', value: stats.transactions.total.toLocaleString('fr-FR'), icon: Zap, color: C.yellow, trend: stats.trends.transactions },
       ]
     : []
 
   return (
-    <div style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Finances & Revenus</h1>
         <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
@@ -928,7 +1035,7 @@ function FinancePage() {
 
       {/* KPIs financiers (réels) */}
       {stats && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 24 }}>
           {kpis.map((s) => (
             <KPICard key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} {...trendProps(s.trend)} />
           ))}
@@ -975,13 +1082,13 @@ function FinancePage() {
 }
 
 // ── Sidebar nav items ─────────────────────────────────────
-const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⊞', group: 'Vue générale' },
-  { id: 'alerts', label: 'Alertes', icon: '⚠️', group: 'Vue générale' },
-  { id: 'users', label: 'Utilisateurs', icon: '👥', group: 'Utilisateurs' },
-  { id: 'kyc', label: 'Vérification KYC', icon: '📋', group: 'Utilisateurs' },
-  { id: 'transactions', label: 'Transactions', icon: '⚡', group: 'Finances' },
-  { id: 'finance', label: 'Finances & Revenus', icon: '💰', group: 'Finances' },
+const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?: string }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid, group: 'Vue générale' },
+  { id: 'alerts', label: 'Alertes', icon: AlertTriangle, group: 'Vue générale' },
+  { id: 'users', label: 'Utilisateurs', icon: UsersIcon, group: 'Utilisateurs' },
+  { id: 'kyc', label: 'Vérification KYC', icon: ClipboardCheck, group: 'Utilisateurs' },
+  { id: 'transactions', label: 'Transactions', icon: Zap, group: 'Finances' },
+  { id: 'finance', label: 'Finances & Revenus', icon: Wallet, group: 'Finances' },
 ]
 
 const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances']
@@ -991,6 +1098,14 @@ export default function App() {
   const [authed, setAuthed] = useState(hasSession())
   const [activePage, setActivePage] = useState('dashboard')
   const [refreshNonce, setRefreshNonce] = useState(0)
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
+    const id = ++toastSeq
+    setToasts((t) => [...t, { id, msg, type }])
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000)
+  }, [])
+  const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
 
   const handleLogout = useCallback(() => {
     logout()
@@ -1022,15 +1137,16 @@ export default function App() {
 
   return (
     <RefreshContext.Provider value={refreshNonce}>
-    <div style={{ display: 'flex', height: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", color: C.text }}>
+    <ToastContext.Provider value={showToast}>
+    <div className="cw-shell" style={{ display: 'flex', height: '100vh', background: C.bg, fontFamily: "'Inter', system-ui, sans-serif", color: C.text }}>
       {/* Sidebar */}
-      <aside style={{ width: 230, background: C.surface, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <aside className="cw-sidebar" style={{ width: 230, background: C.surface, borderRight: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
         {/* Brand */}
         <div style={{ padding: '18px 16px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: C.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 900, color: '#fff', flexShrink: 0 }}>
             ₩
           </div>
-          <div>
+          <div className="cw-compact-hide">
             <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>
               Cam<span style={{ color: C.green }}>Wallet</span>
             </div>
@@ -1042,39 +1158,46 @@ export default function App() {
         <nav style={{ padding: '12px 8px', flex: 1, overflowY: 'auto' }}>
           {GROUPS.map(group => (
             <div key={group}>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', padding: '8px 8px 4px' }}>
+              <div className="cw-compact-hide" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', padding: '8px 8px 4px' }}>
                 {group}
               </div>
-              {NAV.filter(n => n.group === group).map(item => (
+              {NAV.filter(n => n.group === group).map(item => {
+                const Icon = item.icon
+                const active = activePage === item.id
+                return (
                 <button
                   key={item.id}
+                  className="cw-nav-btn"
                   onClick={() => setActivePage(item.id)}
+                  aria-current={active ? 'page' : undefined}
+                  title={item.label}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px',
+                    position: 'relative', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px',
                     borderRadius: 10, cursor: 'pointer', fontSize: 13, width: '100%', textAlign: 'left',
-                    border: 'none', marginBottom: 2, transition: 'all 0.15s',
-                    background: activePage === item.id ? C.green + '20' : 'none',
-                    color: activePage === item.id ? C.green : C.textSoft,
-                    fontWeight: activePage === item.id ? 700 : 400,
+                    border: 'none', marginBottom: 2,
+                    background: active ? C.green + '20' : 'none',
+                    color: active ? C.green : C.textSoft,
+                    fontWeight: active ? 700 : 400,
                   }}
                 >
-                  <span style={{ fontSize: 16, flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ flex: 1 }}>{item.label}</span>
+                  {active && <span style={{ position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: 3, background: C.green }} />}
+                  <Icon size={18} style={{ flexShrink: 0 }} />
+                  <span className="cw-navlabel" style={{ flex: 1 }}>{item.label}</span>
                   {item.badge && (
-                    <span style={{ fontSize: 10, background: C.blue + '25', color: C.blue, padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
+                    <span className="cw-nav-badge" style={{ fontSize: 10, background: C.blue + '25', color: C.blue, padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
                       {item.badge}
                     </span>
                   )}
                 </button>
-              ))}
+                )
+              })}
             </div>
           ))}
         </nav>
 
         {/* Footer */}
-        <div style={{ padding: '12px 16px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.textMuted }}>
+        <div className="cw-compact-hide" style={{ padding: '12px 16px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.textMuted }}>
           <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>Admin Système</div>
-          <div>Dernière synchro: 14h32</div>
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: 4, background: C.green, display: 'inline-block' }} />
             <span style={{ color: C.green, fontSize: 11, fontWeight: 600 }}>API opérationnelle</span>
@@ -1083,24 +1206,28 @@ export default function App() {
       </aside>
 
       {/* Main */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         {/* Topbar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>
             {NAV.find(n => n.id === activePage)?.label ?? 'Dashboard'}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
+              className="cw-btn"
               onClick={() => setRefreshNonce(n => n + 1)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
-              🔄 Actualiser
+              aria-label="Actualiser les données"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
+              <RefreshCw size={14} /> <span className="cw-topbar-label">Actualiser</span>
             </button>
             <button
+              className="cw-btn"
               onClick={handleLogout}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
-              ⎋ Déconnexion
+              aria-label="Se déconnecter"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
+              <LogOut size={14} /> <span className="cw-topbar-label">Déconnexion</span>
             </button>
-            <div style={{ width: 34, height: 34, borderRadius: 17, background: C.green + '20', border: `2px solid ${C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: C.green, cursor: 'pointer' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 17, background: C.green + '20', border: `2px solid ${C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: C.green, flexShrink: 0 }}>
               A
             </div>
           </div>
@@ -1111,7 +1238,10 @@ export default function App() {
           {renderPage()}
         </div>
       </main>
+
+      <ToastHost toasts={toasts} dismiss={dismissToast} />
     </div>
+    </ToastContext.Provider>
     </RefreshContext.Provider>
   )
 }

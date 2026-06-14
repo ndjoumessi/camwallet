@@ -90,6 +90,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         )}
 
         <button
+          className="cw-btn"
           type="submit" disabled={loading || !email || !password}
           style={{
             width: '100%', background: loading || !email || !password ? C.green + '60' : C.green,
