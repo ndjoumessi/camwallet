@@ -1,7 +1,7 @@
 # CamWallet — TODO & Fonctionnalités manquantes
 
 > Comparatif CDC v1.0 (Juin 2026) vs implémentation actuelle.  
-> Dernière mise à jour : 2026-06-14
+> Dernière mise à jour : 2026-06-15
 
 ---
 
@@ -11,11 +11,11 @@ Ces points bloquent la validation ou la sécurité du produit. Sans eux, CamWall
 
 ### Backend
 
-- [ ] **[SÉCU] Validation signature webhooks Orange Money** — les webhooks entrants ne vérifient pas le secret HMAC (`OM_WEBHOOK_SECRET`). N'importe qui peut créditer un solde en forgeant une requête. Voir `webhooks/webhooks.service.ts` (TODO explicite).
-- [ ] **[SÉCU] Validation token webhooks MTN MoMo** — même problème côté MTN (`MTN_WEBHOOK_SECRET` non validé).
-- [ ] **[INTÉGRATION] SMS OTP réel via AfricasTalking** — l'`OtpService` simule l'envoi en dev. Sans SMS réel, aucun utilisateur camerounais ne peut s'inscrire. Intégrer l'API AfricasTalking avec `SMS_PROVIDER_API_KEY`.
-- [ ] **[AUTH] Endpoint `POST /auth/logout`** — invalidation du refresh token côté serveur. Sans ça, la déconnexion n'a pas d'effet sur les tokens actifs (sécurité session).
-- [ ] **[AUTH] Endpoint `PATCH /auth/change-pin`** — changement de PIN avec validation de l'ancien PIN. Requis dans les paramètres profil (§3.6 CDC).
+- [x] **[SÉCU] Validation signature webhooks Orange Money** — HMAC-SHA256 avec `OM_WEBHOOK_SECRET`, comparaison à temps constant (`timingSafeEqual`). `webhooks/webhooks.service.ts`.
+- [x] **[SÉCU] Validation token webhooks MTN MoMo** — comparaison à temps constant des hashes SHA-256 du token reçu vs `MTN_WEBHOOK_SECRET`. `webhooks/webhooks.service.ts`.
+- [x] **[INTÉGRATION] SMS OTP réel via AfricasTalking** — déjà implémenté dans `otp.service.ts` (bascule sandbox quand `username === 'sandbox'` ou clé absente).
+- [x] **[AUTH] Endpoint `POST /auth/logout`** — incrémente `User.tokenVersion` ; le `refresh` rejette tout token antérieur à cette version. `auth/auth.controller.ts` + `auth.service.ts`.
+- [x] **[AUTH] Endpoint `PATCH /auth/change-pin`** — vérifie l'ancien PIN (bcrypt), hash le nouveau (coût 12), incrémente `tokenVersion` (invalide toutes les sessions). `auth/auth.controller.ts` + `auth.service.ts`.
 
 ### Mobile
 
@@ -130,7 +130,7 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 
 | Priorité | Nombre d'items | Domaines principaux |
 |---|---|---|
-| 🔴 MVP Bloquant | 11 | Backend (5) + Mobile (6) |
+| 🔴 MVP Bloquant | 6 *(5 backend ✅)* | Mobile (6) |
 | 🟠 Haute | 15 | Backend (5) + Mobile (7) + Admin (4) - 1 partagé |
 | 🟡 Moyenne | 13 | Backend (5) + Mobile (4) + Admin (4) |
 | 🔵 Phase 2 | 22 | Mobile (11) + Admin (8) + Infra (5) - 2 partagés |

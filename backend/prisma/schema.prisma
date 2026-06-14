@@ -30,6 +30,7 @@ model User {
   lockedUntil     DateTime?
   lastLoginAt     DateTime?
   lastLoginIp     String?
+  tokenVersion    Int       @default(0) // Incrémenté à chaque logout — invalide les refresh tokens émis avant
 
   // Notifications push (jeton Expo)
   pushToken       String?

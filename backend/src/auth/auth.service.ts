@@ -88,11 +88,11 @@ export class AuthService {
   // ─── Étape 3 : Création PIN ────────────────────────────────────────────────
   async setPin(dto: SetPinDto) {
     const pinHash = await bcrypt.hash(dto.pin, 12);
-    await this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id: dto.userId },
       data: { pinHash },
     });
-    return this.generateTokens(dto.userId);
+    return this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
   }
 
   // ─── Connexion avec PIN ────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ export class AuthService {
       data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
 
-    return this.generateTokens(user.id, user.role);
+    return this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
   }
 
   // ─── Connexion administrateur (email + mot de passe) ──────────────────────
@@ -200,17 +200,10 @@ export class AuthService {
     return this.generateTokens(sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
   }
 
-  // ─── Refresh token ────────────────────────────────────────────────────────
-  async refreshTokens(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new UnauthorizedException();
-    return this.generateTokens(user.id, user.role);
-  }
-
   // Échange un refresh token valide contre une nouvelle paire de tokens.
   async refresh(refreshToken: string) {
     if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
-    let payload: { sub: string; role?: string; adminCredHash?: string };
+    let payload: { sub: string; role?: string; adminCredHash?: string; tv?: number };
     try {
       payload = this.jwtService.verify(refreshToken, {
         secret: this.config.get('JWT_REFRESH_SECRET'),
@@ -218,16 +211,52 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Refresh token invalide ou expiré');
     }
+
     // L'admin n'existe pas en base : on régénère directement ses tokens, mais
-    // seulement si les identifiants admin n'ont pas changé depuis l'émission
-    // (la rotation de ADMIN_PASSWORD invalide ainsi les sessions en cours).
+    // seulement si les identifiants admin n'ont pas changé depuis l'émission.
     if (payload.role === 'ADMIN') {
       if (!payload.adminCredHash || payload.adminCredHash !== this.adminCredHash()) {
         throw new UnauthorizedException('Session administrateur expirée');
       }
       return this.generateTokens(payload.sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
     }
-    return this.refreshTokens(payload.sub);
+
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) throw new UnauthorizedException();
+
+    // Vérification de la version de token — invalide les sessions déconnectées
+    if (typeof payload.tv === 'number' && payload.tv !== user.tokenVersion) {
+      throw new UnauthorizedException('Session expirée — reconnectez-vous');
+    }
+
+    return this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
+  }
+
+  // ─── Déconnexion (invalide les refresh tokens en cours) ───────────────────
+  async logout(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return { message: 'Déconnexion réussie' };
+  }
+
+  // ─── Changement de PIN (avec vérification de l'ancien) ────────────────────
+  async changePin(userId: string, currentPin: string, newPin: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+
+    const pinValid = await bcrypt.compare(currentPin, user.pinHash);
+    if (!pinValid) throw new UnauthorizedException('PIN actuel incorrect');
+
+    const newPinHash = await bcrypt.hash(newPin, 12);
+    // Incrémente tokenVersion → invalide toutes les sessions en cours (sécurité)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { pinHash: newPinHash, tokenVersion: { increment: 1 } },
+    });
+
+    return { message: 'PIN modifié avec succès — reconnectez-vous' };
   }
 
   // ─── Reset PIN via OTP ────────────────────────────────────────────────────

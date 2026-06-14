@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -19,18 +20,62 @@ export class WebhooksService {
     private notifications: NotificationsService,
   ) {}
 
-  async handleOrangeMoney(payload: any, signature: string) {
-    // TODO: Vérifier signature HMAC avec OM_WEBHOOK_SECRET
+  async handleOrangeMoney(payload: any, rawBody: Buffer, signature: string) {
+    this.verifyOmSignature(rawBody, signature);
     this.logger.log(`Webhook OM reçu : ${JSON.stringify(payload)}`);
     await this.processOperatorWebhook(MobileOperator.ORANGE_MONEY, payload);
     return { status: 'ok' };
   }
 
   async handleMtnMomo(payload: any, token: string) {
-    // TODO: Vérifier token MTN avec MTN_WEBHOOK_SECRET
+    this.verifyMtnToken(token);
     this.logger.log(`Webhook MTN MoMo reçu : ${JSON.stringify(payload)}`);
     await this.processOperatorWebhook(MobileOperator.MTN_MOMO, payload);
     return { status: 'ok' };
+  }
+
+  // ─── Validation signatures ───────────────────────────────────────────────
+  private verifyOmSignature(rawBody: Buffer, signature: string): void {
+    const secret = this.config.get<string>('OM_WEBHOOK_SECRET');
+    if (!secret) {
+      this.logger.warn('[SÉCU] OM_WEBHOOK_SECRET non configuré — validation HMAC désactivée');
+      return;
+    }
+    if (!signature) {
+      throw new UnauthorizedException('Signature webhook Orange Money manquante');
+    }
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    // Comparaison à temps constant — les deux digests sont des hex SHA-256 (64 chars)
+    let valid = true;
+    try {
+      const eBuf = Buffer.from(expected, 'hex');
+      const sBuf = Buffer.from(signature.slice(0, 64).padEnd(64, '0'), 'hex');
+      valid = signature.length === 64 && crypto.timingSafeEqual(eBuf, sBuf);
+    } catch {
+      valid = false;
+    }
+    if (!valid) {
+      this.logger.warn(`Signature OM invalide : reçu=${signature} attendu=${expected}`);
+      throw new UnauthorizedException('Signature webhook Orange Money invalide');
+    }
+  }
+
+  private verifyMtnToken(token: string): void {
+    const secret = this.config.get<string>('MTN_WEBHOOK_SECRET');
+    if (!secret) {
+      this.logger.warn('[SÉCU] MTN_WEBHOOK_SECRET non configuré — validation token désactivée');
+      return;
+    }
+    if (!token) {
+      throw new UnauthorizedException('Token webhook MTN MoMo manquant');
+    }
+    // Hash les deux valeurs pour obtenir des buffers de longueur identique (timingSafeEqual l'exige)
+    const ha = crypto.createHash('sha256').update(token).digest();
+    const hb = crypto.createHash('sha256').update(secret).digest();
+    if (!crypto.timingSafeEqual(ha, hb)) {
+      this.logger.warn('Token MTN MoMo invalide');
+      throw new UnauthorizedException('Token webhook MTN MoMo invalide');
+    }
   }
 
   // Finalise une transaction PENDING (recharge ou retrait) à partir de la
