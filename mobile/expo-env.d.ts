@@ -1,3 +1,3 @@
 /// <reference types="expo/types" />
 
-// Fournit le typage de `process.env.EXPO_PUBLIC_*` (généré par Expo).
+// NOTE: This file should not be edited and should be in your git ignore
