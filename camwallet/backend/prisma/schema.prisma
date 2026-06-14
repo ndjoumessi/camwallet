@@ -1,0 +1,286 @@
+// CamWallet — Schéma Prisma
+// PostgreSQL + ACID transactions financières
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILISATEURS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(uuid())
+  phone       String   @unique
+  phoneCode   String   @default("+237") // Cameroun
+  fullName    String?
+  email       String?  @unique
+  pinHash     String   // PIN 6 chiffres bcrypt
+  role        UserRole @default(USER)
+  status      UserStatus @default(ACTIVE)
+  kycStatus   KycStatus  @default(PENDING)
+
+  // Sécurité
+  pinAttempts     Int       @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  lastLoginIp     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  wallet          Wallet?
+  kycDocument     KycDocument?
+  sentTransactions     Transaction[] @relation("Sender")
+  receivedTransactions Transaction[] @relation("Receiver")
+  qrCodes         QrCode[]
+  otpCodes        OtpCode[]
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  USER
+  MERCHANT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  LOCKED
+  DELETED
+}
+
+enum KycStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PORTEFEUILLE (solde virtuel QR)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+
+  // Solde en centimes FCFA (évite les flottants)
+  // Ex: 10000 = 100 FCFA
+  balance   BigInt   @default(0)
+  currency  String   @default("XAF")
+
+  // Limites réglementaires
+  dailyLimit   BigInt @default(50000000)  // 500 000 FCFA/jour
+  monthlyLimit BigInt @default(500000000) // 5 000 000 FCFA/mois
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("wallets")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSACTIONS — table centrale ACID
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Transaction {
+  id          String            @id @default(uuid())
+  reference   String            @unique @default(uuid()) // Référence externe
+
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+
+  // Montant en centimes FCFA
+  amount      BigInt
+  fee         BigInt            @default(0)
+  currency    String            @default("XAF")
+
+  // Parties
+  senderId    String?
+  sender      User?             @relation("Sender", fields: [senderId], references: [id])
+  receiverId  String?
+  receiver    User?             @relation("Receiver", fields: [receiverId], references: [id])
+
+  // Métadonnées
+  description String?
+  qrCodeId    String?
+  qrCode      QrCode?           @relation(fields: [qrCodeId], references: [id])
+
+  // Opérateur mobile (recharge/retrait)
+  operator        MobileOperator?
+  operatorRef     String?           // Référence chez l'opérateur
+  operatorStatus  String?
+
+  // Échecs
+  failureReason   String?
+  retryCount      Int     @default(0)
+
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("transactions")
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum TransactionType {
+  P2P        // Envoi entre utilisateurs
+  QR_PAYMENT // Paiement via QR Code
+  RECHARGE   // Rechargement depuis OM/MoMo
+  WITHDRAWAL // Retrait vers OM/MoMo
+  REFUND     // Remboursement
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum MobileOperator {
+  ORANGE_MONEY
+  MTN_MOMO
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR CODES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model QrCode {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+
+  type      QrCodeType @default(STATIC)
+  payload   String     // Données encodées dans le QR
+
+  // QR Dynamique uniquement
+  amount    BigInt?
+  expiresAt DateTime?
+  usedAt    DateTime?
+
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  transactions Transaction[]
+
+  @@map("qr_codes")
+}
+
+enum QrCodeType {
+  STATIC   // QR fixe lié au compte, réutilisable
+  DYNAMIC  // QR avec montant spécifique, à usage unique
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OTP SMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  code      String   // Code 6 chiffres hashé
+  purpose   OtpPurpose
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int      @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@map("otp_codes")
+  @@index([userId, purpose])
+}
+
+enum OtpPurpose {
+  REGISTRATION
+  LOGIN
+  PIN_RESET
+  WITHDRAWAL_CONFIRM
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KYC
+// ─────────────────────────────────────────────────────────────────────────────
+
+model KycDocument {
+  id         String    @id @default(uuid())
+  userId     String    @unique
+  user       User      @relation(fields: [userId], references: [id])
+
+  idFrontUrl String    // URL Cloudinary CNI recto
+  idBackUrl  String    // URL Cloudinary CNI verso
+  selfieUrl  String    // URL Cloudinary selfie
+
+  status     KycStatus @default(SUBMITTED)
+  reviewedBy String?   // Admin user ID
+  reviewNote String?
+  reviewedAt DateTime?
+
+  submittedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("kyc_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WEBHOOKS OPÉRATEURS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  operator    MobileOperator
+  eventType   String
+  payload     Json
+  signature   String?
+  processed   Boolean  @default(false)
+  processedAt DateTime?
+  error       String?
+
+  createdAt   DateTime @default(now())
+
+  @@map("webhook_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOG — traçabilité réglementaire ANIF
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  action    String   // Ex: "TRANSACTION_CREATED", "PIN_CHANGED"
+  resource  String?  // Ex: "Transaction:uuid"
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
