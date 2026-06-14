@@ -156,11 +156,14 @@ export const logout = () => clearTokens()
 
 export const getStats = () => request<AdminStats>('/admin/stats')
 
-export function getUsers(params: { page?: number; limit?: number; search?: string } = {}) {
+export function getUsers(
+  params: { page?: number; limit?: number; search?: string; status?: string } = {},
+) {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))
   if (params.limit) q.set('limit', String(params.limit))
   if (params.search) q.set('search', params.search)
+  if (params.status) q.set('status', params.status)
   const qs = q.toString()
   return request<Paginated<AdminUser>>(`/admin/users${qs ? `?${qs}` : ''}`)
 }

@@ -77,6 +77,10 @@ const fmtM = (n: number) => (n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' :
 const USER_STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'verified', SUSPENDED: 'suspended', LOCKED: 'blocked', DELETED: 'rejected',
 }
+// clé de filtre UI → statut backend (filtrage côté serveur)
+const USER_STATUS_FILTER: Record<string, string> = {
+  verified: 'ACTIVE', suspended: 'SUSPENDED', blocked: 'LOCKED',
+}
 const KYC_STATUS_BADGE: Record<string, string> = {
   PENDING: 'pending', SUBMITTED: 'review', APPROVED: 'approved', REJECTED: 'rejected',
 }
@@ -452,12 +456,12 @@ function UsersPage() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
 
-  // Recherche côté serveur, debouncée.
+  // Recherche + filtre statut côté serveur, debouncés.
   useEffect(() => {
     let alive = true
     setLoading(true)
     const t = setTimeout(() => {
-      getUsers({ limit: 50, search: search.trim() || undefined })
+      getUsers({ limit: 50, search: search.trim() || undefined, status: USER_STATUS_FILTER[filter] })
         .then((res) => {
           if (!alive) return
           setUsers(res.data)
@@ -471,10 +475,7 @@ function UsersPage() {
         .finally(() => alive && setLoading(false))
     }, 350)
     return () => { alive = false; clearTimeout(t) }
-  }, [search])
-
-  // Filtre par statut, côté client, sur le statut mappé.
-  const filtered = users.filter((u) => filter === 'all' || USER_STATUS_BADGE[u.status] === filter)
+  }, [search, filter])
 
   const FILTERS: { key: string; label: string }[] = [
     { key: 'all', label: 'Tous' },
@@ -529,7 +530,7 @@ function UsersPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(u => (
+            {users.map(u => (
               <tr key={u.id} style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '12px 14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -551,7 +552,7 @@ function UsersPage() {
             ))}
           </tbody>
         </table>
-        {!loading && !error && filtered.length === 0 && (
+        {!loading && !error && users.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun utilisateur trouvé</div>
         )}
         <StateRow loading={loading} error={error} />
