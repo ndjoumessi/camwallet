@@ -296,7 +296,7 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
     <div
       className="cw-card"
       style={{
-        background: `linear-gradient(140deg, ${color}12 0%, ${C.card} 55%)`,
+        background: C.card,
         border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', minWidth: 0,
       }}
     >
@@ -307,7 +307,7 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
           borderRadius: 10, background: color + '1F', color, flexShrink: 0,
         }}><Icon size={18} /></span>
       </div>
-      <div style={{ fontSize: 26, fontWeight: 900, color, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
+      <div style={{ fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
       {delta && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
           <TrendIcon size={14} className={deltaUp ? 'cw-trend-up' : 'cw-trend-down'} />
@@ -335,7 +335,7 @@ const ChartTooltip = ({ active, payload, label }: any) => {
 }
 
 // ── Pages ────────────────────────────────────────────────
-function DashboardPage() {
+function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   // Sources indépendantes : l'échec de l'une n'efface pas l'autre.
   const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useFetch(() => getStats(), [])
   const { data: recentData, loading: recentLoading, error: recentError, refetch: refetchRecent } = useFetch(
@@ -424,6 +424,7 @@ function DashboardPage() {
                   key={p.key}
                   className="cw-chip"
                   onClick={() => setPeriod(p.key)}
+                  aria-pressed={period === p.key}
                   style={{
                     fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: period === p.key ? 700 : 500,
                     background: period === p.key ? C.green : C.surface,
@@ -512,7 +513,7 @@ function DashboardPage() {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions récentes</h3>
-          <button className="cw-link" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.green, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+          <button className="cw-link" onClick={() => onNavigate?.('transactions')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.green, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
             Voir tout <ArrowRight size={14} />
           </button>
         </div>
@@ -624,7 +625,7 @@ function AlertsPage() {
           }[a.type] ?? { bg: '#333', border: '#888', icon: Info }
           const AlertIcon = cfg.icon
           return (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: cfg.bg, borderLeft: `3px solid ${cfg.border}`, borderRadius: 12, padding: '14px 16px' }}>
+            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: cfg.bg, border: `1px solid ${cfg.border}40`, borderRadius: 12, padding: '14px 16px' }}>
               <AlertIcon size={18} color={cfg.border} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{a.title}</div>
@@ -676,6 +677,7 @@ function AlertsPage() {
 function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClose: () => void; onChanged: () => void }) {
   const { data, loading, error, refetch } = useFetch(() => getUserDetail(userId), [userId])
   const [acting, setActing] = useState(false)
+  const [confirmingPinReset, setConfirmingPinReset] = useState(false)
   const toast = useToast()
   const u = data?.user
 
@@ -803,8 +805,18 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
                 <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'LOCKED'), 'Compte bloqué')}
                   style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
               ))}
-              <button className="cw-btn" disabled={acting} onClick={() => { if (confirm('Forcer la réinitialisation du PIN ?')) run(() => resetUserPin(u.id), 'PIN réinitialisé') }}
-                style={{ fontSize: 12, color: C.yellow, background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
+              {confirmingPinReset ? (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '4px 6px 4px 10px' }}>
+                  <span style={{ fontSize: 12, color: C.yellow, fontWeight: 600 }}>Confirmer la réinitialisation ?</span>
+                  <button className="cw-btn" disabled={acting} onClick={() => { setConfirmingPinReset(false); run(() => resetUserPin(u.id), 'PIN réinitialisé') }}
+                    style={{ fontSize: 12, color: '#fff', background: C.yellow, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
+                  <button className="cw-btn" onClick={() => setConfirmingPinReset(false)}
+                    style={{ fontSize: 12, color: C.textSoft, background: 'none', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
+                </div>
+              ) : (
+                <button className="cw-btn" disabled={acting} onClick={() => setConfirmingPinReset(true)}
+                  style={{ fontSize: 12, color: C.yellow, background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
+              )}
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
                   <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'), 'KYC approuvé')}
@@ -876,7 +888,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
               ))}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }} />
+              <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
               <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>Ajouter</button>
             </div>
           </>
@@ -1007,6 +1019,7 @@ function UsersPage() {
             key={f.key}
             className="cw-chip"
             onClick={() => setFilter(f.key)}
+            aria-pressed={filter === f.key}
             style={{
               fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: filter === f.key ? 700 : 500,
               background: filter === f.key ? C.green : C.card,
@@ -2329,7 +2342,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (activePage) {
-      case 'dashboard': return <DashboardPage />
+      case 'dashboard': return <DashboardPage onNavigate={setActivePage} />
       case 'alerts': return <AlertsPage />
       case 'users': return <UsersPage />
       case 'kyc': return <KYCPage />
