@@ -15,6 +15,9 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
+# OpenSSL requis par Prisma sur Alpine (détection libssl)
+RUN apk add --no-cache openssl
+
 # Utilisateur non-root
 RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 nestjs
@@ -29,12 +32,20 @@ COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Artefacts compilés et migrations
-COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
-COPY --chown=nestjs:nodejs prisma ./prisma
+COPY --from=builder /app/dist ./dist
+COPY prisma ./prisma
 
 # Script de démarrage
-COPY --chown=nestjs:nodejs docker-entrypoint.sh ./
+COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
+
+# Ownership nestjs sur tout ce que Prisma doit pouvoir écrire au runtime
+RUN chown -R nestjs:nodejs /app/node_modules/@prisma \
+ && chown -R nestjs:nodejs /app/node_modules/.prisma \
+ && chown -R nestjs:nodejs /app/node_modules/prisma \
+ && chown -R nestjs:nodejs /app/dist \
+ && chown -R nestjs:nodejs /app/prisma \
+ && chown nestjs:nodejs /app/docker-entrypoint.sh
 
 USER nestjs
 
