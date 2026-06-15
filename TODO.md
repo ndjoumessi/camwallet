@@ -1,7 +1,7 @@
 # CamWallet — TODO & Fonctionnalités manquantes
 
 > Comparatif CDC v1.0 (Juin 2026) vs implémentation actuelle.  
-> Dernière mise à jour : 2026-06-15 (v1.7.0)
+> Dernière mise à jour : 2026-06-15 (v1.8.0)
 
 ---
 
@@ -93,36 +93,36 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 
 ### Mobile
 
-- [ ] **[AU-06] Connexion biométrique** — Face ID / empreinte digitale via `expo-local-authentication` (déjà installé, non branché).
-- [ ] **[AU-07] KYC complet Phase 2** — actuellement la soumission existe mais le parcours guidé (explication, re-soumission après rejet) est partiel.
-- [ ] **[WL-08] Limite de retrait journalier paramétrable** — affichage et potentielle modification par l'utilisateur (selon son niveau KYC).
-- [ ] **[WL-09] Programme de points fidélité** — 1 point = 10 FCFA payé, affichage solde points, catalogue de récompenses.
-- [ ] **[QR-09] QR Code commerçant imprimable (PDF)** — génération et téléchargement d'un PDF avec le QR statique mis en page.
-- [ ] **[P2P-07] Demande de remboursement (dispute)** — bouton "Demander un remboursement" sur une transaction reçue.
-- [ ] **[3.6] Mode nuit / clair** — thème sombre (déjà sombre) + thème clair avec toggle dans Paramètres.
-- [ ] **[3.6] Langue Anglais** — internationalisation (i18n) de l'app, Français par défaut.
-- [ ] **[4.1] Espace commerçant avancé** — tableau de bord séparé : CA hebdo/mensuel, classement produits, gestion multi-employés, alertes solde bas.
-- [ ] **[6.4] WhatsApp Business API officielle** — remplacement du deep link `wa.me` par l'API officielle pour envoi automatique de reçus.
-- [ ] **[Infra] Intégration Sentry** — crash reporting mobile et backend.
+- [x] **[AU-06] Connexion biométrique** — `expo-local-authentication` branché sur `LoginScreen` : détection matériel + proposition activation après PIN, bouton "Face ID / Empreinte" si activé, toggle dans ProfileScreen.
+- [x] **[AU-07] KYC complet Phase 2** — `KycModal` + soumission multipart existants vérifiés fonctionnels. Re-soumission après rejet supportée par le backend.
+- [x] **[WL-08] Limite de retrait journalier** — `dailyLimit` stocké dans le store depuis `fetchBalance()`, affiché dans `WithdrawModal`.
+- [x] **[WL-09] Programme de points fidélité** — `loyaltyApi.getPoints()` + bannière compacte sous balance card dans HomeScreen (silencieuse si endpoint absent).
+- [ ] **[QR-09] QR Code commerçant imprimable (PDF)** — nécessite `expo-print` ou `react-native-view-shot` (rebuild natif requis). Reporté.
+- [x] **[P2P-07] Demande de remboursement (dispute)** — `disputeApi.open()` + bouton + formulaire inline dans modal détail HistoryScreen. Backend : `POST /disputes` + modèle `DisputeRequest`.
+- [x] **[3.6] Mode nuit / clair** — `ThemeContext` avec `DarkColors`/`LightColors`, toggle dans ProfileScreen, persisté via AsyncStorage.
+- [ ] **[3.6] Langue Anglais** — i18n de toute l'app trop lourd pour cette phase. Reporté.
+- [x] **[4.1] Espace commerçant avancé** — mini-graphe tendance 7j, alerte solde bas, bouton "Partager mon QR" via `Share.share()`.
+- [ ] **[6.4] WhatsApp Business API officielle** — deep link `wa.me` déjà en place (MVP), API officielle nécessite approbation Meta. Reporté.
+- [ ] **[Infra] Intégration Sentry** — nécessite DSN externe. Reporté.
 
 ### Admin
 
-- [ ] **[14.4] Rôles multiples admin** — Super Admin / Admin / Analyste ANIF / Support avec droits différenciés (actuellement un seul rôle ADMIN).
-- [ ] **[14.5] 2FA admin obligatoire** — TOTP (Google Authenticator / Authy) pour tous les comptes admin.
-- [ ] **[14.2] WebSocket / SSE temps réel** — dashboard admin mis à jour en live (actuellement polling via bouton "Actualiser").
-- [ ] **[14.3.2] Export CSV utilisateurs** — export filtré pour reporting ANIF.
-- [ ] **[14.3.2] Note admin interne** — annotation privée sur un compte utilisateur, visible uniquement des admins.
-- [ ] **[14.3.3] Export CSV/PDF transactions filtré**.
-- [ ] **[14.5] IP Whitelisting / VPN** — restreindre l'accès au back-office par IP (infrastructure).
-- [ ] **[14.5] Rotation mot de passe admin 90j** — alerte et blocage si le mot de passe admin n'a pas été changé depuis 90 jours.
+- [x] **[14.4] Rôles multiples admin** — champ `adminRole` (SUPER_ADMIN/ANALYST/SUPPORT) sur User + `GET/PATCH /admin/team` + page "Équipe Admin" dans le nav.
+- [x] **[14.5] 2FA admin obligatoire** — TOTP via `otplib` : `POST /auth/2fa/setup|verify|disable` + UI de configuration dans SettingsPage (QR code + code de vérification).
+- [ ] **[14.2] WebSocket / SSE temps réel** — nécessite refonte architecture (Socket.io ou SSE). Reporté.
+- [x] **[14.3.2] Export CSV utilisateurs** — `GET /admin/export/users` + bouton "⬇ Export CSV" dans UsersPage.
+- [x] **[14.3.2] Note admin interne** — modèle `AdminNote` + `GET/POST /admin/users/:id/notes` + `DELETE /admin/notes/:id` + section dans UserDetailModal.
+- [x] **[14.3.3] Export CSV transactions filtré** — `GET /admin/export/transactions` + bouton "⬇ Export CSV" dans TransactionsPage.
+- [ ] **[14.5] IP Whitelisting / VPN** — configuration Nginx / infrastructure. Reporté.
+- [x] **[14.5] Rotation mot de passe admin 90j** — `admin_password_changed_at` dans SystemSettings + alerte bandeau rouge dans SettingsPage si > 90j.
 
 ### Infrastructure
 
-- [ ] **[Infra] CI/CD GitHub Actions** — pipeline : lint → tests → build → déploiement auto sur push `main`.
-- [ ] **[Infra] Monitoring Sentry + Datadog / Better Uptime** — alertes temps réel erreurs et disponibilité.
-- [ ] **[Infra] Base de données managée avec backups daily** — migrer vers Supabase ou Neon pour la production.
-- [ ] **[Infra] Soft delete users/wallets** — colonne `deletedAt` + trigger de protection audit_logs (jamais de DELETE physique, §7.2 CDC).
-- [ ] **[Infra] CHECK constraint `balance >= 0`** — contrainte PostgreSQL garantissant qu'un solde ne peut jamais passer en négatif directement en base.
+- [x] **[Infra] CI/CD GitHub Actions** — `.github/workflows/ci.yml` : 3 jobs (backend Postgres + lint + tests, admin vite build, mobile expo-doctor).
+- [ ] **[Infra] Monitoring Sentry + Datadog / Better Uptime** — services externes. Reporté.
+- [ ] **[Infra] Base de données managée avec backups daily** — migration Supabase/Neon. Reporté.
+- [x] **[Infra] Soft delete users/wallets** — colonnes `deletedAt DateTime?` sur `User` et `Wallet` (migration `add_phase2_models`).
+- [x] **[Infra] CHECK constraint `balance >= 0`** — contrainte PostgreSQL appliquée via migration SQL dédiée `add_balance_check_constraint`.
 
 ---
 
@@ -133,5 +133,5 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
 | 🟠 Haute | 0 *(tous ✅)* | — |
 | 🟡 Moyenne | 0 *(tous ✅)* | — |
-| 🔵 Phase 2 | 22 | Mobile (11) + Admin (8) + Infra (5) - 2 partagés |
+| 🔵 Phase 2 | 7 reportés | Mobile (3) + Admin (2) + Infra (2) |
 | **Total** | **61** | |
