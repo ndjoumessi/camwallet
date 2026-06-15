@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OtpService } from '../auth/otp.service';
@@ -1178,11 +1178,32 @@ export class AdminService {
   }
 
   async setAdminRole(actorId: string, userId: string, adminRole: string | null) {
+    const ALLOWED_ROLES = new Set(['SUPER_ADMIN', 'ANALYST', 'SUPPORT', null]);
+
+    if (!ALLOWED_ROLES.has(adminRole)) {
+      throw new BadRequestException(`Rôle invalide : ${adminRole}`);
+    }
+    if (actorId === userId) {
+      throw new ForbiddenException('Un admin ne peut pas modifier son propre rôle');
+    }
+
+    // L'acteur doit être SUPER_ADMIN (lu depuis la DB, pas depuis le JWT).
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { adminRole: true } });
+    if (actor?.adminRole !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Seul un SUPER_ADMIN peut modifier les rôles');
+    }
+
+    // La cible doit être un admin.
+    const target = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (target?.role !== 'ADMIN') {
+      throw new BadRequestException('La cible n\'est pas un compte administrateur');
+    }
+
     const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { adminRole },
     });
-    await this.prisma.auditLog.create({
+    void this.prisma.auditLog.create({
       data: {
         userId: actorId,
         action: 'ADMIN_ROLE_CHANGE',
@@ -1193,6 +1214,13 @@ export class AdminService {
   }
 
   // ─── Export CSV ──────────────────────────────────────────────────────────
+
+  // Échappe une valeur CSV et préfixe par ' les formules potentielles (CSV injection).
+  private csvCell(v: unknown): string {
+    let s = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return `"${s.replace(/"/g, '""')}"`;
+  }
 
   async exportUsersCsv(_params: any): Promise<string> {
     const users = await this.prisma.user.findMany({
@@ -1213,7 +1241,7 @@ export class AdminService {
         u.wallet ? Number(u.wallet.balance) / 100 : 0,
         u.createdAt.toISOString(),
       ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .map((v) => this.csvCell(v))
         .join(','),
     );
     return [header, ...rows].join('\n');
@@ -1242,7 +1270,7 @@ export class AdminService {
         t.operator ?? '',
         t.createdAt.toISOString(),
       ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .map((v) => this.csvCell(v))
         .join(','),
     );
     return [header, ...rows].join('\n');

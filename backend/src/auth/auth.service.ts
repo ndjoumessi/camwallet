@@ -308,18 +308,29 @@ export class AuthService {
   // ─── 2FA TOTP ─────────────────────────────────────────────────────────────
 
   async setup2FA(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // Si la 2FA est déjà active, exiger une désactivation explicite avant de régénérer un secret.
+    if (user?.totpEnabled) {
+      throw new BadRequestException('Désactivez la 2FA existante avant d\'en configurer une nouvelle');
+    }
     const secret = authenticator.generateSecret();
-    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: secret } });
-    const otpauthUrl = authenticator.keyuri(`admin`, 'CamWallet', secret);
+    // Stocke le secret en "attente" — il ne sera promu dans totpSecret qu'après vérification.
+    await this.prisma.user.update({ where: { id: userId }, data: { pendingTotpSecret: secret } });
+    const otpauthUrl = authenticator.keyuri('admin', 'CamWallet', secret);
     return { otpauthUrl, secret };
   }
 
   async verify2FA(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user?.totpSecret) throw new UnauthorizedException('2FA non configurée');
-    const valid = authenticator.verify({ token: code, secret: user.totpSecret });
+    // Vérifie le secret en attente (pas encore le secret actif).
+    if (!user?.pendingTotpSecret) throw new UnauthorizedException('Aucune configuration 2FA en cours');
+    const valid = authenticator.verify({ token: code, secret: user.pendingTotpSecret });
     if (!valid) throw new UnauthorizedException('Code TOTP invalide');
-    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: true } });
+    // Promotion : le secret est validé, on l'active et on efface le pending.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { totpSecret: user.pendingTotpSecret, totpEnabled: true, pendingTotpSecret: null },
+    });
     return { ok: true };
   }
 

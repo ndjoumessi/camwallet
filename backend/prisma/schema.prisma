@@ -32,6 +32,7 @@ model User {
   lastLoginIp          String?
   tokenVersion         Int       @default(0) // Incrémenté à chaque logout — invalide les refresh tokens émis avant
   previousPinHashes    String[]  @default([]) // Hashes des 3 derniers PIN (réutilisation interdite)
+  pendingTotpSecret    String?   // Secret TOTP en attente de vérification (pas encore activé)
 
   // Notifications push (jeton Expo)
   pushToken       String?
