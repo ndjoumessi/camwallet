@@ -1,7 +1,7 @@
 # CamWallet — TODO & Fonctionnalités manquantes
 
 > Comparatif CDC v1.0 (Juin 2026) vs implémentation actuelle.  
-> Dernière mise à jour : 2026-06-15 (v1.8.0)
+> Dernière mise à jour : 2026-06-15 (v2.0.0)
 
 ---
 
