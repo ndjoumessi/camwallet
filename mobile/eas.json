@@ -27,13 +27,15 @@
         "buildType": "apk",
         "env": {
           "EXPO_PUBLIC_ENV": "production",
-          "EXPO_PUBLIC_API_URL": "https://camwallet-production.up.railway.app"
+          "EXPO_PUBLIC_API_URL": "https://camwallet-production.up.railway.app",
+          "SENTRY_DISABLE_AUTO_UPLOAD": "true"
         }
       },
       "ios": {
         "env": {
           "EXPO_PUBLIC_ENV": "production",
-          "EXPO_PUBLIC_API_URL": "https://camwallet-production.up.railway.app"
+          "EXPO_PUBLIC_API_URL": "https://camwallet-production.up.railway.app",
+          "SENTRY_DISABLE_AUTO_UPLOAD": "true"
         }
       }
     },
