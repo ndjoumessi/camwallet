@@ -27,6 +27,7 @@ import {
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
   AdminTeamMember, getAdminTeam, setAdminRole,
+  getSseTicket, API_ORIGIN,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -183,16 +184,15 @@ function useDebounced<T>(value: T, ms: number): T {
 // 2. GET  /admin/events?ticket=<opaque>  (ticket single-use)
 function useLiveEvents(onEvent: (e: { type: string; payload?: any }) => void) {
   useEffect(() => {
-    const base = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
     let source: EventSource | null = null
     let cancelled = false
 
     // Étape 1 : obtenir un ticket opaque via l'API JSON classique (JWT en header)
-    request<{ ticket: string }>(`${base}/api/v1/admin/sse-ticket`, { method: 'POST' })
+    getSseTicket()
       .then(({ ticket }) => {
         if (cancelled) return
         // Étape 2 : ouvrir le flux SSE avec le ticket (pas de JWT dans l'URL)
-        source = new EventSource(`${base}/api/v1/admin/events?ticket=${encodeURIComponent(ticket)}`)
+        source = new EventSource(`${API_ORIGIN}/api/v1/admin/events?ticket=${encodeURIComponent(ticket)}`)
         source.onmessage = (event) => {
           try { onEvent(JSON.parse(event.data)) } catch { /* ignorer */ }
         }

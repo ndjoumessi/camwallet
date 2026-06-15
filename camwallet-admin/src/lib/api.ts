@@ -3,7 +3,7 @@
 // Les montants du backend sont des BigInt sérialisés en centimes de FCFA :
 // on convertit en FCFA entiers à la frontière (voir toFcfa).
 // ─────────────────────────────────────────────────────────────────────────────
-const API_ORIGIN = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+export const API_ORIGIN = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
 const BASE_URL = `${API_ORIGIN}/api/v1`
 
 const ACCESS_KEY = 'cw_admin_access'
@@ -484,6 +484,9 @@ export const setup2FA = () => request<{ otpauthUrl: string; secret: string }>('/
 export const verify2FA = (code: string) => request<{ ok: boolean }>('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) })
 export const disable2FA = (code: string) => request<{ ok: boolean }>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) })
 export const get2FAStatus = () => request<{ totpEnabled: boolean }>('/auth/2fa/status')
+
+// ── SSE : ticket opaque (évite JWT dans l'URL) ───────────
+export const getSseTicket = () => request<{ ticket: string }>('/admin/sse-ticket', { method: 'POST' })
 
 // ── Équipe admin ──────────────────────────────────────────
 
