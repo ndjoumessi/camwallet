@@ -7,8 +7,14 @@
       {
         "rule": "overused-font",
         "value": "arial",
-        "createdAt": "2026-06-15T10:35:07.546Z",
-        "reason": "Arial dans le template HTML du PDF export uniquement — pas dans l'interface principale"
+        "reason": "Arial dans le template HTML du PDF export uniquement — pas dans l'interface principale",
+        "createdAt": "2026-06-15T10:35:07.546Z"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-06-15T10:53:20.930Z",
+        "reason": "Inter est la police documentée dans DESIGN.md — autorisée pour les surfaces produit (product.md)"
       }
     ],
     "limits": {

@@ -59,7 +59,7 @@ style.textContent = `
   .cw-trend-down { animation: cw-trend-down 1.6s ease-in-out infinite; }
   .cw-toast { animation: cw-fadeup .22s ease-out; }
   @media (prefers-reduced-motion: reduce) {
-    .cw-trend-up, .cw-trend-down, .cw-toast { animation: none !important; }
+    .cw-trend-up, .cw-trend-down, .cw-toast, .cw-live-dot { animation: none !important; }
     .cw-card, .cw-btn { transition: none !important; }
   }
 

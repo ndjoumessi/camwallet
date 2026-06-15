@@ -388,7 +388,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
           <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 20, padding: '4px 12px', fontSize: 12, color: C.green, flexShrink: 0 }}>
-          <div style={{ width: 8, height: 8, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} />
+          <div className="cw-live-dot" style={{ width: 8, height: 8, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} />
           Live{liveCount > 0 && ` · ${liveCount}`}
           {lastEvent && <span style={{ color: C.textMuted, marginLeft: 4 }}>{lastEvent.type} {lastEvent.time}</span>}
         </div>
@@ -417,7 +417,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         {/* Volume area chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions</h3>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions</h2>
             <div style={{ display: 'flex', gap: 4 }}>
               {PERIODS.map((p) => (
                 <button
@@ -456,7 +456,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
         {/* Donut */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Répartition des types</h3>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Répartition des types</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <PieChart width={130} height={130}>
               <Pie data={donut} cx={60} cy={60} innerRadius={40} outerRadius={60} dataKey="value" paddingAngle={2}>
@@ -481,7 +481,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         {/* Revenue bar */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus (frais perçus) par jour</h3>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus (frais perçus) par jour</h2>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={chart} barSize={10}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -495,7 +495,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
         {/* User growth */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Activité (utilisateurs &amp; transactions)</h3>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Activité (utilisateurs &amp; transactions)</h2>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chart}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -512,7 +512,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       {/* Recent transactions */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions récentes</h3>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions récentes</h2>
           <button className="cw-link" onClick={() => onNavigate?.('transactions')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.green, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
             Voir tout <ArrowRight size={14} />
           </button>
@@ -638,9 +638,9 @@ function AlertsPage() {
 
       {/* Flagged transactions (échecs + gros montants, 7 derniers jours) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
           <AlertTriangle size={16} color={C.yellow} /> Transactions signalées
-        </h3>
+        </h2>
         <div className="cw-tablewrap">
         <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -680,6 +680,12 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
   const [confirmingPinReset, setConfirmingPinReset] = useState(false)
   const toast = useToast()
   const u = data?.user
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   // Notes internes
   const { data: notes, loading: notesLoading, refetch: refetchNotes } = useFetch(
@@ -828,7 +834,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             </div>
 
             {/* Document KYC */}
-            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Document KYC</h3>
+            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Document KYC</h2>
             {u.kycDocument ? (
               <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
                 {photo(u.kycDocument.idFrontUrl, 'CNI recto')}
@@ -840,7 +846,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             )}
 
             {/* Transactions */}
-            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Transactions récentes</h3>
+            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Transactions récentes</h2>
             <div style={{ marginBottom: 20 }}>
               {data.transactions.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune transaction</div>}
               {data.transactions.map((tx) => (
@@ -859,7 +865,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             </div>
 
             {/* Audit */}
-            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Journal d'audit</h3>
+            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Journal d'audit</h2>
             <div style={{ marginBottom: 24 }}>
               {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune action enregistrée</div>}
               {data.audit.map((a) => (
@@ -871,7 +877,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             </div>
 
             {/* Notes internes */}
-            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Notes internes</h3>
+            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Notes internes</h2>
             <div style={{ marginBottom: 12 }}>
               {notesLoading && <div style={{ color: C.textMuted, fontSize: 12 }}>Chargement…</div>}
               {!notesLoading && (!notes || notes.length === 0) && (
@@ -888,7 +894,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
               ))}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
+              <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" aria-label="Note interne" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
               <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>Ajouter</button>
             </div>
           </>
@@ -913,6 +919,7 @@ function UsersPage() {
 
   const [acting, setActing] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [blockConfirm, setBlockConfirm] = useState<string | null>(null)
   const toast = useToast()
   const [exporting, setExporting] = useState(false)
 
@@ -1083,8 +1090,16 @@ function UsersPage() {
                         style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
                         Débloquer
                       </button>
+                    ) : blockConfirm === u.id ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.redLight, border: `1px solid ${C.red}50`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
+                        <span style={{ fontSize: 11, color: C.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Confirmer ?</span>
+                        <button className="cw-btn" disabled={acting === u.id} onClick={() => { setBlockConfirm(null); toggleBlock(u) }}
+                          style={{ fontSize: 11, color: '#fff', background: C.red, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
+                        <button className="cw-btn" onClick={() => setBlockConfirm(null)}
+                          style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>✕</button>
+                      </div>
                     ) : (
-                      <button className="cw-btn" onClick={() => toggleBlock(u)} disabled={acting === u.id}
+                      <button className="cw-btn" onClick={() => setBlockConfirm(u.id)} disabled={acting === u.id}
                         style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
                         Bloquer
                       </button>
@@ -1224,7 +1239,7 @@ function OperatorRatesWidget() {
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 16 }}>
-      <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Taux de succès par opérateur</h3>
+      <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Taux de succès par opérateur</h2>
       <ResponsiveContainer width="100%" height={160}>
         <BarChart data={chartData} barSize={36}>
           <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -1518,7 +1533,7 @@ function FinancePage() {
       {/* Volume par type de transaction (réel) */}
       {stats && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Volume par type de transaction</h3>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Volume par type de transaction</h2>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={byType}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
@@ -1536,7 +1551,7 @@ function FinancePage() {
       {/* Détail par type (réel) */}
       {stats && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Détail par type</h3>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Détail par type</h2>
           {byType.length === 0 && <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction</div>}
           {byType.map((d) => (
             <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: `1px solid ${C.border}` }}>
@@ -2144,7 +2159,7 @@ function SettingsPage() {
       {!loading && (
         <>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-            <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Limites & Frais</h3>
+            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Limites & Frais</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
               {fields.map(f => (
                 <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2178,7 +2193,7 @@ function SettingsPage() {
 
           {/* Section 2FA */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-            <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Authentification a deux facteurs (TOTP)</h3>
+            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Authentification a deux facteurs (TOTP)</h2>
             {twoFAStatus?.totpEnabled ? (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
