@@ -13,6 +13,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
+import { loyaltyApi } from '../../src/lib/api';
 import SendModal from './modals/SendModal';
 import ReceiveModal from './modals/ReceiveModal';
 import RechargeModal from './modals/RechargeModal';
@@ -30,6 +31,13 @@ export default function HomeScreen() {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [loyalty, setLoyalty] = useState<{ points: number; nextReward: number } | null>(null);
+
+  useEffect(() => {
+    loyaltyApi.getPoints().then(setLoyalty).catch(() => {
+      // Endpoint pas encore déployé — on n'affiche rien
+    });
+  }, []);
 
   // Chargement des données réelles au montage (et à chaque retour sur l'écran)
   useEffect(() => {
@@ -108,6 +116,15 @@ export default function HomeScreen() {
             <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
           </View>
         </LinearGradient>
+
+        {/* Bannière fidélité */}
+        {loyalty !== null && (
+          <View style={styles.loyaltyBanner}>
+            <Text style={styles.loyaltyText}>
+              🎁  {loyalty.points.toLocaleString('fr-FR')} points fidélité  ·  Prochain palier : {loyalty.nextReward.toLocaleString('fr-FR')} pts
+            </Text>
+          </View>
+        )}
 
         {/* Quick actions */}
         <ScrollView
@@ -342,4 +359,21 @@ const styles = StyleSheet.create({
   txDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
   txRight: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   txAmount: { fontSize: Typography.base, fontWeight: Typography.bold },
+
+  // Fidélité
+  loyaltyBanner: {
+    backgroundColor: Colors.primary + '18',
+    borderWidth: 1,
+    borderColor: Colors.primary + '40',
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.xl,
+    alignItems: 'center',
+  },
+  loyaltyText: {
+    color: Colors.primary,
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold,
+  },
 });

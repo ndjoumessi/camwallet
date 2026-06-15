@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -73,6 +74,23 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
     setQrValue(JSON.stringify({ type: 'MERCHANT_QR', amountCentimes: amount * 100 }));
   };
 
+  const handleShareQr = async () => {
+    if (!qrValue) {
+      Alert.alert('Générez d\'abord un QR', 'Saisissez un montant et générez le QR avant de partager.');
+      return;
+    }
+    try {
+      await Share.share({
+        message: 'Payez-moi via CamWallet : ' + qrValue,
+        title: 'Mon QR CamWallet',
+      });
+    } catch (e: any) {
+      if (e?.message !== 'User did not share') {
+        Alert.alert('Erreur', e?.message ?? 'Impossible de partager');
+      }
+    }
+  };
+
   return (
     <View style={styles.root}>
       {/* Header */}
@@ -130,6 +148,52 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
               />
             </View>
 
+            {/* Alerte solde bas */}
+            {stats && stats.balance < 1000000 && stats.balance > 0 && (
+              <View style={styles.lowBalanceAlert}>
+                <Ionicons name="warning-outline" size={18} color={Colors.yellow} />
+                <Text style={styles.lowBalanceText}>
+                  Solde bas : {fcfa(stats.balance)} FCFA — Pensez à recharger votre compte.
+                </Text>
+              </View>
+            )}
+
+            {/* Graphique tendance 7 jours (mini-barres) */}
+            {stats && (
+              <>
+                <Text style={styles.sectionTitle}>Tendance (simulation 7 j.)</Text>
+                <View style={styles.chartCard}>
+                  {(() => {
+                    // Simule une progression sur 7 jours basée sur les stats réelles
+                    const base = stats.week.amount / 7;
+                    const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+                    const factors = [0.6, 0.8, 0.7, 1.0, 0.9, 1.2, 0.5];
+                    const values = factors.map((f) => Math.round(base * f));
+                    const maxVal = Math.max(...values, 1);
+                    return (
+                      <View style={styles.chartBars}>
+                        {values.map((v, i) => (
+                          <View key={i} style={styles.chartBarWrap}>
+                            <View
+                              style={[
+                                styles.chartBar,
+                                {
+                                  height: Math.max(4, Math.round((v / maxVal) * 60)),
+                                  backgroundColor: i === new Date().getDay() ? Colors.primary : Colors.primary + '50',
+                                },
+                              ]}
+                            />
+                            <Text style={styles.chartDay}>{days[i]}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })()}
+                  <Text style={styles.chartNote}>Basé sur le CA de la semaine · Aujourd'hui en vert</Text>
+                </View>
+              </>
+            )}
+
             {/* QR dynamique */}
             <Text style={styles.sectionTitle}>QR code par montant</Text>
             <View style={styles.qrCard}>
@@ -161,6 +225,16 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                     {parseInt(qrAmount, 10).toLocaleString('fr-FR')} FCFA
                   </Text>
                   <Text style={styles.qrSub}>Faites scanner par le client</Text>
+                  <TouchableOpacity
+                    style={styles.shareQrBtn}
+                    onPress={handleShareQr}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Partager mon QR"
+                  >
+                    <Ionicons name="share-outline" size={18} color={Colors.blue} />
+                    <Text style={styles.shareQrBtnText}>Partager mon QR</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
@@ -298,4 +372,28 @@ const styles = StyleSheet.create({
   txStatusTextPending: { color: Colors.yellow },
   emptyWrap: { alignItems: 'center', paddingVertical: 40, gap: Spacing.md },
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
+  lowBalanceAlert: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.md,
+    backgroundColor: Colors.yellow + '15', borderWidth: 1, borderColor: Colors.yellow + '40',
+    borderRadius: BorderRadius.md, padding: Spacing.md,
+  },
+  lowBalanceText: { flex: 1, color: Colors.yellow, fontSize: Typography.sm, lineHeight: 18 },
+  chartCard: {
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.xl,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.lg, padding: Spacing.lg, gap: Spacing.sm,
+  },
+  chartBars: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 80 },
+  chartBarWrap: { flex: 1, alignItems: 'center', gap: 4, justifyContent: 'flex-end' },
+  chartBar: { width: '60%', borderRadius: 3, minHeight: 4 },
+  chartDay: { color: Colors.textMuted, fontSize: 9 },
+  chartNote: { color: Colors.textMuted, fontSize: 9, textAlign: 'center' },
+  shareQrBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.infoBg, borderWidth: 1, borderColor: Colors.blue + '40',
+    borderRadius: BorderRadius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  shareQrBtnText: { color: Colors.blue, fontSize: Typography.sm, fontWeight: Typography.semibold },
 });

@@ -43,7 +43,7 @@ const OPERATORS = [
 const toCentimes = (fcfa: number) => Math.round(fcfa * 100);
 
 export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawModalProps) {
-  const { user, fetchBalance } = useStore();
+  const { user, fetchBalance, dailyLimit } = useStore();
   const [step, setStep] = useState<'operator' | 'amount' | 'pending'>('operator');
   const [operator, setOperator] = useState<typeof OPERATORS[0] | null>(null);
   const [phone, setPhone] = useState('');
@@ -212,6 +212,11 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
 
                 <View style={styles.limitNote}>
                   <Text style={styles.limitText}>Min: 500 FCFA · Max: 500 000 FCFA</Text>
+                  {dailyLimit > 0 && (
+                    <Text style={styles.limitText}>
+                      Limite journalière : {dailyLimit.toLocaleString('fr-FR')} FCFA
+                    </Text>
+                  )}
                 </View>
 
                 {error && <Text style={styles.errorText}>{error}</Text>}

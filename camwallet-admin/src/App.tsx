@@ -10,7 +10,7 @@ import {
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
-  Settings,
+  Settings, Shield,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -23,6 +23,10 @@ import {
   getOperations, retryOperation, WebhookEvent,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
+  downloadUsersCSV, downloadTransactionsCSV,
+  AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
+  setup2FA, verify2FA, disable2FA, get2FAStatus,
+  AdminTeamMember, getAdminTeam, setAdminRole,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -581,6 +585,38 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
   const toast = useToast()
   const u = data?.user
 
+  // Notes internes
+  const { data: notes, loading: notesLoading, refetch: refetchNotes } = useFetch(
+    () => getAdminNotes(userId), [userId],
+  )
+  const [noteText, setNoteText] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
+
+  const handleAddNote = async () => {
+    if (!noteText.trim()) return
+    setAddingNote(true)
+    try {
+      await addAdminNote(userId, noteText.trim())
+      setNoteText('')
+      refetchNotes()
+      toast('Note ajoutée', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+    } finally {
+      setAddingNote(false)
+    }
+  }
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      await deleteAdminNote(noteId)
+      refetchNotes()
+      toast('Note supprimée', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+    }
+  }
+
   const run = async (fn: () => Promise<unknown>, okMsg = 'Action effectuée') => {
     setActing(true)
     try {
@@ -718,7 +754,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
 
             {/* Audit */}
             <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Journal d'audit</h3>
-            <div>
+            <div style={{ marginBottom: 24 }}>
               {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune action enregistrée</div>}
               {data.audit.map((a) => (
                 <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
@@ -726,6 +762,28 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
                   <span style={{ color: C.textMuted }}>{(a.user?.email ?? 'admin')} · {fmtDate(a.createdAt)}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Notes internes */}
+            <h3 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Notes internes</h3>
+            <div style={{ marginBottom: 12 }}>
+              {notesLoading && <div style={{ color: C.textMuted, fontSize: 12 }}>Chargement…</div>}
+              {!notesLoading && (!notes || notes.length === 0) && (
+                <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune note</div>
+              )}
+              {(notes ?? []).map((n: AdminNote) => (
+                <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: C.text, marginBottom: 2 }}>{n.content}</div>
+                    <div style={{ color: C.textMuted, fontSize: 11 }}>{n.author.email ?? n.author.fullName ?? 'Admin'} · {fmtDate(n.createdAt)}</div>
+                  </div>
+                  <button onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }} aria-label="Supprimer"><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13, outline: 'none' }} />
+              <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>Ajouter</button>
             </div>
           </>
         )}
@@ -750,6 +808,19 @@ function UsersPage() {
   const [acting, setActing] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const toast = useToast()
+  const [exporting, setExporting] = useState(false)
+
+  const handleExportUsers = async () => {
+    setExporting(true)
+    try {
+      await downloadUsersCSV()
+      toast('Export téléchargé', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Export échoué', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
   // Tri client sur les lignes chargées.
   const [sort, setSort] = useState<{ key: 'balance' | 'createdAt'; dir: 1 | -1 } | null>(null)
   const sortedUsers = useMemo(() => {
@@ -789,6 +860,14 @@ function UsersPage() {
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Utilisateurs</h1>
           <p style={{ color: C.textMuted, fontSize: 13 }}>{total} utilisateur{total > 1 ? 's' : ''} enregistré{total > 1 ? 's' : ''}</p>
         </div>
+        <button
+          className="cw-btn"
+          onClick={handleExportUsers}
+          disabled={exporting}
+          style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
+        >
+          ⬇ Export CSV
+        </button>
       </div>
 
       {/* Filters */}
@@ -1028,6 +1107,8 @@ function OperatorRatesWidget() {
 
 function TransactionsPage() {
   const [txFilter, setTxFilter] = useState('all')
+  const toast = useToast()
+  const [exporting, setExporting] = useState(false)
 
   const { data, loading, error } = useFetch(
     () => getTransactions({ limit: 50, type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter] }),
@@ -1036,6 +1117,18 @@ function TransactionsPage() {
   const txs = data?.data ?? []
   const total = data?.meta.total ?? 0
 
+  const handleExportTransactions = async () => {
+    setExporting(true)
+    try {
+      await downloadTransactionsCSV()
+      toast('Export téléchargé', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Export échoué', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -1043,6 +1136,14 @@ function TransactionsPage() {
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Transactions</h1>
           <p style={{ color: C.textMuted, fontSize: 13 }}>{total} transaction{total > 1 ? 's' : ''} au total</p>
         </div>
+        <button
+          className="cw-btn"
+          onClick={handleExportTransactions}
+          disabled={exporting}
+          style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
+        >
+          ⬇ Export CSV
+        </button>
       </div>
 
       {/* Type filters */}
@@ -1678,6 +1779,54 @@ function SettingsPage() {
   const [form, setForm] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
   const showToast = useContext(ToastContext)
+  const toast = useToast()
+
+  // 2FA
+  const { data: twoFAStatus, refetch: refetch2FA } = useFetch(get2FAStatus, [])
+  const [twoFASetup, setTwoFASetup] = useState<{ otpauthUrl: string; secret: string } | null>(null)
+  const [twoFACode, setTwoFACode] = useState('')
+  const [twoFAActing, setTwoFAActing] = useState(false)
+
+  const handleSetup2FA = async () => {
+    setTwoFAActing(true)
+    try {
+      const result = await setup2FA()
+      setTwoFASetup(result)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur 2FA', 'error')
+    } finally {
+      setTwoFAActing(false)
+    }
+  }
+
+  const handleVerify2FA = async () => {
+    setTwoFAActing(true)
+    try {
+      await verify2FA(twoFACode)
+      setTwoFASetup(null)
+      setTwoFACode('')
+      refetch2FA()
+      toast('2FA activé', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Code invalide', 'error')
+    } finally {
+      setTwoFAActing(false)
+    }
+  }
+
+  const handleDisable2FA = async () => {
+    setTwoFAActing(true)
+    try {
+      await disable2FA(twoFACode)
+      setTwoFACode('')
+      refetch2FA()
+      toast('2FA désactivé', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Code invalide', 'error')
+    } finally {
+      setTwoFAActing(false)
+    }
+  }
 
   // Initialise le formulaire dès que les données arrivent
   useEffect(() => {
@@ -1745,6 +1894,44 @@ function SettingsPage() {
             </div>
           </div>
 
+          {/* Banniere mot de passe expire */}
+          {data && data['admin_password_expired'] === 'true' && (
+            <div style={{ background: '#FF4D6D15', border: `1px solid ${C.red}40`, borderRadius: 14, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ color: C.red, fontSize: 13, fontWeight: 600 }}>Le mot de passe administrateur n'a pas ete change depuis plus de 90 jours.</span>
+            </div>
+          )}
+
+          {/* Section 2FA */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+            <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Authentification a deux facteurs (TOTP)</h3>
+            {twoFAStatus?.totpEnabled ? (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: 12, color: C.green, background: C.greenLight, padding: '3px 10px', borderRadius: 20, fontWeight: 700 }}>2FA actif</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP pour desactiver" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', width: 220 }} />
+                  <button onClick={handleDisable2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.redLight, border: 'none', borderRadius: 8, color: C.red, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Desactiver la 2FA</button>
+                </div>
+              </div>
+            ) : twoFASetup ? (
+              <div>
+                <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>Scannez ce QR code avec votre application TOTP (Google Authenticator, Authy)</p>
+                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFASetup.otpauthUrl)}`} alt="QR 2FA" style={{ width: 200, height: 200, borderRadius: 8, marginBottom: 12 }} />
+                <div style={{ color: C.textMuted, fontSize: 12, fontFamily: 'monospace', background: C.surface, padding: '6px 10px', borderRadius: 6, marginBottom: 14, wordBreak: 'break-all' }}>Secret: {twoFASetup.secret}</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP de verification" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', width: 220 }} />
+                  <button onClick={handleVerify2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Activer</button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>La 2FA n'est pas encore activee. Configurez-la pour renforcer la securite du compte admin.</p>
+                <button onClick={handleSetup2FA} disabled={twoFAActing} style={{ padding: '9px 18px', background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, color: C.blue, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Configurer la 2FA (TOTP)</button>
+              </div>
+            )}
+          </div>
+
           {/* Section informative */}
           <div style={{ background: C.blueLight, border: `1px solid ${C.blue}30`, borderRadius: 14, padding: '16px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -1761,6 +1948,67 @@ function SettingsPage() {
   )
 }
 
+function TeamPage() {
+  const { data: members, loading, error } = useFetch(getAdminTeam, [])
+  const toast = useToast()
+
+  const handleRoleChange = async (userId: string, role: string) => {
+    try {
+      await setAdminRole(userId, role || null)
+      toast('Role mis a jour', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+    }
+  }
+
+  return (
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Equipe Admin</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Gestion des roles de l'equipe d'administration</p>
+      </div>
+      {(loading || error) && <StateRow loading={loading} error={error} />}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        <div className="cw-tablewrap">
+          <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: C.surface }}>
+              <tr>
+                {['Nom', 'Email', 'Role', "Date d'ajout"].map(h => (
+                  <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(members ?? []).map((m: AdminTeamMember) => (
+                <tr key={m.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}</td>
+                  <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <select
+                      value={m.adminRole ?? ''}
+                      onChange={e => handleRoleChange(m.id, e.target.value)}
+                      style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer', outline: 'none' }}
+                    >
+                      <option value="">Aucun</option>
+                      <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                      <option value="ANALYST">ANALYST</option>
+                      <option value="SUPPORT">SUPPORT</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(m.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!loading && !error && (!members || members.length === 0) && (
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun membre dans l'equipe</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Sidebar nav items ─────────────────────────────────────
 const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid, group: 'Vue générale' },
@@ -1772,6 +2020,7 @@ const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?:
   { id: 'operations', label: 'Recharges & Retraits', icon: ArrowLeftRight, group: 'Finances' },
   { id: 'anif', label: 'Conformité ANIF', icon: ShieldAlert, group: 'Conformité' },
   { id: 'audit', label: 'Journal Audit', icon: FileText, group: 'Conformité' },
+  { id: 'team', label: 'Équipe Admin', icon: Shield, group: 'Conformité' },
   { id: 'settings', label: 'Paramètres', icon: Settings, group: 'Conformité' },
 ]
 
@@ -1818,6 +2067,7 @@ export default function App() {
       case 'operations': return <OperationsPage />
       case 'anif': return <ANIFPage />
       case 'audit': return <AuditPage />
+      case 'team': return <TeamPage />
       case 'settings': return <SettingsPage />
       default: return <DashboardPage />
     }

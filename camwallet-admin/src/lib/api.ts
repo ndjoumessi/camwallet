@@ -442,3 +442,52 @@ export const getSettings = () => request<SystemSettings>('/admin/settings')
 export function updateSettings(updates: Record<string, string>) {
   return request('/admin/settings', { method: 'PATCH', body: JSON.stringify({ updates }) })
 }
+
+// ── Export CSV ────────────────────────────────────────────
+
+export async function downloadUsersCSV(): Promise<void> {
+  const token = getAccess()
+  const res = await fetch(`${BASE_URL}/admin/export/users`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error('Export échoué')
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = 'utilisateurs.csv'; a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function downloadTransactionsCSV(): Promise<void> {
+  const token = getAccess()
+  const res = await fetch(`${BASE_URL}/admin/export/transactions`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!res.ok) throw new Error('Export échoué')
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = 'transactions.csv'; a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ── Notes internes ────────────────────────────────────────
+
+export interface AdminNote { id: string; content: string; createdAt: string; author: { fullName: string | null; email: string | null } }
+export const getAdminNotes = (userId: string) => request<AdminNote[]>(`/admin/users/${userId}/notes`)
+export const addAdminNote = (userId: string, content: string) => request<AdminNote>(`/admin/users/${userId}/notes`, { method: 'POST', body: JSON.stringify({ content }) })
+export const deleteAdminNote = (noteId: string) => request(`/admin/notes/${noteId}`, { method: 'DELETE' })
+
+// ── 2FA ───────────────────────────────────────────────────
+
+export const setup2FA = () => request<{ otpauthUrl: string; secret: string }>('/auth/2fa/setup', { method: 'POST' })
+export const verify2FA = (code: string) => request<{ ok: boolean }>('/auth/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) })
+export const disable2FA = (code: string) => request<{ ok: boolean }>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) })
+export const get2FAStatus = () => request<{ totpEnabled: boolean }>('/auth/2fa/status')
+
+// ── Équipe admin ──────────────────────────────────────────
+
+export interface AdminTeamMember { id: string; email: string | null; fullName: string | null; adminRole: string | null; createdAt: string }
+export const getAdminTeam = () => request<AdminTeamMember[]>('/admin/team')
+export const setAdminRole = (userId: string, adminRole: string | null) =>
+  request(`/admin/team/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ adminRole }) })

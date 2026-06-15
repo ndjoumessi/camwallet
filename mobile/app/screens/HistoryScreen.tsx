@@ -20,6 +20,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Badge, IconButton } from '../components/ui';
 import { useStore, Transaction } from '../store/useStore';
+import { disputeApi } from '../../src/lib/api';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -87,6 +88,10 @@ export default function HistoryScreen() {
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const userId = useStore((s) => s.user.id);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [disputeLoading, setDisputeLoading] = useState(false);
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   // Chargement initial : réinitialise la pagination et charge la première page.
   useEffect(() => {
@@ -137,6 +142,26 @@ export default function HistoryScreen() {
     const { historyPage, historyHasMore: hasMore, historyLoading: loading } = useStore.getState();
     if (!hasMore || loading) return;
     fetchHistoryPage(historyPage + 1);
+  };
+
+  const handleDispute = async () => {
+    if (!selectedTx || !disputeReason.trim()) {
+      Alert.alert('Motif requis', 'Veuillez saisir le motif de votre demande de remboursement.');
+      return;
+    }
+    setDisputeLoading(true);
+    try {
+      await disputeApi.open(selectedTx.id, disputeReason.trim());
+      setDisputeOpen(false);
+      setDisputeReason('');
+      setSelectedTx(null);
+      Alert.alert('Demande envoyée', 'Votre demande de remboursement a été enregistrée. Nous reviendrons vers vous dans les 48h.');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la demande';
+      Alert.alert('Erreur', Array.isArray(msg) ? msg.join(', ') : msg);
+    } finally {
+      setDisputeLoading(false);
+    }
   };
 
   const renderTx = ({ item: tx }: { item: Transaction }) => (
@@ -306,6 +331,58 @@ export default function HistoryScreen() {
                   <Text style={styles.detailRowValue} selectable>{row.value}</Text>
                 </View>
               ))}
+
+              {/* Bouton remboursement : P2P reçu et complété */}
+              {selectedTx.type === 'received' &&
+               selectedTx.status === 'success' && (
+                <View style={{ marginTop: Spacing.lg }}>
+                  {!disputeOpen ? (
+                    <TouchableOpacity
+                      style={styles.disputeBtn}
+                      onPress={() => { setDisputeOpen(true); setDisputeReason(''); }}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="Demander un remboursement"
+                    >
+                      <Ionicons name="return-up-back-outline" size={18} color={Colors.yellow} />
+                      <Text style={styles.disputeBtnText}>Demander un remboursement</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.disputeForm}>
+                      <Text style={styles.disputeFormTitle}>Motif du remboursement</Text>
+                      <TextInput
+                        style={styles.disputeInput}
+                        value={disputeReason}
+                        onChangeText={setDisputeReason}
+                        placeholder="Ex: Transaction effectuée par erreur..."
+                        placeholderTextColor={Colors.textMuted}
+                        multiline
+                        numberOfLines={3}
+                        autoFocus
+                        editable={!disputeLoading}
+                      />
+                      <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm }}>
+                        <TouchableOpacity
+                          style={[styles.disputeActionBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+                          onPress={() => { setDisputeOpen(false); setDisputeReason(''); }}
+                          disabled={disputeLoading}
+                        >
+                          <Text style={{ color: Colors.textSoft, fontWeight: Typography.semibold }}>Annuler</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.disputeActionBtn, { backgroundColor: Colors.yellow, flex: 2 }, disputeLoading && { opacity: 0.6 }]}
+                          onPress={handleDispute}
+                          disabled={disputeLoading}
+                        >
+                          <Text style={{ color: '#000', fontWeight: Typography.bold }}>
+                            {disputeLoading ? 'Envoi…' : 'Envoyer la demande'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
             </ScrollView>
           </SafeAreaView>
         )}
@@ -389,4 +466,24 @@ const styles = StyleSheet.create({
   },
   detailRowLabel: { color: Colors.textMuted, fontSize: Typography.sm, flex: 1 },
   detailRowValue: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold, flex: 2, textAlign: 'right' },
+  disputeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.yellow + '15', borderWidth: 1, borderColor: Colors.yellow + '40',
+    borderRadius: BorderRadius.md, padding: Spacing.md,
+    justifyContent: 'center',
+  },
+  disputeBtnText: { color: Colors.yellow, fontSize: Typography.base, fontWeight: Typography.bold },
+  disputeForm: {
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.yellow + '40',
+    borderRadius: BorderRadius.md, padding: Spacing.md, gap: Spacing.sm,
+  },
+  disputeFormTitle: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.bold },
+  disputeInput: {
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text,
+    fontSize: Typography.base, textAlignVertical: 'top', minHeight: 80,
+  },
+  disputeActionBtn: {
+    flex: 1, borderRadius: BorderRadius.sm, padding: Spacing.md, alignItems: 'center',
+  },
 });

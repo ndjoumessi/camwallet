@@ -402,4 +402,22 @@ export const merchantApi = {
       .then((r) => r.data),
 };
 
+export interface DisputeResponse {
+  id: string;
+  status: string;
+  message: string;
+}
+
+export const disputeApi = {
+  open: (transactionId: string, reason: string) =>
+    api
+      .post<DisputeResponse>('/disputes', { transactionId, reason })
+      .then((r) => r.data),
+};
+
+export const loyaltyApi = {
+  getPoints: () =>
+    api.get<{ points: number; nextReward: number }>('/wallet/loyalty').then((r) => r.data),
+};
+
 export default api;

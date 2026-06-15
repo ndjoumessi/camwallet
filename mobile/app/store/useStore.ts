@@ -141,6 +141,8 @@ const GUEST: User = {
 interface AppState {
   user: User;
   balance: number; // FCFA
+  dailyLimit: number; // FCFA
+  monthlyLimit: number; // FCFA
   showBalance: boolean;
   contacts: Contact[]; // conservé pour rétrocompatibilité
   recentContacts: RecentContact[]; // dérivés de l'historique API
@@ -182,6 +184,8 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   user: GUEST,
   balance: 0,
+  dailyLimit: 0,
+  monthlyLimit: 0,
   showBalance: true,
   contacts: [],
   recentContacts: [],
@@ -314,7 +318,12 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const b = await walletApi.getBalance();
       const fcfa = toFcfa(b.balance);
-      set((s) => ({ balance: fcfa, user: { ...s.user, balance: fcfa } }));
+      set((s) => ({
+        balance: fcfa,
+        user: { ...s.user, balance: fcfa },
+        dailyLimit: toFcfa(b.dailyLimit ?? 0),
+        monthlyLimit: toFcfa(b.monthlyLimit ?? 0),
+      }));
       void AsyncStorage.setItem('cw_cached_balance', String(fcfa));
     } catch (e) {
       // Mode hors ligne : charger le solde mis en cache

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend — lint + tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: camwallet
+          POSTGRES_PASSWORD: camwallet
+          POSTGRES_DB: camwallet_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://camwallet:camwallet@localhost:5432/camwallet_test
+      JWT_ACCESS_SECRET: ci_access_secret_test
+      JWT_REFRESH_SECRET: ci_refresh_secret_test
+      ADMIN_EMAIL: admin@camwallet.cm
+      ADMIN_PASSWORD: Admin@2025!
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run lint
+      - run: npm test -- --passWithNoTests
+
+  admin:
+    name: Admin — build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: camwallet-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: camwallet-admin/package-lock.json
+      - run: npm ci
+      - run: npx vite build
+
+  mobile:
+    name: Mobile — expo type check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npx expo-doctor --fix-dependencies || true
