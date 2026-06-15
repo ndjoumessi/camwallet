@@ -58,6 +58,13 @@ const QUICK_AMOUNTS = IS_SANDBOX ? [5, 10, 15, 25] : [5000, 10000, 25000, 50000]
 
 export default function RechargeModal({ visible, onClose, onSuccess }: RechargeModalProps) {
   const { user, fetchBalance } = useStore();
+  const fetchBalanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (fetchBalanceTimerRef.current) clearTimeout(fetchBalanceTimerRef.current);
+    };
+  }, []);
   const [step, setStep] = useState<'method' | 'amount' | 'pending'>('method');
   const [method, setMethod] = useState<typeof METHODS[0] | null>(null);
   const [amount, setAmount] = useState('');
@@ -102,7 +109,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
       await walletApi.recharge(toCentimes(amt), operator, phone || undefined);
       setStep('pending');
       // Le crédit arrivera via webhook — on rafraîchit le solde dans quelques secondes
-      setTimeout(() => fetchBalance(), 5000);
+      fetchBalanceTimerRef.current = setTimeout(() => fetchBalance(), 5000);
       onSuccess(`Recharge de ${amt.toLocaleString('fr-FR')} FCFA initiée !`);
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge';

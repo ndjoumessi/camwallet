@@ -19,10 +19,10 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
     const startAnimations = () => {
       Animated.parallel([
-        Animated.spring(logoScale, {
+        Animated.timing(logoScale, {
           toValue: 1,
-          damping: 14,
-          stiffness: 180,
+          duration: 480,
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(logoOpacity, {
@@ -126,7 +126,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       />
 
       {/* Version */}
-      <Text style={styles.version}>v2.7.1</Text>
+      <Text style={styles.version}>v2.7.3</Text>
     </LinearGradient>
   );
 }

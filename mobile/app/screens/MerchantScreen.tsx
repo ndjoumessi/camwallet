@@ -6,7 +6,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
   Pressable,
   Share,
@@ -20,6 +19,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import QRLib from 'qrcode';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { Skeleton } from '../components/ui';
 import { merchantApi, MerchantStatsResponse, MerchantTransaction } from '../../src/lib/api';
 
 const BAR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -44,7 +44,7 @@ const StatCard = ({
   color?: string;
 }) => (
   <View style={styles.statCard}>
-    <Text style={[styles.statValue, { color }]}>{value}</Text>
+    <Text style={[styles.statValue, { color }]} adjustsFontSizeToFit numberOfLines={1} minimumFontScale={0.6}>{value}</Text>
     <Text style={styles.statLabel}>{label}</Text>
     {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
   </View>
@@ -211,9 +211,14 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
         )}
 
         {loading && !stats ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator color={Colors.primary} size="large" />
-            <Text style={styles.loadingText}>Chargement...</Text>
+          <View style={styles.skeletonWrap}>
+            <Skeleton height={120} radius={BorderRadius.xl} style={{ marginHorizontal: Spacing.lg, marginBottom: Spacing.xl }} />
+            <View style={{ flexDirection: 'row', marginHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.xl }}>
+              <Skeleton height={80} radius={BorderRadius.lg} style={{ flex: 1 }} />
+              <Skeleton height={80} radius={BorderRadius.lg} style={{ flex: 1 }} />
+              <Skeleton height={80} radius={BorderRadius.lg} style={{ flex: 1 }} />
+            </View>
+            <Skeleton height={120} radius={BorderRadius.lg} style={{ marginHorizontal: Spacing.lg }} />
           </View>
         ) : (
           <>
@@ -265,7 +270,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
             {stats && (
               <>
                 <Text style={styles.sectionTitle}>Tendance (simulation 7 j.)</Text>
-                <View style={styles.chartCard}>
+                <View style={styles.chartCard} accessibilityLabel="Graphique de tendance sur 7 jours" accessibilityRole="none">
                   <View style={styles.chartBars}>
                     {BAR_DAYS.map((day, i) => (
                       <View key={i} style={styles.chartBarWrap}>
@@ -408,8 +413,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  loadingWrap: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
-  loadingText: { color: Colors.textMuted, fontSize: Typography.base },
+  skeletonWrap: { paddingTop: Spacing.lg },
   errorWrap: { margin: Spacing.lg, alignItems: 'center', gap: Spacing.sm },
   errorText: {
     color: Colors.red, textAlign: 'center', width: '100%',
@@ -442,7 +446,7 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
     borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center', gap: 2,
   },
-  statValue: { fontSize: Typography.sm, fontWeight: Typography.black, textAlign: 'center' },
+  statValue: { fontSize: Typography.base, fontWeight: Typography.bold, textAlign: 'center' },
   statLabel: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center' },
   statSub: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center' },
   qrCard: {
@@ -463,7 +467,7 @@ const styles = StyleSheet.create({
   },
   qrGenBtnText: { color: Colors.white, fontWeight: Typography.bold, fontSize: Typography.sm },
   qrDisplay: { alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.sm },
-  qrBg: { backgroundColor: '#fff', padding: 16, borderRadius: BorderRadius.lg },
+  qrBg: { backgroundColor: Colors.white, padding: 16, borderRadius: BorderRadius.lg },
   qrAmountLabel: { color: Colors.text, fontSize: Typography.xl, fontWeight: Typography.black },
   qrSub: { color: Colors.textMuted, fontSize: Typography.sm },
   txList: { marginHorizontal: Spacing.lg, gap: Spacing.sm, marginBottom: Spacing.md },
@@ -472,7 +476,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
     borderRadius: BorderRadius.lg, padding: Spacing.md,
   },
-  txIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  txIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   txInfo: { flex: 1, gap: 2 },
   txAmount: { color: Colors.primary, fontSize: Typography.base, fontWeight: Typography.bold },
   txParty: { color: Colors.textSoft, fontSize: Typography.sm },

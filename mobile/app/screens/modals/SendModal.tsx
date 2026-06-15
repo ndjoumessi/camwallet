@@ -207,6 +207,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 placeholder="+237 6XX XXX XXX"
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="phone-pad"
+                accessibilityLabel="Numéro du destinataire"
               />
               <TouchableOpacity
                 style={[styles.phoneInputBtn, !canUseManual && styles.phoneInputBtnDisabled]}

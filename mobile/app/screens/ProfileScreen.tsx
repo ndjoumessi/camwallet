@@ -12,6 +12,8 @@ import {
   ActivityIndicator,
   Pressable,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,7 +22,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { Badge, Skeleton } from '../components/ui';
 import { userApi, authApi, MeResponse } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
@@ -311,7 +313,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile card */}
-      <LinearGradient colors={['#0d2a1f', '#0a1628']} style={styles.profileCard}>
+      <LinearGradient colors={BALANCE_GRADIENT} style={styles.profileCard}>
         <TouchableOpacity
           onPress={pickAvatar}
           activeOpacity={0.8}
@@ -454,6 +456,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                     placeholderTextColor={Colors.textMuted}
                     autoCapitalize={key === 'email' ? 'none' : 'words'}
                     keyboardType={key === 'email' ? 'email-address' : 'default'}
+                    accessibilityLabel={label}
                   />
                 </View>
               ))}
@@ -484,10 +487,10 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 )}
               </View>
               <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                <TouchableOpacity style={[styles.formBtn, styles.cancelBtn]} onPress={() => setEditing(false)}>
+                <TouchableOpacity style={[styles.formBtn, styles.cancelBtn]} onPress={() => setEditing(false)} accessibilityRole="button" accessibilityLabel="Annuler les modifications">
                   <Text style={styles.cancelBtnText}>Annuler</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.formBtn, styles.saveBtn]} onPress={save} disabled={saving}>
+                <TouchableOpacity style={[styles.formBtn, styles.saveBtn]} onPress={save} disabled={saving} accessibilityRole="button" accessibilityLabel="Enregistrer les modifications">
                   <Text style={styles.saveBtnText}>{saving ? '…' : 'Enregistrer'}</Text>
                 </TouchableOpacity>
               </View>
@@ -677,7 +680,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>Supprimer mon compte</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v2.7.2 · Marché Cameroun</Text>
+      <Text style={styles.version}>CamWallet v2.7.3 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
@@ -685,6 +688,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
     {/* Modal : Changement de PIN (étape 1 : ancien PIN — étape 2 : nouveau PIN) */}
     <Modal visible={pinModalOpen} transparent animationType="slide" onRequestClose={() => setPinModalOpen(false)}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={styles.deleteOverlay}>
         <View style={[styles.deleteModalCard, { gap: Spacing.md }]}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.primary} />
@@ -756,6 +760,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           </TouchableOpacity>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
 
     {/* Modal : Écrans légaux (CGU + Confidentialité) */}
@@ -835,6 +840,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
     {/* Modal 2 : confirmation PIN */}
     <Modal visible={deleteStep === 'pin'} transparent animationType="slide" onRequestClose={() => { setDeleteStep('idle'); setDeletePin(''); }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <View style={styles.deleteOverlay}>
         <View style={styles.deleteModalCard}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.red} />
@@ -864,6 +870,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           </TouchableOpacity>
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
     </View>
   );

@@ -99,6 +99,9 @@ export const Typography = {
   relaxed: 1.7,
 };
 
+// Gradient partagé pour les cartes solde (HomeScreen, ProfileScreen)
+export const BALANCE_GRADIENT: [string, string] = ['#0d2a1f', '#0a1628'];
+
 export const Shadows = {
   card: {
     shadowColor: Colors.primary,

@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
@@ -24,7 +24,6 @@ import WithdrawModal from './modals/WithdrawModal';
 import ScanModal, { ScannedRecipient } from './modals/ScanModal';
 
 type ModalType = 'send' | 'receive' | 'recharge' | 'withdraw' | 'scan' | null;
-const BALANCE_CARD_GRADIENT: [string, string] = ['#0d2a1f', '#0a1628'];
 
 export default function HomeScreen() {
   const { user, balance, showBalance, toggleShowBalance, recentContacts, transactions, fetchBalance, fetchHistory, openTransaction } = useStore();
@@ -77,9 +76,13 @@ export default function HomeScreen() {
     fetchHistory();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { return () => { if (toastTimer.current) clearTimeout(toastTimer.current); }; }, []);
+
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
   }, []);
 
   const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
@@ -118,7 +121,7 @@ export default function HomeScreen() {
           transform: [{ translateY: cardEnter.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
         }}>
         <LinearGradient
-          colors={BALANCE_CARD_GRADIENT}
+          colors={BALANCE_GRADIENT}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.balanceCard}

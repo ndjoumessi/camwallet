@@ -262,8 +262,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
               <View
                 key={i}
                 style={[styles.dot, i === slideIndex ? styles.dotActive : styles.dotInactive]}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: i === slideIndex }}
+                accessible={false}
+                importantForAccessibility="no"
               />
             ))}
           </View>
