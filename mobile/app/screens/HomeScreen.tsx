@@ -28,7 +28,7 @@ type ModalType = 'send' | 'receive' | 'recharge' | 'withdraw' | 'scan' | null;
 const QUICK_AMOUNTS = [5000, 10000, 25000];
 
 export default function HomeScreen() {
-  const { user, balance, showBalance, toggleShowBalance, recentContacts, transactions, fetchBalance, fetchHistory } = useStore();
+  const { user, balance, showBalance, toggleShowBalance, recentContacts, transactions, fetchBalance, fetchHistory, openTransaction } = useStore();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -187,7 +187,14 @@ export default function HomeScreen() {
         {transactions.slice(0, 5).map((tx) => {
           const meta = txMeta(tx.type);
           return (
-            <View key={tx.id} style={styles.txRow}>
+            <TouchableOpacity
+              key={tx.id}
+              style={styles.txRow}
+              onPress={() => openTransaction(tx)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Détail : ${meta.label} ${tx.name}, ${fmt(tx.amount)}`}
+            >
               <View style={[styles.txIcon, { backgroundColor: meta.amountColor + '22' }]}>
                 <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={18} color={meta.amountColor} />
               </View>
@@ -201,7 +208,7 @@ export default function HomeScreen() {
                 </Text>
                 <Badge label={meta.label} color={meta.badgeText} bg={meta.badgeBg} />
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
 

@@ -294,6 +294,10 @@ export const authApi = {
     api
       .patch<{ message: string }>('/auth/change-pin', { currentPin, newPin })
       .then((r) => r.data),
+
+  // Vérifie le PIN courant sans reconnexion (étape 1 du changement de PIN).
+  verifyPin: (pin: string) =>
+    api.post<{ valid: boolean }>('/auth/verify-pin', { pin }).then((r) => r.data),
 };
 
 export const userApi = {
@@ -408,11 +412,25 @@ export interface DisputeResponse {
   message: string;
 }
 
+// Contestation telle que renvoyée par GET /disputes/me (avec la transaction liée).
+export interface MyDispute {
+  id: string;
+  transactionId: string;
+  reason: string;
+  status: string;
+  resolution: string | null;
+  createdAt: string;
+  transaction: ApiTransaction | null;
+}
+
 export const disputeApi = {
   open: (transactionId: string, reason: string) =>
     api
       .post<DisputeResponse>('/disputes', { transactionId, reason })
       .then((r) => r.data),
+
+  // Liste les contestations de l'utilisateur courant.
+  getMine: () => api.get<MyDispute[]>('/disputes/me').then((r) => r.data),
 };
 
 export const loyaltyApi = {

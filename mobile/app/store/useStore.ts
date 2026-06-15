@@ -7,10 +7,12 @@ import {
   userApi,
   walletApi,
   transactionsApi,
+  disputeApi,
   clearTokens,
   hasSession,
   ApiTransaction,
   ApiTransactionStatus,
+  ApiTransactionType,
 } from '../../src/lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +29,13 @@ export interface Transaction {
   status: 'success' | 'pending' | 'failed';
   ref: string;
   motif?: string;
+  // Champs bruts conservés pour l'écran de détail / la timeline / la règle 24h.
+  createdAt: string; // ISO brut
+  fee: number; // en FCFA (valeur absolue)
+  rawType: ApiTransactionType; // type API d'origine (P2P, QR_PAYMENT, …)
+  direction: 'in' | 'out';
+  counterpartyName: string | null;
+  counterpartyPhone: string | null;
 }
 
 export interface Contact {
@@ -101,6 +110,7 @@ function mapTransaction(t: ApiTransaction, meId: string | null): Transaction {
 
   const fcfa = toFcfa(t.amount);
   const outgoing = type === 'sent' || type === 'withdrawal' || type === 'qr_payment';
+  const counterparty = isIncoming ? t.sender : t.receiver;
 
   return {
     id: t.id,
@@ -111,6 +121,12 @@ function mapTransaction(t: ApiTransaction, meId: string | null): Transaction {
     status: mapStatus(t.status),
     ref: t.reference,
     motif: t.description ?? undefined,
+    createdAt: t.createdAt,
+    fee: toFcfa(t.fee ?? 0),
+    rawType: t.type,
+    direction: outgoing ? 'out' : 'in',
+    counterpartyName: counterparty?.fullName ?? null,
+    counterpartyPhone: counterparty?.phone ?? null,
   };
 }
 
@@ -154,6 +170,11 @@ interface AppState {
   historyHasMore: boolean;
   historyLoading: boolean;
 
+  // Détail transaction (écran partagé ouvert depuis Accueil / Historique / deep-link)
+  selectedTransaction: Transaction | null;
+  // Identifiants des transactions déjà contestées (pour masquer le bouton remboursement)
+  disputedTxIds: string[];
+
   pinAttempts: number;
   pinBlocked: boolean;
 
@@ -179,6 +200,13 @@ interface AppState {
   fetchHistoryPage: (page: number) => Promise<void>;
   resetHistory: () => void;
   sendMoney: (phone: string, amountFcfa: number, description?: string) => Promise<void>;
+
+  // Détail transaction + contestations
+  openTransaction: (tx: Transaction) => void;
+  openTransactionById: (id: string) => Promise<void>;
+  closeTransaction: () => void;
+  fetchMyDisputes: () => Promise<void>;
+  markDisputed: (txId: string) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -196,6 +224,8 @@ export const useStore = create<AppState>((set, get) => ({
   historyPage: 1,
   historyHasMore: true,
   historyLoading: false,
+  selectedTransaction: null,
+  disputedTxIds: [],
   pinAttempts: 0,
   pinBlocked: false,
 
@@ -278,6 +308,8 @@ export const useStore = create<AppState>((set, get) => ({
       balance: 0,
       transactions: [],
       recentContacts: [],
+      selectedTransaction: null,
+      disputedTxIds: [],
       error: null,
     });
   },
@@ -365,6 +397,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     set({ transactions: res.data.map((t) => mapTransaction(t, meId)), recentContacts });
+    void get().fetchMyDisputes();
   },
 
   resetHistory: () => {
@@ -396,6 +429,37 @@ export const useStore = create<AppState>((set, get) => ({
       set({ historyLoading: false });
     }
   },
+
+  // ── Détail transaction + contestations ──────────────────────────────────────
+  openTransaction: (tx) => set({ selectedTransaction: tx }),
+
+  // Ouvre le détail à partir d'un identifiant (deep-link notification). La
+  // transaction est cherchée dans l'historique déjà chargé ; sinon on recharge
+  // la première page avant de réessayer.
+  openTransactionById: async (id) => {
+    const found = get().transactions.find((t) => t.id === id);
+    if (found) {
+      set({ selectedTransaction: found });
+      return;
+    }
+    await get().fetchHistoryPage(1);
+    const after = get().transactions.find((t) => t.id === id);
+    if (after) set({ selectedTransaction: after });
+  },
+
+  closeTransaction: () => set({ selectedTransaction: null }),
+
+  fetchMyDisputes: async () => {
+    try {
+      const disputes = await disputeApi.getMine();
+      set({ disputedTxIds: disputes.map((d) => d.transactionId) });
+    } catch {
+      // échec silencieux — le bouton remboursement reste disponible
+    }
+  },
+
+  markDisputed: (txId) =>
+    set((s) => ({ disputedTxIds: s.disputedTxIds.includes(txId) ? s.disputedTxIds : [...s.disputedTxIds, txId] })),
 
   // ── Paiement P2P ─────────────────────────────────────────────────────────────
   sendMoney: async (phone, amountFcfa, description) => {

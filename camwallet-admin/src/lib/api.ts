@@ -213,12 +213,21 @@ export interface Paginated<T> {
 }
 
 // ── Endpoints ─────────────────────────────────────────────
-export async function loginAdmin(email: string, password: string): Promise<void> {
-  const data = await request<AuthTokens>('/auth/login-admin', {
+// Connexion admin avec support 2FA TOTP. Si le compte a la 2FA active et
+// qu'aucun code n'est fourni, le backend répond { requiresTOTP: true } sans
+// émettre de token : on renvoie ce signal pour afficher l'étape TOTP.
+export async function loginAdmin(
+  email: string,
+  password: string,
+  totpCode?: string,
+): Promise<{ requiresTOTP: boolean }> {
+  const data = await request<AuthTokens & { requiresTOTP?: boolean }>('/auth/login-admin', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(totpCode ? { totpCode } : {}) }),
   })
+  if (data.requiresTOTP) return { requiresTOTP: true }
   saveTokens(data.accessToken, data.refreshToken)
+  return { requiresTOTP: false }
 }
 
 export const logout = () => clearTokens()

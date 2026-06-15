@@ -11,6 +11,8 @@ const C = {
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [email, setEmail] = useState('admin@camwallet.cm')
   const [password, setPassword] = useState('')
+  const [totpRequired, setTotpRequired] = useState(false)
+  const [totpCode, setTotpCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -19,7 +21,13 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
     setError(null)
     setLoading(true)
     try {
-      await loginAdmin(email.trim(), password)
+      const res = await loginAdmin(email.trim(), password, totpRequired ? totpCode.trim() : undefined)
+      if (res.requiresTOTP) {
+        // 2FA activée : on passe à l'étape de saisie du code TOTP.
+        setTotpRequired(true)
+        setLoading(false)
+        return
+      }
       onSuccess()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Échec de la connexion')
@@ -77,8 +85,23 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         <input
           type="password" value={password} onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••" autoComplete="current-password"
-          style={{ ...inputStyle, marginBottom: 20 }}
+          disabled={totpRequired}
+          style={{ ...inputStyle, marginBottom: 20, opacity: totpRequired ? 0.6 : 1 }}
         />
+
+        {totpRequired && (
+          <>
+            <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600, display: 'block', marginBottom: 6 }}>
+              Code de vérification (2FA)
+            </label>
+            <input
+              type="text" inputMode="numeric" value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="123456" autoComplete="one-time-code" autoFocus
+              style={{ ...inputStyle, marginBottom: 20, letterSpacing: 4, textAlign: 'center', fontSize: 18 }}
+            />
+          </>
+        )}
 
         {error && (
           <div style={{
@@ -89,18 +112,23 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
           </div>
         )}
 
-        <button
-          className="cw-btn"
-          type="submit" disabled={loading || !email || !password}
-          style={{
-            width: '100%', background: loading || !email || !password ? C.green + '60' : C.green,
-            border: 'none', borderRadius: 10, padding: '12px', color: '#fff',
-            fontWeight: 700, fontSize: 14,
-            cursor: loading || !email || !password ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {loading ? 'Connexion…' : 'Se connecter'}
-        </button>
+        {(() => {
+          const disabled = loading || !email || !password || (totpRequired && totpCode.length !== 6)
+          return (
+            <button
+              className="cw-btn"
+              type="submit" disabled={disabled}
+              style={{
+                width: '100%', background: disabled ? C.green + '60' : C.green,
+                border: 'none', borderRadius: 10, padding: '12px', color: '#fff',
+                fontWeight: 700, fontSize: 14,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {loading ? 'Connexion…' : totpRequired ? 'Vérifier le code' : 'Se connecter'}
+            </button>
+          )
+        })()}
       </form>
     </div>
   )

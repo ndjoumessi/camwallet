@@ -173,6 +173,7 @@ export class WebhooksService {
       void this.notifications.notifyTransactionReceived(tx.receiverId, {
         type: 'RECHARGE',
         amountCentimes: tx.amount,
+        transactionId: tx.id,
       });
     }
   }

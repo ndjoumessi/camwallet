@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, createContext, useContext, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, useMemo, createContext, useContext, Fragment, type CSSProperties } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -16,7 +16,7 @@ import {
 import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError,
-  getStats, getUsers, getTransactions, getTimeseries,
+  getStats, getUsers, getTransactions, getTimeseries, AdminTransaction,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase,
@@ -89,6 +89,47 @@ const partyLabel = (
   p: { fullName: string | null; phone: string } | null,
   fallback: string,
 ) => (p ? p.fullName ?? p.phone : fallback)
+
+// Génère un rapport PDF imprimable : ouvre une fenêtre mise en page aux couleurs
+// CamWallet et déclenche l'impression navigateur (l'utilisateur enregistre en PDF).
+// Retourne false si le navigateur a bloqué la fenêtre (popup bloqué).
+function exportPdfReport(title: string, columns: string[], rows: (string | number)[][]): boolean {
+  const esc = (s: any) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
+  const dateStr = new Date().toLocaleString('fr-FR')
+  const thead = columns.map((c) => `<th>${esc(c)}</th>`).join('')
+  const tbody = rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')
+  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
+<title>${esc(title)}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; margin: 28px; color: #161D2F; }
+  .logo { font-size: 24px; font-weight: 900; color: #00C896; }
+  .logo span { color: #161D2F; }
+  .meta { margin: 12px 0 20px; color: #555; font-size: 12px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th { background: #00C896; color: #fff; padding: 7px 9px; text-align: left; }
+  td { padding: 6px 9px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #f7f9fc; }
+  .footer { margin-top: 28px; font-size: 10px; color: #aaa; text-align: center; }
+</style></head>
+<body onload="window.print()">
+  <div class="logo">Cam<span>Wallet</span> · Admin</div>
+  <div class="meta"><h1>${esc(title)}</h1>${rows.length} ligne(s) · Généré le ${esc(dateStr)}</div>
+  <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+  <div class="footer">CamWallet · Rapport généré automatiquement · Confidentiel</div>
+</body></html>`
+  // Blob URL plutôt que document.write() (évite l'injection et les soucis de perf).
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+  const w = window.open(url, '_blank')
+  if (!w) {
+    URL.revokeObjectURL(url)
+    return false
+  }
+  w.focus()
+  // Libère l'URL après ouverture (laisse le temps au navigateur de charger).
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  return true
+}
 
 // Petit bandeau d'état (chargement / erreur / vide) partagé par les pages.
 function StateRow({ loading, error, empty }: { loading: boolean; error: string | null; empty?: string }) {
@@ -885,6 +926,23 @@ function UsersPage() {
   const toggleSort = (key: 'balance' | 'createdAt') =>
     setSort((s) => (s?.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 }))
 
+  // Export PDF des lignes actuellement chargées (recherche + filtre + tri appliqués).
+  const handleExportUsersPdf = () => {
+    const ok = exportPdfReport(
+      'Utilisateurs CamWallet',
+      ['Nom', 'Téléphone', 'Solde (FCFA)', 'Statut', 'KYC', 'Inscrit'],
+      sortedUsers.map((u) => [
+        u.fullName ?? '—',
+        u.phone,
+        toFcfa(Number(u.wallet?.balance ?? 0)).toLocaleString('fr-FR'),
+        u.status,
+        u.kycStatus,
+        fmtDate(u.createdAt),
+      ]),
+    )
+    toast(ok ? 'Rapport PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
+  }
+
   // Bloquer / réactiver un compte (action tracée côté backend dans l'AuditLog).
   const toggleBlock = async (u: { id: string; status: string }) => {
     setActing(u.id)
@@ -913,14 +971,23 @@ function UsersPage() {
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Utilisateurs</h1>
           <p style={{ color: C.textMuted, fontSize: 13 }}>{total} utilisateur{total > 1 ? 's' : ''} enregistré{total > 1 ? 's' : ''}</p>
         </div>
-        <button
-          className="cw-btn"
-          onClick={handleExportUsers}
-          disabled={exporting}
-          style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
-        >
-          ⬇ Export CSV
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="cw-btn"
+            onClick={handleExportUsers}
+            disabled={exporting}
+            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
+          >
+            ⬇ Export CSV
+          </button>
+          <button
+            className="cw-btn"
+            onClick={handleExportUsersPdf}
+            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}
+          >
+            ⬇ Export PDF
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -1162,8 +1229,9 @@ function TransactionsPage() {
   const [txFilter, setTxFilter] = useState('all')
   const toast = useToast()
   const [exporting, setExporting] = useState(false)
+  const [selectedTx, setSelectedTx] = useState<AdminTransaction | null>(null)
 
-  const { data, loading, error } = useFetch(
+  const { data, loading, error, refetch } = useFetch(
     () => getTransactions({ limit: 50, type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter] }),
     [txFilter],
   )
@@ -1182,6 +1250,25 @@ function TransactionsPage() {
     }
   }
 
+  // Export PDF des transactions actuellement affichées (filtre appliqué).
+  const handleExportTxPdf = () => {
+    const ok = exportPdfReport(
+      'Transactions CamWallet',
+      ['Réf.', 'Type', 'De', 'À', 'Montant (FCFA)', 'Frais (FCFA)', 'Statut', 'Date'],
+      txs.map((tx) => [
+        tx.reference,
+        TX_TYPE_LABEL[tx.type] ?? tx.type,
+        partyLabel(tx.sender, 'Opérateur'),
+        partyLabel(tx.receiver, 'Opérateur'),
+        toFcfa(tx.amount).toLocaleString('fr-FR'),
+        toFcfa(tx.fee).toLocaleString('fr-FR'),
+        tx.status,
+        fmtDate(tx.createdAt),
+      ]),
+    )
+    toast(ok ? 'Rapport PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
@@ -1189,14 +1276,23 @@ function TransactionsPage() {
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Transactions</h1>
           <p style={{ color: C.textMuted, fontSize: 13 }}>{total} transaction{total > 1 ? 's' : ''} au total</p>
         </div>
-        <button
-          className="cw-btn"
-          onClick={handleExportTransactions}
-          disabled={exporting}
-          style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
-        >
-          ⬇ Export CSV
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="cw-btn"
+            onClick={handleExportTransactions}
+            disabled={exporting}
+            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
+          >
+            ⬇ Export CSV
+          </button>
+          <button
+            className="cw-btn"
+            onClick={handleExportTxPdf}
+            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}
+          >
+            ⬇ Export PDF
+          </button>
+        </div>
       </div>
 
       {/* Type filters */}
@@ -1233,7 +1329,7 @@ function TransactionsPage() {
           </thead>
           <tbody>
             {txs.map(tx => (
-              <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+              <tr key={tx.id} className="cw-row" onClick={() => setSelectedTx(tx)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                 <td style={{ padding: '11px 14px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
@@ -1251,6 +1347,119 @@ function TransactionsPage() {
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucune transaction</div>
         )}
         <StateRow loading={loading} error={error} />
+      </div>
+
+      {selectedTx && (
+        <TransactionDetailModal
+          tx={selectedTx}
+          onClose={() => setSelectedTx(null)}
+          onRetried={() => { setSelectedTx(null); refetch() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Modale de détail d'une transaction (timeline, infos, JSON technique, relance).
+function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransaction; onClose: () => void; onRetried: () => void }) {
+  const toast = useToast()
+  const [retrying, setRetrying] = useState(false)
+
+  const phase = TX_STATUS_BADGE[tx.status] ?? tx.status
+  const failed = phase === 'failed'
+  const pending = phase === 'pending'
+  // Relance possible uniquement pour une recharge/retrait opérateur en attente.
+  const canRetry = tx.status === 'PENDING' && (tx.type === 'RECHARGE' || tx.type === 'WITHDRAWAL')
+
+  const steps: { label: string; state: 'done' | 'active' | 'failed' | 'future' }[] = failed
+    ? [{ label: 'Créée', state: 'done' }, { label: 'Traitement', state: 'done' }, { label: 'Échouée', state: 'failed' }]
+    : pending
+      ? [{ label: 'Créée', state: 'done' }, { label: 'En cours', state: 'active' }, { label: 'Complétée', state: 'future' }]
+      : [{ label: 'Créée', state: 'done' }, { label: 'Traitement', state: 'done' }, { label: 'Complétée', state: 'done' }]
+
+  const stepColor = (s: string) => (s === 'failed' ? C.red : s === 'future' ? C.textMuted : s === 'active' ? C.yellow : C.green)
+
+  const handleRetry = async () => {
+    setRetrying(true)
+    try {
+      await retryOperation(tx.id)
+      toast('Opération relancée', 'success')
+      onRetried()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Échec de la relance', 'error')
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  const rows: [string, string][] = [
+    ['Référence', tx.reference],
+    ['Identifiant', tx.id],
+    ['Type', TX_TYPE_LABEL[tx.type] ?? tx.type],
+    ['Émetteur', partyLabel(tx.sender, 'Opérateur')],
+    ['Destinataire', partyLabel(tx.receiver, 'Opérateur')],
+    ['Montant', fmt(toFcfa(tx.amount))],
+    ['Frais', fmt(toFcfa(tx.fee))],
+    ['Date', fmtDate(tx.createdAt)],
+  ]
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, width: 560, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <ArrowLeftRight size={18} color={C.green} />
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: C.text }}>Détail transaction</h2>
+          </div>
+          <button className="cw-iconbtn" onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 4, borderRadius: 6 }}><X size={18} /></button>
+        </div>
+
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Statut + timeline */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <StatusBadge status={phase} />
+            <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {steps.map((s, i, arr) => (
+              <Fragment key={s.label}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 70 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 6, background: stepColor(s.state) }} />
+                  <span style={{ fontSize: 11, color: s.state === 'future' ? C.textMuted : C.textSoft }}>{s.label}</span>
+                </div>
+                {i < arr.length - 1 && <span style={{ flex: 1, height: 2, background: arr[i].state === 'done' ? C.green : C.border }} />}
+              </Fragment>
+            ))}
+          </div>
+
+          {/* Infos */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.border, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+            {rows.map(([label, value]) => (
+              <div key={label} style={{ background: C.card, padding: '10px 12px' }}>
+                <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 2 }}>{label}</div>
+                <div style={{ fontSize: 13, color: C.text, fontWeight: 600, wordBreak: 'break-all' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Données techniques (JSON formaté — payload opérateur / logs) */}
+          <div>
+            <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Données techniques</div>
+            <pre style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 11.5, color: C.textSoft, overflowX: 'auto', margin: 0 }}>{JSON.stringify(tx, null, 2)}</pre>
+          </div>
+
+          {/* Actions */}
+          {canRetry && (
+            <button
+              className="cw-btn"
+              onClick={handleRetry}
+              disabled={retrying}
+              style={{ alignSelf: 'flex-start', fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 18px', cursor: retrying ? 'wait' : 'pointer', fontWeight: 700 }}
+            >
+              {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

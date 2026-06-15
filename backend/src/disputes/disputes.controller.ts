@@ -1,7 +1,8 @@
-import { Controller, Post, Body, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TransactionsService } from '../transactions/transactions.service';
+import { OpenDisputeDto } from './dto/open-dispute.dto';
 
 @ApiTags('disputes')
 @ApiBearerAuth()
@@ -13,10 +14,13 @@ export class DisputesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Contester une transaction' })
-  openDispute(
-    @Request() req: any,
-    @Body() body: { transactionId: string; reason: string },
-  ) {
-    return this.transactionsService.openDispute(req.user.id, body.transactionId, body.reason);
+  openDispute(@Request() req: any, @Body() dto: OpenDisputeDto) {
+    return this.transactionsService.openDispute(req.user.id, dto.transactionId, dto.reason);
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: 'Lister mes contestations' })
+  myDisputes(@Request() req: any) {
+    return this.transactionsService.getUserDisputes(req.user.id);
   }
 }
