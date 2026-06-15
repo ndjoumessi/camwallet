@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WalletsService } from './wallets.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CamPayService } from '../campay/campay.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 const makePrismaMock = () => ({
@@ -14,17 +15,32 @@ const makePrismaMock = () => ({
   $transaction: jest.fn(),
 });
 
+const makeCamPayMock = () => ({
+  collect: jest.fn().mockResolvedValue({
+    reference: 'campay-ref-001',
+    ussd_code: '#150*4*1*001#',
+    status: 'PENDING',
+  }),
+  withdraw: jest.fn().mockResolvedValue({
+    reference: 'campay-ref-002',
+    status: 'PENDING',
+  }),
+});
+
 describe('WalletsService', () => {
   let service: WalletsService;
   let prisma: ReturnType<typeof makePrismaMock>;
+  let campay: ReturnType<typeof makeCamPayMock>;
 
   beforeEach(async () => {
     prisma = makePrismaMock();
+    campay = makeCamPayMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WalletsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: CamPayService, useValue: campay },
       ],
     }).compile();
 
@@ -59,7 +75,7 @@ describe('WalletsService', () => {
   // ─── recharge ─────────────────────────────────────────────────────────────
 
   describe('recharge', () => {
-    it('crée une transaction PENDING', async () => {
+    it('crée une transaction PENDING via CamPay collect', async () => {
       prisma.transaction.create.mockResolvedValue({
         id: 'tx-1',
         type: 'RECHARGE',
@@ -69,8 +85,14 @@ describe('WalletsService', () => {
         fee: 0n,
       });
 
-      const result = await service.recharge('user-1', 500000n, 'ORANGE_MONEY');
+      const result = await service.recharge('user-1', 500000n, 'ORANGE_MONEY' as any, '+237677000001');
 
+      expect(campay.collect).toHaveBeenCalledWith(
+        500000n,
+        '+237677000001',
+        expect.stringMatching(/^RCHG-/),
+        expect.any(String),
+      );
       expect(prisma.transaction.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ type: 'RECHARGE', status: 'PENDING', amount: 500000n }),
@@ -78,16 +100,23 @@ describe('WalletsService', () => {
       );
       expect(result.status).toBe('PENDING');
       expect(result.fee).toBe(0n);
+      expect(result.campayReference).toBe('campay-ref-001');
+    });
+
+    it('rejette si le numéro de téléphone est absent', async () => {
+      await expect(service.recharge('user-1', 500000n, 'ORANGE_MONEY' as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('rejette un montant invalide (0)', async () => {
-      await expect(service.recharge('user-1', 0n, 'MTN_MOMO')).rejects.toThrow(
+      await expect(service.recharge('user-1', 0n, 'MTN_MOMO' as any, '+237677000001')).rejects.toThrow(
         BadRequestException,
       );
     });
 
     it('rejette un montant négatif', async () => {
-      await expect(service.recharge('user-1', -1000n, 'ORANGE_MONEY')).rejects.toThrow(
+      await expect(service.recharge('user-1', -1000n, 'ORANGE_MONEY' as any, '+237677000001')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -122,10 +151,17 @@ describe('WalletsService', () => {
         return fn(txClient);
       });
 
-      const result = await service.withdraw('user-1', 100000n, 'ORANGE_MONEY');
+      const result = await service.withdraw('user-1', 100000n, 'ORANGE_MONEY' as any, '+237677000001');
 
       expect(result.status).toBe('PENDING');
       expect(result.fee).toBe(5000n);
+      // campay.withdraw est fire-and-forget, appelé en arrière-plan
+      expect(campay.withdraw).toHaveBeenCalledWith(
+        100000n,
+        '+237677000001',
+        expect.stringMatching(/^WDRW-/),
+        expect.any(String),
+      );
     });
 
     it('applique les frais min de 50 FCFA (5000 centimes) sur petits montants', async () => {
@@ -147,7 +183,7 @@ describe('WalletsService', () => {
       });
 
       // Retrait 1000 centimes (10 FCFA) → frais 1% = 10 centimes < 5000 → frais = 5000
-      await service.withdraw('user-1', 1000n, 'MTN_MOMO');
+      await service.withdraw('user-1', 1000n, 'MTN_MOMO' as any);
 
       expect(capturedData.fee).toBe(5000n);
     });
@@ -171,7 +207,7 @@ describe('WalletsService', () => {
       });
 
       // Retrait 100 000 000 centimes (1 000 000 FCFA) → frais 1% = 1 000 000 centimes
-      await service.withdraw('user-1', 100_000_000n, 'ORANGE_MONEY');
+      await service.withdraw('user-1', 100_000_000n, 'ORANGE_MONEY' as any);
 
       expect(capturedData.fee).toBe(1_000_000n);
     });
@@ -186,7 +222,7 @@ describe('WalletsService', () => {
         return fn(txClient);
       });
 
-      await expect(service.withdraw('user-1', 100000n, 'ORANGE_MONEY')).rejects.toThrow(
+      await expect(service.withdraw('user-1', 100000n, 'ORANGE_MONEY' as any)).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -201,13 +237,13 @@ describe('WalletsService', () => {
         return fn(txClient);
       });
 
-      await expect(service.withdraw('user-1', 50000n, 'MTN_MOMO')).rejects.toThrow(
+      await expect(service.withdraw('user-1', 50000n, 'MTN_MOMO' as any)).rejects.toThrow(
         BadRequestException,
       );
     });
 
     it('rejette un montant invalide (0)', async () => {
-      await expect(service.withdraw('user-1', 0n, 'ORANGE_MONEY')).rejects.toThrow(
+      await expect(service.withdraw('user-1', 0n, 'ORANGE_MONEY' as any)).rejects.toThrow(
         BadRequestException,
       );
     });

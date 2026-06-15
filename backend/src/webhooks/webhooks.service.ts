@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CamPayService } from '../campay/campay.service';
 import {
   MobileOperator,
   TransactionStatus,
@@ -18,7 +19,29 @@ export class WebhooksService {
     private prisma: PrismaService,
     private config: ConfigService,
     private notifications: NotificationsService,
+    private campay: CamPayService,
   ) {}
+
+  // ─── CamPay ──────────────────────────────────────────────────────────────
+  async handleCamPay(payload: any) {
+    if (!this.campay.verifyWebhookSignature(payload)) {
+      this.logger.warn(`Signature CamPay invalide : ref=${payload?.reference}`);
+      throw new UnauthorizedException('Signature webhook CamPay invalide');
+    }
+
+    this.logger.log(`Webhook CamPay reçu : ${JSON.stringify(payload)}`);
+
+    // Normalisation du payload CamPay → format interne
+    const normalized = {
+      externalId: payload.external_reference,
+      status: payload.status,      // SUCCESSFUL | FAILED | PENDING
+      reason: payload.reason,
+      type: payload.type || 'CAMPAY_NOTIFICATION',
+    };
+
+    await this.processOperatorWebhook(MobileOperator.CAMPAY, payload, normalized);
+    return { status: 'ok' };
+  }
 
   async handleOrangeMoney(payload: any, rawBody: Buffer, signature: string) {
     this.verifyOmSignature(rawBody, signature);
@@ -88,26 +111,32 @@ export class WebhooksService {
 
   // Finalise une transaction PENDING (recharge ou retrait) à partir de la
   // notification opérateur. Idempotent : on ne traite qu'une transaction encore
-  // PENDING, identifiée par operatorRef = payload.externalId.
-  private async processOperatorWebhook(operator: MobileOperator, payload: any) {
+  // PENDING, identifiée par operatorRef = payload.externalId (ou normalized.externalId).
+  private async processOperatorWebhook(
+    operator: MobileOperator,
+    rawPayload: any,
+    normalized?: { externalId?: string; status?: string; reason?: string; type?: string },
+  ) {
+    const p = normalized ?? rawPayload;
+
     // Sauvegarder l'événement brut pour audit
     const event = await this.prisma.webhookEvent.create({
       data: {
         operator,
-        eventType: payload.type || 'PAYMENT_NOTIFICATION',
-        payload,
+        eventType: p.type || 'PAYMENT_NOTIFICATION',
+        payload: rawPayload,
       },
     });
 
     try {
-      if (!payload.externalId) {
+      if (!p.externalId) {
         await this.markEventProcessed(event.id);
         return;
       }
 
       const tx = await this.prisma.transaction.findFirst({
         where: {
-          operatorRef: payload.externalId,
+          operatorRef: p.externalId,
           status: TransactionStatus.PENDING,
         },
       });
@@ -118,10 +147,10 @@ export class WebhooksService {
         return;
       }
 
-      if (payload.status === 'SUCCESSFUL') {
+      if (p.status === 'SUCCESSFUL') {
         await this.confirmTransaction(tx, event.id);
-      } else if (payload.status === 'FAILED') {
-        await this.failTransaction(tx, payload.reason, event.id);
+      } else if (p.status === 'FAILED') {
+        await this.failTransaction(tx, p.reason, event.id);
       } else {
         // Statut intermédiaire (ex: PENDING côté opérateur) : on acquitte juste
         await this.markEventProcessed(event.id);

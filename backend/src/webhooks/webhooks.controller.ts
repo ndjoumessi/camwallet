@@ -8,6 +8,13 @@ import { WebhooksService } from './webhooks.service';
 export class WebhooksController {
   constructor(private webhooksService: WebhooksService) {}
 
+  @Post('campay')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Webhook CamPay — confirmation paiement/retrait (signature sha256 vérifiée)' })
+  campay(@Body() payload: any) {
+    return this.webhooksService.handleCamPay(payload);
+  }
+
   @Post('orange-money')
   @HttpCode(200)
   @ApiOperation({ summary: 'Webhook Orange Money — confirmation paiement (signature HMAC-SHA256 vérifiée)' })

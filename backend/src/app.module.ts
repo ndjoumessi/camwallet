@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { MerchantModule } from './merchant/merchant.module';
 import { DisputesModule } from './disputes/disputes.module';
 import { SseModule } from './sse/sse.module';
+import { CamPayModule } from './campay/campay.module';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 
 @Module({
@@ -51,6 +52,7 @@ import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middlewa
     MerchantModule,
     DisputesModule,
     SseModule,
+    CamPayModule,
   ],
 })
 export class AppModule implements NestModule {

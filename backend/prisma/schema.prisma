@@ -188,6 +188,7 @@ enum TransactionStatus {
 enum MobileOperator {
   ORANGE_MONEY
   MTN_MOMO
+  CAMPAY
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

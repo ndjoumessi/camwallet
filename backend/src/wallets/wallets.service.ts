@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { CamPayService } from '../campay/campay.service';
 import {
   TransactionType,
   TransactionStatus,
@@ -21,7 +22,10 @@ const WITHDRAWAL_FEE_MIN = 5000n;
 export class WalletsService {
   private readonly logger = new Logger(WalletsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private campay: CamPayService,
+  ) {}
 
   // ─── Solde ────────────────────────────────────────────────────────────────
   async getBalance(userId: string) {
@@ -39,9 +43,10 @@ export class WalletsService {
     return wallet;
   }
 
-  // ─── Recharge depuis OM/MoMo ────────────────────────────────────────────────
-  // Crée une transaction PENDING ; le crédit effectif est appliqué par le
-  // webhook opérateur (voir WebhooksService) à réception de la confirmation.
+  // ─── Recharge via CamPay ─────────────────────────────────────────────────
+  // 1. Appelle CamPay /collect pour déclencher le paiement mobile money.
+  // 2. Enregistre la transaction PENDING avec la référence CamPay.
+  // 3. Le crédit effectif est appliqué par le webhook CamPay (WebhooksService).
   async recharge(
     userId: string,
     amount: bigint,
@@ -49,8 +54,12 @@ export class WalletsService {
     phone?: string,
   ) {
     if (amount <= 0n) throw new BadRequestException('Montant invalide');
+    if (!phone) throw new BadRequestException('Numéro mobile money requis pour la recharge');
 
     const operatorRef = `RCHG-${randomUUID()}`;
+    const description = `Recharge CamWallet depuis ${phone}`;
+
+    const campayResponse = await this.campay.collect(amount, phone, operatorRef, description);
 
     const transaction = await this.prisma.transaction.create({
       data: {
@@ -58,26 +67,29 @@ export class WalletsService {
         status: TransactionStatus.PENDING,
         amount,
         receiverId: userId,
-        operator,
+        operator: MobileOperator.CAMPAY,
         operatorRef,
-        description: phone ? `Recharge depuis ${phone}` : 'Recharge mobile money',
+        description,
       },
     });
 
     this.logger.log(
-      `Recharge initiée : ${amount} XAF (${operator}) ref=${operatorRef}`,
+      `Recharge CamPay initiée : ${amount} centimes (${operator}) ref=${operatorRef} campayRef=${campayResponse.reference}`,
     );
 
     return {
       reference: transaction.reference,
       operatorRef,
+      campayReference: campayResponse.reference,
+      ussdCode: campayResponse.ussd_code,
       type: transaction.type,
       status: transaction.status,
       amount: transaction.amount,
       fee: 0n,
       message:
-        'Recharge initiée. Validez le paiement sur votre téléphone ; ' +
-        'le solde sera crédité après confirmation de l\'opérateur.',
+        'Recharge initiée via CamPay. Validez le paiement sur votre téléphone ' +
+        `(${campayResponse.ussd_code ?? 'code USSD envoyé par SMS'}) ; ` +
+        'le solde sera crédité après confirmation.',
     };
   }
 
@@ -123,16 +135,25 @@ export class WalletsService {
           amount,
           fee,
           senderId: userId,
-          operator,
+          operator: MobileOperator.CAMPAY,
           operatorRef,
-          description: phone ? `Retrait vers ${phone}` : 'Retrait mobile money',
+          description: phone ? `Retrait CamWallet vers ${phone}` : 'Retrait CamWallet',
         },
       });
     });
 
-    // TODO: déclencher ici l'API de décaissement de l'opérateur (OM/MoMo).
+    // Déclencher le décaissement CamPay de façon asynchrone (le solde est déjà
+    // réservé). Si CamPay échoue, le retrait reste PENDING et sera expiré + remboursé
+    // par WithdrawalsExpiryService selon WITHDRAWAL_TIMEOUT_MINUTES.
+    const description = phone ? `Retrait CamWallet vers ${phone}` : 'Retrait CamWallet';
+    void this.campay.withdraw(amount, phone ?? '', operatorRef, description).catch((err) => {
+      this.logger.error(
+        `Erreur déclenchement retrait CamPay (ref=${operatorRef}) : ${err?.message ?? err}`,
+      );
+    });
+
     this.logger.log(
-      `Retrait initié : ${amount} XAF (frais ${fee}) ref=${operatorRef}`,
+      `Retrait initié : ${amount} centimes (frais ${fee}) ref=${operatorRef}`,
     );
 
     return {
@@ -143,8 +164,8 @@ export class WalletsService {
       amount: transaction.amount,
       fee: transaction.fee,
       message:
-        'Retrait en cours de traitement. Le solde a été réservé ; il sera ' +
-        'confirmé après validation de l\'opérateur (ou recrédité en cas d\'échec).',
+        'Retrait en cours de traitement via CamPay. Le solde a été réservé ; ' +
+        'il sera confirmé après validation (ou recrédité en cas d\'échec).',
     };
   }
 }

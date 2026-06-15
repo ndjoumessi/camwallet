@@ -1,0 +1,193 @@
+import { Injectable, Logger, InternalServerErrorException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios, { AxiosInstance } from 'axios';
+import * as crypto from 'crypto';
+
+interface CamPayToken {
+  token: string;
+  expiresAt: Date;
+}
+
+interface CamPayCollectResponse {
+  reference: string;
+  ussd_code?: string;
+  operator?: string;
+  status: string;
+}
+
+interface CamPayWithdrawResponse {
+  reference: string;
+  status: string;
+  operator?: string;
+}
+
+interface CamPayTransactionStatus {
+  reference: string;
+  status: string;
+  amount: string;
+  currency: string;
+  operator?: string;
+  external_reference?: string;
+  code?: string;
+  reason?: string;
+}
+
+@Injectable()
+export class CamPayService {
+  private readonly logger = new Logger(CamPayService.name);
+  private readonly http: AxiosInstance;
+  private cachedToken: CamPayToken | null = null;
+
+  constructor(private config: ConfigService) {
+    const baseURL = this.config.get<string>('CAMPAY_BASE_URL') || 'https://demo.campay.net/api';
+    this.http = axios.create({ baseURL, timeout: 30_000 });
+  }
+
+  // ─── Authentification ──────────────────────────────────────────────────────
+
+  private async getToken(): Promise<string> {
+    // Réutiliser le token en cache s'il expire dans plus de 60 secondes
+    if (this.cachedToken && this.cachedToken.expiresAt > new Date(Date.now() + 60_000)) {
+      return this.cachedToken.token;
+    }
+
+    const username = this.config.get<string>('CAMPAY_USERNAME');
+    const password = this.config.get<string>('CAMPAY_PASSWORD');
+
+    if (!username || !password) {
+      throw new InternalServerErrorException('CAMPAY_USERNAME / CAMPAY_PASSWORD non configurés');
+    }
+
+    try {
+      const { data } = await this.http.post('/token/', { username, password });
+      const expiresIn: number = data.expires_in ?? 3600;
+
+      this.cachedToken = {
+        token: data.token,
+        expiresAt: new Date(Date.now() + expiresIn * 1000),
+      };
+
+      this.logger.log('Token CamPay obtenu (expire dans ' + expiresIn + 's)');
+      return this.cachedToken.token;
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || 'Erreur inconnue';
+      this.logger.error('Échec obtention token CamPay : ' + msg);
+      throw new InternalServerErrorException('Authentification CamPay échouée : ' + msg);
+    }
+  }
+
+  private async authHeaders() {
+    const token = await this.getToken();
+    return { Authorization: `Token ${token}` };
+  }
+
+  // ─── Collect (recharge — débit mobile money de l'utilisateur) ─────────────
+
+  async collect(
+    amountCentimes: bigint,
+    phone: string,
+    externalRef: string,
+    description: string,
+  ): Promise<CamPayCollectResponse> {
+    // CamPay attend le montant en FCFA entiers et le numéro sans le '+'
+    const amount = String(amountCentimes / 100n);
+    const from = phone.replace(/^\+/, '');
+
+    try {
+      const headers = await this.authHeaders();
+      const { data } = await this.http.post<CamPayCollectResponse>(
+        '/collect/',
+        { amount, currency: 'XAF', from, description, external_reference: externalRef },
+        { headers },
+      );
+
+      this.logger.log(`CamPay collect initié : ${amount} XAF (ref=${data.reference}, extRef=${externalRef})`);
+      return data;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.response?.data?.detail || err?.message || 'Erreur inconnue';
+      this.logger.error(`Erreur CamPay collect : ${msg}`);
+      throw new BadRequestException('Initiation du paiement CamPay échouée : ' + msg);
+    }
+  }
+
+  // ─── Withdraw (retrait — crédit vers mobile money de l'utilisateur) ────────
+
+  async withdraw(
+    amountCentimes: bigint,
+    phone: string,
+    externalRef: string,
+    description: string,
+  ): Promise<CamPayWithdrawResponse> {
+    const amount = String(amountCentimes / 100n);
+    const to = phone.replace(/^\+/, '');
+
+    try {
+      const headers = await this.authHeaders();
+      const { data } = await this.http.post<CamPayWithdrawResponse>(
+        '/withdraw/',
+        { amount, currency: 'XAF', to, description, external_reference: externalRef },
+        { headers },
+      );
+
+      this.logger.log(`CamPay withdraw initié : ${amount} XAF (ref=${data.reference}, extRef=${externalRef})`);
+      return data;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.response?.data?.detail || err?.message || 'Erreur inconnue';
+      this.logger.error(`Erreur CamPay withdraw : ${msg}`);
+      throw new BadRequestException('Initiation du retrait CamPay échouée : ' + msg);
+    }
+  }
+
+  // ─── Statut d'une transaction ─────────────────────────────────────────────
+
+  async getTransaction(reference: string): Promise<CamPayTransactionStatus> {
+    try {
+      const headers = await this.authHeaders();
+      const { data } = await this.http.get<CamPayTransactionStatus>(
+        `/transaction/${reference}/`,
+        { headers },
+      );
+      return data;
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Erreur inconnue';
+      this.logger.error(`Erreur CamPay getTransaction(${reference}) : ${msg}`);
+      throw new InternalServerErrorException('Vérification statut CamPay échouée : ' + msg);
+    }
+  }
+
+  // ─── Vérification de signature webhook ────────────────────────────────────
+  // Signature CamPay : sha256(app_token + reference)
+
+  verifyWebhookSignature(payload: { reference?: string; signature?: string }): boolean {
+    const appToken = this.config.get<string>('CAMPAY_APP_TOKEN');
+
+    if (!appToken) {
+      if (this.config.get('NODE_ENV') === 'production') {
+        throw new InternalServerErrorException('CAMPAY_APP_TOKEN requis en production');
+      }
+      this.logger.warn('[SÉCU] CAMPAY_APP_TOKEN non configuré — validation signature désactivée (dev uniquement)');
+      return true;
+    }
+
+    if (!payload.signature || !payload.reference) {
+      return false;
+    }
+
+    const expected = crypto
+      .createHash('sha256')
+      .update(appToken + payload.reference)
+      .digest('hex');
+
+    const ha = Buffer.from(expected, 'hex');
+    const hb = Buffer.from(
+      payload.signature.padEnd(expected.length, '0').slice(0, expected.length),
+      'hex',
+    );
+
+    try {
+      return payload.signature.length === expected.length && crypto.timingSafeEqual(ha, hb);
+    } catch {
+      return false;
+    }
+  }
+}
