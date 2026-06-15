@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
@@ -92,10 +93,12 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [deletePin, setDeletePin] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  // Changement de PIN
+  // Changement de PIN (flux par étapes : vérification ancien PIN → nouveau PIN)
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinStep, setPinStep] = useState<'current' | 'new'>('current');
   const [pinForm, setPinForm] = useState({ current: '', next: '', confirm: '' });
   const [pinSaving, setPinSaving] = useState(false);
+  const [pinVerifying, setPinVerifying] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
 
   // Notifications push
@@ -115,7 +118,8 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    AsyncStorage.getItem(BIO_KEY).then((v) => setBiometric(v === '1'));
+    // Le flag biométrie est lu/écrit dans SecureStore (partagé avec LoginScreen).
+    SecureStore.getItemAsync(BIO_KEY).then((v) => setBiometric(v === '1')).catch(() => {});
     AsyncStorage.getItem(PUSH_KEY).then((v) => setPushEnabled(v !== '0'));
   }, []);
 
@@ -174,14 +178,36 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
   const openPinModal = () => {
     setPinForm({ current: '', next: '', confirm: '' });
+    setPinStep('current');
     setPinError(null);
     setPinModalOpen(true);
   };
 
+  // Étape 1 : confirme l'ancien PIN via POST /auth/verify-pin avant la saisie du nouveau.
+  const handleVerifyCurrentPin = async () => {
+    if (pinForm.current.length !== 6) {
+      setPinError('Le PIN actuel doit contenir 6 chiffres.');
+      return;
+    }
+    setPinVerifying(true);
+    setPinError(null);
+    try {
+      await authApi.verifyPin(pinForm.current);
+      setPinStep('new');
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? e?.message ?? 'PIN actuel incorrect';
+      setPinError(Array.isArray(msg) ? msg.join(', ') : msg);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setPinVerifying(false);
+    }
+  };
+
+  // Étape 2 : saisie du nouveau PIN (x2) puis PATCH /auth/change-pin.
   const handleChangePin = async () => {
     const { current, next, confirm } = pinForm;
-    if (current.length !== 6 || next.length !== 6 || confirm.length !== 6) {
-      setPinError('Tous les champs doivent contenir 6 chiffres.');
+    if (next.length !== 6 || confirm.length !== 6) {
+      setPinError('Le nouveau PIN doit contenir 6 chiffres.');
       return;
     }
     if (next !== confirm) {
@@ -221,7 +247,8 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       if (!res.success) return;
     }
     setBiometric(value);
-    await AsyncStorage.setItem(BIO_KEY, value ? '1' : '0');
+    // SecureStore (et non AsyncStorage) pour que LoginScreen lise le même flag.
+    await SecureStore.setItemAsync(BIO_KEY, value ? '1' : '0');
   };
 
   const handleLogout = () => {
@@ -584,40 +611,73 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
     </ScrollView>
 
-    {/* Modal : Changement de PIN */}
+    {/* Modal : Changement de PIN (étape 1 : ancien PIN — étape 2 : nouveau PIN) */}
     <Modal visible={pinModalOpen} transparent animationType="slide" onRequestClose={() => setPinModalOpen(false)}>
       <View style={styles.deleteOverlay}>
         <View style={[styles.deleteModalCard, { gap: Spacing.md }]}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.primary} />
           <Text style={styles.deleteModalTitle}>Changer le PIN</Text>
-          {([
-            { key: 'current', label: 'PIN actuel' },
-            { key: 'next', label: 'Nouveau PIN' },
-            { key: 'confirm', label: 'Confirmer le nouveau PIN' },
-          ] as const).map(({ key, label }) => (
-            <View key={key} style={{ width: '100%' }}>
-              <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>{label}</Text>
-              <TextInput
-                style={styles.pinInput}
-                value={pinForm[key]}
-                onChangeText={(v) => setPinForm((f) => ({ ...f, [key]: v.replace(/\D/g, '').slice(0, 6) }))}
-                placeholder="• • • • • •"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="numeric"
-                secureTextEntry
-                maxLength={6}
-                accessibilityLabel={label}
-              />
-            </View>
-          ))}
-          {pinError && <Text style={{ color: Colors.red, fontSize: Typography.xs, textAlign: 'center' }}>{pinError}</Text>}
-          <TouchableOpacity
-            style={[styles.deleteProceedBtn, { backgroundColor: Colors.primary }, pinSaving && { opacity: 0.6 }]}
-            onPress={handleChangePin}
-            disabled={pinSaving}
-          >
-            <Text style={styles.deleteProceedText}>{pinSaving ? 'Modification…' : 'Confirmer'}</Text>
-          </TouchableOpacity>
+
+          {pinStep === 'current' ? (
+            <>
+              <Text style={styles.deleteModalDesc}>Étape 1/2 · Confirmez votre PIN actuel.</Text>
+              <View style={{ width: '100%' }}>
+                <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>PIN actuel</Text>
+                <TextInput
+                  style={styles.pinInput}
+                  value={pinForm.current}
+                  onChangeText={(v) => setPinForm((f) => ({ ...f, current: v.replace(/\D/g, '').slice(0, 6) }))}
+                  placeholder="• • • • • •"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="numeric"
+                  secureTextEntry
+                  maxLength={6}
+                  autoFocus
+                  accessibilityLabel="PIN actuel"
+                />
+              </View>
+              {pinError && <Text style={{ color: Colors.red, fontSize: Typography.xs, textAlign: 'center' }}>{pinError}</Text>}
+              <TouchableOpacity
+                style={[styles.deleteProceedBtn, { backgroundColor: Colors.primary }, pinVerifying && { opacity: 0.6 }]}
+                onPress={handleVerifyCurrentPin}
+                disabled={pinVerifying}
+              >
+                <Text style={styles.deleteProceedText}>{pinVerifying ? 'Vérification…' : 'Continuer'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.deleteModalDesc}>Étape 2/2 · Choisissez votre nouveau PIN.</Text>
+              {([
+                { key: 'next', label: 'Nouveau PIN' },
+                { key: 'confirm', label: 'Confirmer le nouveau PIN' },
+              ] as const).map(({ key, label }) => (
+                <View key={key} style={{ width: '100%' }}>
+                  <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>{label}</Text>
+                  <TextInput
+                    style={styles.pinInput}
+                    value={pinForm[key]}
+                    onChangeText={(v) => setPinForm((f) => ({ ...f, [key]: v.replace(/\D/g, '').slice(0, 6) }))}
+                    placeholder="• • • • • •"
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType="numeric"
+                    secureTextEntry
+                    maxLength={6}
+                    accessibilityLabel={label}
+                  />
+                </View>
+              ))}
+              {pinError && <Text style={{ color: Colors.red, fontSize: Typography.xs, textAlign: 'center' }}>{pinError}</Text>}
+              <TouchableOpacity
+                style={[styles.deleteProceedBtn, { backgroundColor: Colors.primary }, pinSaving && { opacity: 0.6 }]}
+                onPress={handleChangePin}
+                disabled={pinSaving}
+              >
+                <Text style={styles.deleteProceedText}>{pinSaving ? 'Modification…' : 'Confirmer'}</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           <TouchableOpacity onPress={() => setPinModalOpen(false)}>
             <Text style={styles.deleteCancelText}>Annuler</Text>
           </TouchableOpacity>
