@@ -17,6 +17,7 @@ import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../cons
 import { Avatar, Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 import { authApi } from '../../../src/lib/api';
+import * as Haptics from 'expo-haptics';
 
 interface SendModalProps {
   visible: boolean;
@@ -119,6 +120,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     setPin(next);
     if (next.length < 6) return;
 
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSending(true);
     try {
       // Vérification du PIN côté serveur (implémente le lockout après 3 échecs)
@@ -131,6 +133,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       setPinError(true);
       setPin('');
       triggerShake();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => { setPinError(false); setPinErrMsg('PIN incorrect'); }, 2000);
       return;
     }
@@ -140,6 +143,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       const recipientPhone = normalizePhone(selectedContact!.phone);
       await sendMoney(recipientPhone, amt, motif || undefined);
       setStep('done');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       const msg: string =
         e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'envoi';
@@ -305,7 +309,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               </View>
             )}
 
-            <Button label="Continuer" icon="arrow-forward" onPress={() => setStep('pin')} disabled={!canSend} fullWidth />
+            <Button label="Continuer" icon="arrow-forward" onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setStep('pin'); }} disabled={!canSend} fullWidth />
           </ScrollView>
         );
 

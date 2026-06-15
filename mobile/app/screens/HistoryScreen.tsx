@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   Pressable,
   TextInput,
   Alert,
@@ -81,11 +82,17 @@ function buildPdfHtml(
 }
 
 export default function HistoryScreen() {
-  const { transactions } = useStore();
+  const { transactions, historyHasMore, historyLoading, fetchHistoryPage, resetHistory } = useStore();
   const [activeFilter, setActiveFilter] = useState('Tout');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+
+  // Chargement initial : réinitialise la pagination et charge la première page.
+  useEffect(() => {
+    resetHistory();
+    fetchHistoryPage(1);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = transactions.filter((tx) => {
     const matchFilter =
@@ -125,6 +132,57 @@ export default function HistoryScreen() {
   };
 
   const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
+
+  const handleLoadMore = () => {
+    const { historyPage, historyHasMore: hasMore, historyLoading: loading } = useStore.getState();
+    if (!hasMore || loading) return;
+    fetchHistoryPage(historyPage + 1);
+  };
+
+  const renderTx = ({ item: tx }: { item: Transaction }) => (
+    <Pressable
+      style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
+      onPress={() => setSelectedTx(tx)}
+      accessibilityRole="button"
+      accessibilityLabel={`${txMeta(tx.type).label} ${tx.name}, ${fmt(tx.amount)}`}
+    >
+      <View style={[styles.txIcon, { backgroundColor: txMeta(tx.type).amountColor + '22' }]}>
+        <Ionicons name={txMeta(tx.type).icon as IoniconName} size={20} color={txMeta(tx.type).amountColor} />
+      </View>
+      <View style={styles.txInfo}>
+        <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
+        <Text style={styles.txDate}>{tx.date}</Text>
+      </View>
+      <View style={styles.txRight}>
+        <Text style={[styles.txAmount, { color: txMeta(tx.type).amountColor }]}>
+          {tx.amount > 0 ? '+' : ''}{fmt(tx.amount)}
+        </Text>
+        <Badge
+          label={txMeta(tx.type).label}
+          color={txMeta(tx.type).badgeText}
+          bg={txMeta(tx.type).badgeBg}
+        />
+      </View>
+    </Pressable>
+  );
+
+  const ListEmpty = () => (
+    <View style={styles.empty}>
+      <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
+      <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
+    </View>
+  );
+
+  const ListFooter = () => (
+    <View style={styles.listFooter}>
+      {historyLoading ? (
+        <ActivityIndicator size="small" color={Colors.primary} />
+      ) : !historyHasMore && transactions.length > 0 ? (
+        <Text style={styles.listFooterText}>Toutes les transactions chargées</Text>
+      ) : null}
+      <View style={{ height: 80 }} />
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -192,44 +250,18 @@ export default function HistoryScreen() {
         ))}
       </ScrollView>
 
-      {/* Transactions list */}
-      <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-        {filtered.length === 0 ? (
-          <View style={styles.empty}>
-            <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
-            <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
-          </View>
-        ) : (
-          filtered.map((tx) => (
-            <Pressable
-              key={tx.id}
-              style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
-              onPress={() => setSelectedTx(tx)}
-              accessibilityRole="button"
-              accessibilityLabel={`${txMeta(tx.type).label} ${tx.name}, ${fmt(tx.amount)}`}
-            >
-              <View style={[styles.txIcon, { backgroundColor: txMeta(tx.type).amountColor + '22' }]}>
-                <Ionicons name={txMeta(tx.type).icon as IoniconName} size={20} color={txMeta(tx.type).amountColor} />
-              </View>
-              <View style={styles.txInfo}>
-                <Text style={styles.txName} numberOfLines={1}>{tx.name}</Text>
-                <Text style={styles.txDate}>{tx.date}</Text>
-              </View>
-              <View style={styles.txRight}>
-                <Text style={[styles.txAmount, { color: txMeta(tx.type).amountColor }]}>
-                  {tx.amount > 0 ? '+' : ''}{fmt(tx.amount)}
-                </Text>
-                <Badge
-                  label={txMeta(tx.type).label}
-                  color={txMeta(tx.type).badgeText}
-                  bg={txMeta(tx.type).badgeBg}
-                />
-              </View>
-            </Pressable>
-          ))
-        )}
-        <View style={{ height: 80 }} />
-      </ScrollView>
+      {/* Liste de transactions avec scroll infini */}
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        renderItem={renderTx}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.2}
+        ListEmptyComponent={ListEmpty}
+        ListFooterComponent={ListFooter}
+      />
 
       {/* Modale de détail transaction */}
       <Modal
@@ -334,6 +366,8 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: Typography.base, fontWeight: Typography.bold },
   empty: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
+  listFooter: { alignItems: 'center', paddingVertical: Spacing.md },
+  listFooterText: { color: Colors.textMuted, fontSize: Typography.sm },
 
   // Modale détail
   detailSheet: { flex: 1, backgroundColor: Colors.surface },

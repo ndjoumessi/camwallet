@@ -39,6 +39,12 @@ export class AdminController {
     return this.adminService.getTimeseries(period);
   }
 
+  @Get('stats/operator-rates')
+  @ApiOperation({ summary: 'Taux de succès par opérateur (30 derniers jours)' })
+  operatorRates() {
+    return this.adminService.getOperatorSuccessRate();
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Liste paginée des utilisateurs' })
   users(
@@ -107,9 +113,23 @@ export class AdminController {
   }
 
   @Get('audit')
-  @ApiOperation({ summary: "Journal d'audit des actions admin" })
-  audit() {
-    return this.adminService.getAudit();
+  @ApiOperation({ summary: "Journal d'audit des actions admin avec filtres avancés" })
+  audit(
+    @Query('action') action?: string,
+    @Query('actorId') actorId?: string,
+    @Query('resource') resource?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('take') take?: string,
+  ) {
+    return this.adminService.getAudit({
+      action,
+      actorId,
+      resource,
+      from,
+      to,
+      take: take ? +take : undefined,
+    });
   }
 
   // ─── ANIF ──────────────────────────────────────────────────────────────────
@@ -131,6 +151,43 @@ export class AdminController {
       throw new BadRequestException('transactionId et reason sont requis');
     }
     return this.adminService.openAnifCase(req.user.id, body.transactionId, body.reason);
+  }
+
+  @Get('anif/report')
+  @ApiOperation({ summary: 'Rapport ANIF structuré (30 derniers jours)' })
+  anifReport() {
+    return this.adminService.getAnifReport();
+  }
+
+  @Patch('anif/cases/:id/close')
+  @ApiOperation({ summary: "Clôturer un dossier ANIF" })
+  closeAnifCase(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: { resolution: string },
+  ) {
+    if (!body.resolution) {
+      throw new BadRequestException('resolution est requis');
+    }
+    return this.adminService.closeAnifCase(req.user.id, id, body.resolution);
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Lire les paramètres système' })
+  getSettings() {
+    return this.adminService.getSettings();
+  }
+
+  @Patch('settings')
+  @ApiOperation({ summary: 'Mettre à jour les paramètres système' })
+  updateSettings(
+    @Request() req: any,
+    @Body() body: { updates: Record<string, string> },
+  ) {
+    if (!body.updates || typeof body.updates !== 'object') {
+      throw new BadRequestException('updates est requis (objet clé→valeur)');
+    }
+    return this.adminService.updateSettings(req.user.id, body.updates);
   }
 
   // ─── Opérations OM/MoMo ────────────────────────────────────────────────────

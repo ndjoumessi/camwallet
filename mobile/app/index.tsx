@@ -20,7 +20,7 @@ import HistoryScreen from './screens/HistoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import MerchantScreen from './screens/MerchantScreen';
 import { useStore } from './store/useStore';
-import { registerForPushNotifications } from '../src/lib/notifications';
+import { registerForPushNotifications, addNotificationTapHandler } from '../src/lib/notifications';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
@@ -92,6 +92,15 @@ function AppContent() {
     }
     if (!isAuthenticated) pushRegistered.current = false; // ré-enregistrer au prochain login
   }, [phase, isAuthenticated]);
+
+  // Deep link : un tap sur une notification ouvre l'onglet Historique.
+  useEffect(() => {
+    if (phase !== 'app') return;
+    const handler = addNotificationTapHandler(() => {
+      setActiveTab('history');
+    });
+    return () => handler.remove();
+  }, [phase]);
 
   // Au démarrage : tente de restaurer une session existante (tokens SecureStore).
   useEffect(() => {

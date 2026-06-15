@@ -1,15 +1,24 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { OtpService } from '../auth/otp.service';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
-type ReceivedType = 'P2P' | 'QR_PAYMENT' | 'RECHARGE';
+// Types de notifications considérées comme critiques (SMS de backup activé).
+type CriticalType = 'P2P' | 'QR_PAYMENT' | 'RECHARGE';
+type ReceivedType = CriticalType;
+
+// Délai avant envoi SMS de backup (ms).
+const SMS_BACKUP_DELAY_MS = 30_000;
 
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private otpService: OtpService,
+  ) {}
 
   // Notification « argent reçu » après crédit d'un portefeuille.
   // Non bloquant : un échec d'envoi ne doit jamais faire échouer la transaction.
@@ -43,10 +52,28 @@ export class NotificationsService {
   ): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { pushToken: true },
+      select: { pushToken: true, phone: true },
     });
     if (!user?.pushToken) return;
+
     await this.sendExpoPush(user.pushToken, title, body, data);
+
+    // SMS de backup 30 s après, uniquement pour les types critiques.
+    const type = data?.type as string | undefined;
+    const isCritical: boolean =
+      type === 'P2P' || type === 'QR_PAYMENT' || type === 'RECHARGE';
+
+    if (isCritical && user.phone) {
+      const phone = user.phone;
+      const smsText = `CamWallet : ${title}. ${body}`;
+      setTimeout(() => {
+        void this.otpService
+          .sendSms(phone, smsText)
+          .catch((err: any) =>
+            this.logger.warn(`Échec SMS backup pour ${phone} : ${err?.message ?? err}`),
+          );
+      }, SMS_BACKUP_DELAY_MS);
+    }
   }
 
   private async sendExpoPush(

@@ -25,6 +25,7 @@ import { userApi, authApi, MeResponse } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
 import KycModal from './modals/KycModal';
 import { useTheme } from '../context/ThemeContext';
+import * as Haptics from 'expo-haptics';
 
 const BIO_KEY = 'cw_biometric_enabled';
 const PUSH_KEY = 'cw_push_enabled';
@@ -187,11 +188,13 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     setPinError(null);
     try {
       await authApi.changePin(current, next);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setPinModalOpen(false);
       Alert.alert('PIN modifié', 'Votre PIN a été changé. Reconnectez-vous.');
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur inconnue';
       setPinError(Array.isArray(msg) ? msg.join(', ') : msg);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setPinSaving(false);
     }

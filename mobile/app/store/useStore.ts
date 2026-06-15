@@ -148,6 +148,9 @@ interface AppState {
   isAuthenticated: boolean;
   loading: boolean;
   error: string | null;
+  historyPage: number;
+  historyHasMore: boolean;
+  historyLoading: boolean;
 
   pinAttempts: number;
   pinBlocked: boolean;
@@ -171,6 +174,8 @@ interface AppState {
   loadProfile: () => Promise<void>;
   fetchBalance: () => Promise<void>;
   fetchHistory: () => Promise<void>;
+  fetchHistoryPage: (page: number) => Promise<void>;
+  resetHistory: () => void;
   sendMoney: (phone: string, amountFcfa: number, description?: string) => Promise<void>;
 }
 
@@ -184,6 +189,9 @@ export const useStore = create<AppState>((set, get) => ({
   isAuthenticated: false,
   loading: false,
   error: null,
+  historyPage: 1,
+  historyHasMore: true,
+  historyLoading: false,
   pinAttempts: 0,
   pinBlocked: false,
 
@@ -348,6 +356,36 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     set({ transactions: res.data.map((t) => mapTransaction(t, meId)), recentContacts });
+  },
+
+  resetHistory: () => {
+    set({ transactions: [], historyPage: 1, historyHasMore: true, historyLoading: false });
+  },
+
+  fetchHistoryPage: async (page: number) => {
+    const { historyLoading, historyHasMore } = get();
+    if (historyLoading || (!historyHasMore && page > 1)) return;
+    const LIMIT = 20;
+    set({ historyLoading: true });
+    try {
+      const meId = get().user.id;
+      const res = await transactionsApi.getHistory(page, LIMIT);
+      const newTxs = res.data.map((t) => mapTransaction(t, meId));
+      const hasMore = res.data.length === LIMIT;
+      if (page === 1) {
+        set({ transactions: newTxs, historyPage: 1, historyHasMore: hasMore });
+      } else {
+        set((s) => ({
+          transactions: [...s.transactions, ...newTxs],
+          historyPage: page,
+          historyHasMore: hasMore,
+        }));
+      }
+    } catch {
+      // échec silencieux — les données existantes restent affichées
+    } finally {
+      set({ historyLoading: false });
+    }
   },
 
   // ── Paiement P2P ─────────────────────────────────────────────────────────────

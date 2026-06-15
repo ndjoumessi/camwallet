@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react'
+import { useState, useEffect, useCallback, useMemo, createContext, useContext, type CSSProperties } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -10,6 +10,7 @@ import {
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
+  Settings,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -18,9 +19,10 @@ import {
   getStats, getUsers, getTransactions, getTimeseries,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
-  getAnifAlerts, openAnifCase,
+  getAnifAlerts, openAnifCase, closeAnifCase,
   getOperations, retryOperation, WebhookEvent,
   getHealthIntegrations,
+  getOperatorRates, getSettings, updateSettings,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -593,11 +595,11 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
     }
   }
 
-  const overlay: React.CSSProperties = {
+  const overlay: CSSProperties = {
     position: 'fixed', inset: 0, background: '#000A', zIndex: 50,
     display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto',
   }
-  const panel: React.CSSProperties = {
+  const panel: CSSProperties = {
     background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16,
     width: 'min(820px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 24,
   }
@@ -998,6 +1000,32 @@ function KYCPage() {
   )
 }
 
+function OperatorRatesWidget() {
+  const { data, loading } = useFetch(getOperatorRates, [])
+  const operators = data?.operators ?? []
+  const chartData = operators.map(o => ({
+    name: o.name === 'ORANGE_MONEY' ? 'Orange Money' : o.name === 'MTN_MOMO' ? 'MTN MoMo' : o.name,
+    taux: Math.round(o.rate * 100) / 100,
+  }))
+
+  if (loading || chartData.length === 0) return null
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 16 }}>
+      <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Taux de succès par opérateur</h3>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={chartData} barSize={36}>
+          <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+          <XAxis dataKey="name" stroke={C.textMuted} fontSize={12} />
+          <YAxis stroke={C.textMuted} fontSize={11} domain={[0, 100]} tickFormatter={v => v + '%'} />
+          <Tooltip content={<ChartTooltip />} formatter={(v: number) => v + '%'} />
+          <Bar dataKey="taux" name="Taux de succès" fill="#22c55e" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
 function TransactionsPage() {
   const [txFilter, setTxFilter] = useState('all')
 
@@ -1035,6 +1063,9 @@ function TransactionsPage() {
           </button>
         ))}
       </div>
+
+      {/* Widget taux de succès par opérateur */}
+      <OperatorRatesWidget />
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
@@ -1356,6 +1387,8 @@ function ANIFPage() {
   const showToast = useContext(ToastContext)
   const [openingCase, setOpeningCase] = useState<string | null>(null)
   const [caseReason, setCaseReason] = useState('')
+  const [closingId, setClosingId] = useState<string | null>(null)
+  const [resolutionText, setResolutionText] = useState('')
 
   const handleOpenCase = async (txId: string) => {
     if (!caseReason.trim()) {
@@ -1370,6 +1403,22 @@ function ANIFPage() {
       refetch()
     } catch {
       showToast('Échec ouverture dossier', 'error')
+    }
+  }
+
+  const handleCloseCase = async (caseId: string) => {
+    if (!resolutionText.trim()) {
+      showToast('Saisissez une résolution', 'error')
+      return
+    }
+    try {
+      await closeAnifCase(caseId, resolutionText)
+      showToast('Dossier clôturé')
+      setClosingId(null)
+      setResolutionText('')
+      refetch()
+    } catch {
+      showToast('Échec clôture dossier', 'error')
     }
   }
 
@@ -1486,17 +1535,228 @@ function ANIFPage() {
             {cases.map(c => (
               <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{c.action}</div>
                     <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{c.details}</div>
+                    {c.user && <div style={{ color: C.textSoft, fontSize: 11, marginTop: 4 }}>{c.user.fullName ?? c.user.phone}</div>}
                   </div>
-                  <div style={{ color: C.textMuted, fontSize: 11 }}>{fmtDate(c.createdAt)}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                    <div style={{ color: C.textMuted, fontSize: 11 }}>{fmtDate(c.createdAt)}</div>
+                    {closingId === c.id ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          autoFocus
+                          value={resolutionText}
+                          onChange={e => setResolutionText(e.target.value)}
+                          placeholder="Résolution..."
+                          style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12, width: 180 }}
+                        />
+                        <button onClick={() => handleCloseCase(c.id)} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>Confirmer</button>
+                        <button onClick={() => { setClosingId(null); setResolutionText('') }} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setClosingId(c.id); setResolutionText('') }}
+                        style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+                      >
+                        Clôturer
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function AuditPage() {
+  const [action, setAction] = useState('')
+  const [actorId, setActorId] = useState('')
+  const [resource, setResource] = useState('')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [filterParams, setFilterParams] = useState<{ action?: string; actorId?: string; resource?: string; from?: string; to?: string }>({})
+
+  const { data, loading, error } = useFetch(() => getAudit(filterParams), [filterParams])
+  const entries = data ?? []
+
+  const applyFilters = () => {
+    setFilterParams({
+      action: action.trim() || undefined,
+      actorId: actorId.trim() || undefined,
+      resource: resource.trim() || undefined,
+      from: from || undefined,
+      to: to || undefined,
+    })
+  }
+
+  const inputStyle: CSSProperties = {
+    background: C.surface, border: `1px solid ${C.border}`, color: C.text,
+    borderRadius: 8, padding: '7px 10px', fontSize: 13, outline: 'none',
+  }
+
+  return (
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Journal d'audit</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) — traçabilité des actions admin</p>
+      </div>
+
+      {/* Filtres */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Action</label>
+            <input value={action} onChange={e => setAction(e.target.value)} placeholder="ex: USER_BLOCKED" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>ID Acteur</label>
+            <input value={actorId} onChange={e => setActorId(e.target.value)} placeholder="UUID acteur" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Ressource</label>
+            <input value={resource} onChange={e => setResource(e.target.value)} placeholder="ex: User" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Du</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Au</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={inputStyle} />
+          </div>
+          <button
+            onClick={applyFilters}
+            style={{ padding: '7px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          >
+            Filtrer
+          </button>
+        </div>
+      </div>
+
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        <div className="cw-tablewrap">
+          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: C.surface }}>
+              <tr>
+                {['Date', 'Acteur', 'Action', 'Ressource', 'Détails'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map(e => (
+                <tr key={e.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(e.createdAt)}</td>
+                  <td style={{ padding: '10px 14px', color: C.text, fontSize: 12 }}>{e.user?.email ?? e.user?.fullName ?? 'Système'}</td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, background: C.blue + '20', color: C.blue, padding: '2px 8px', borderRadius: 6 }}>{e.action}</span>
+                  </td>
+                  <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12 }}>{e.resource ?? '—'}</td>
+                  <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 11 }}>
+                    {e.metadata ? JSON.stringify(e.metadata).slice(0, 80) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {(loading || error || entries.length === 0) && (
+          <StateRow loading={loading} error={error} empty={!loading && !error ? 'Aucune entrée d\'audit' : undefined} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SettingsPage() {
+  const { data, loading, error } = useFetch(getSettings, [])
+  const [form, setForm] = useState<Record<string, string>>({})
+  const [saved, setSaved] = useState(false)
+  const showToast = useContext(ToastContext)
+
+  // Initialise le formulaire dès que les données arrivent
+  useEffect(() => {
+    if (data) setForm(data)
+  }, [data])
+
+  const fields: { key: string; label: string }[] = [
+    { key: 'daily_limit_fcfa', label: 'Limite journalière (FCFA)' },
+    { key: 'monthly_limit_fcfa', label: 'Limite mensuelle (FCFA)' },
+    { key: 'p2p_fee_rate', label: 'Taux frais P2P (%)' },
+    { key: 'session_duration_minutes', label: 'Durée session (minutes)' },
+    { key: 'anif_threshold_fcfa', label: 'Seuil déclaration ANIF (FCFA)' },
+  ]
+
+  const handleSave = async () => {
+    try {
+      await updateSettings(form)
+      setSaved(true)
+      showToast('Paramètres sauvegardés', 'success')
+      setTimeout(() => setSaved(false), 3000)
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde', 'error')
+    }
+  }
+
+  const inputStyle: CSSProperties = {
+    background: C.surface, border: `1px solid ${C.border}`, color: C.text,
+    borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', width: '100%',
+  }
+
+  return (
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Paramètres système</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Configuration globale de la plateforme CamWallet</p>
+      </div>
+
+      {(loading || error) && <StateRow loading={loading} error={error} />}
+
+      {!loading && (
+        <>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+            <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Limites & Frais</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+              {fields.map(f => (
+                <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{f.label}</label>
+                  <input
+                    value={form[f.key] ?? ''}
+                    onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    style={inputStyle}
+                    placeholder="Non défini"
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                onClick={handleSave}
+                style={{ padding: '9px 22px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+              >
+                Sauvegarder
+              </button>
+              {saved && <span style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Paramètres sauvegardés</span>}
+            </div>
+          </div>
+
+          {/* Section informative */}
+          <div style={{ background: C.blueLight, border: `1px solid ${C.blue}30`, borderRadius: 14, padding: '16px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <Info size={18} color={C.blue} />
+              <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Credentials API</span>
+            </div>
+            <p style={{ color: C.textSoft, fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+              Les credentials API sont gérés via les variables d'environnement du serveur. Contactez l'administrateur système pour une rotation.
+            </p>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -1511,6 +1771,8 @@ const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?:
   { id: 'finance', label: 'Finances & Revenus', icon: Wallet, group: 'Finances' },
   { id: 'operations', label: 'Recharges & Retraits', icon: ArrowLeftRight, group: 'Finances' },
   { id: 'anif', label: 'Conformité ANIF', icon: ShieldAlert, group: 'Conformité' },
+  { id: 'audit', label: 'Journal Audit', icon: FileText, group: 'Conformité' },
+  { id: 'settings', label: 'Paramètres', icon: Settings, group: 'Conformité' },
 ]
 
 const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances', 'Conformité']
@@ -1555,6 +1817,8 @@ export default function App() {
       case 'finance': return <FinancePage />
       case 'operations': return <OperationsPage />
       case 'anif': return <ANIFPage />
+      case 'audit': return <AuditPage />
+      case 'settings': return <SettingsPage />
       default: return <DashboardPage />
     }
   }

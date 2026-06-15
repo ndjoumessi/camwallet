@@ -57,23 +57,49 @@ async function refreshSession(): Promise<string | null> {
   }
 }
 
-// ── Requête générique ─────────────────────────────────────
-async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
-  const token = getAccess()
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  })
+// ── Retry avec backoff exponentiel (erreurs réseau et 5xx, hors auth) ────────
+const RETRY_DELAYS_MS = [1000, 2000, 4000] // 3 tentatives après l'essai initial
 
-  if (res.status === 401 && retry && !path.includes('/auth/')) {
+// ── Requête générique ─────────────────────────────────────
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  _authRetry = true,
+  _networkRetry = 0,
+): Promise<T> {
+  const token = getAccess()
+  const isAuthRoute = path.includes('/auth/')
+
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    })
+  } catch (networkErr) {
+    // Erreur réseau (pas de réponse) — retry si pas une route auth
+    if (!isAuthRoute && _networkRetry < RETRY_DELAYS_MS.length) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[_networkRetry]))
+      return request<T>(path, init, _authRetry, _networkRetry + 1)
+    }
+    throw networkErr
+  }
+
+  // Retry backoff sur 5xx (hors auth)
+  if (!isAuthRoute && res.status >= 500 && _networkRetry < RETRY_DELAYS_MS.length) {
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[_networkRetry]))
+    return request<T>(path, init, _authRetry, _networkRetry + 1)
+  }
+
+  if (res.status === 401 && _authRetry && !isAuthRoute) {
     refreshing = refreshing ?? refreshSession()
     const newToken = await refreshing
     refreshing = null
-    if (newToken) return request<T>(path, init, false)
+    if (newToken) return request<T>(path, init, false, 0)
     // Plus de session valide : on prévient l'app (redirection vers le login).
     window.dispatchEvent(new Event('cw-session-expired'))
     throw new SessionExpiredError()
@@ -241,7 +267,13 @@ export const getKyc = () => request<AdminKyc>('/admin/kyc')
 
 export const getAlerts = () => request<AdminAlerts>('/admin/alerts')
 
-export const getAudit = () => request<AdminAuditEntry[]>('/admin/audit')
+export function getAudit(params: { action?: string; actorId?: string; resource?: string; from?: string; to?: string; take?: number } = {}) {
+  return request<AdminAuditEntry[]>(`/admin/audit${buildQuery(params)}`)
+}
+
+export interface OperatorRate { name: string; total: number; completed: number; rate: number }
+export interface OperatorRatesResponse { operators: OperatorRate[]; period: string }
+export const getOperatorRates = () => request<OperatorRatesResponse>('/admin/stats/operator-rates')
 
 export function reviewKyc(userId: string, decision: 'APPROVED' | 'REJECTED', note?: string) {
   return request(`/admin/kyc/${userId}`, {
@@ -328,6 +360,13 @@ export const openAnifCase = (transactionId: string, reason: string) =>
     body: JSON.stringify({ transactionId, reason }),
   })
 
+export function closeAnifCase(caseId: string, resolution: string) {
+  return request(`/admin/anif/cases/${caseId}/close`, {
+    method: 'PATCH',
+    body: JSON.stringify({ resolution }),
+  })
+}
+
 // ── Opérations OM/MoMo ────────────────────────────────────
 
 export interface AdminOperation {
@@ -395,3 +434,11 @@ export interface HealthIntegrationsResponse {
 
 export const getHealthIntegrations = () =>
   request<HealthIntegrationsResponse>('/admin/health/integrations')
+
+// ── Paramètres système ────────────────────────────────────
+
+export interface SystemSettings { [key: string]: string }
+export const getSettings = () => request<SystemSettings>('/admin/settings')
+export function updateSettings(updates: Record<string, string>) {
+  return request('/admin/settings', { method: 'PATCH', body: JSON.stringify({ updates }) })
+}

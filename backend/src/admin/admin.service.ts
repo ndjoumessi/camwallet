@@ -204,17 +204,49 @@ export class AdminService {
     });
   }
 
-  // 50 dernières actions admin (blocages, décisions KYC).
-  async getAudit(limit = 50) {
+  // Journal d'audit des actions admin avec filtres avancés.
+  async getAudit(params?: {
+    action?: string;
+    actorId?: string;
+    resource?: string;
+    from?: string;
+    to?: string;
+    take?: number;
+  }) {
+    const take = Math.min(params?.take ?? 50, 200);
+    const where: any = {};
+
+    if (params?.action) {
+      where.action = { contains: params.action, mode: 'insensitive' };
+    } else {
+      // Filtre par défaut : actions admin pertinentes
+      where.OR = [
+        { action: { startsWith: 'USER_STATUS_' } },
+        { action: { startsWith: 'KYC_' } },
+        { action: { startsWith: 'ANIF_' } },
+        { action: { startsWith: 'OPERATION_' } },
+        { action: 'USER_PIN_RESET' },
+        { action: 'SETTINGS_UPDATE' },
+        { action: 'ANIF_CASE_CLOSE' },
+      ];
+    }
+
+    if (params?.actorId) where.userId = params.actorId;
+
+    if (params?.resource) {
+      where.resource = { contains: params.resource, mode: 'insensitive' };
+    }
+
+    if (params?.from || params?.to) {
+      where.createdAt = {};
+      if (params.from) where.createdAt.gte = new Date(params.from);
+      if (params.to)   where.createdAt.lte = new Date(params.to);
+    }
+
     return this.prisma.auditLog.findMany({
-      where: {
-        OR: [
-          { action: { startsWith: 'USER_STATUS_' } },
-          { action: { startsWith: 'KYC_' } },
-        ],
-      },
+      where,
       orderBy: { createdAt: 'desc' },
-      take: limit,
+      take,
       select: {
         id: true,
         action: true,
@@ -546,9 +578,13 @@ export class AdminService {
   async getAnifAlerts() {
     const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
     const d24h = new Date(Date.now() - 24 * 3600 * 1000);
-    const ANIF_THRESHOLD = 50_000_000n; // 500 000 FCFA en centimes
+    const ANIF_THRESHOLD    = 50_000_000n;  // 500 000 FCFA en centimes
+    const SMURFING_UNIT_MAX = 5_000_000n;   //  50 000 FCFA en centimes (seuil par transaction)
+    const SMURFING_TOTAL    = 30_000_000n;  // 300 000 FCFA en centimes (total agrégé)
+    const UNUSUAL_LOW       = 49_000_000n;  // 490 000 FCFA — juste sous le seuil
+    const UNUSUAL_HIGH      = 50_000_000n;  // 500 000 FCFA — exclu (géré par highValue)
 
-    const [largeTx, frequentSenders, cases] = await Promise.all([
+    const [largeTx, frequentSenders, cases, unusualTx] = await Promise.all([
       // Transactions dépassant le seuil ANIF sur 30 jours
       this.prisma.transaction.findMany({
         where: { amount: { gte: ANIF_THRESHOLD }, createdAt: { gte: d30 } },
@@ -570,7 +606,7 @@ export class AdminService {
         _count: { _all: true },
         having: { senderId: { _count: { gt: 10 } } },
       }),
-      // Dossiers ANIF ouverts (stockés dans audit_logs)
+      // Dossiers ANIF (ouverts et fermés)
       this.prisma.auditLog.findMany({
         where: { action: { startsWith: 'ANIF_CASE_' } },
         orderBy: { createdAt: 'desc' },
@@ -578,6 +614,20 @@ export class AdminService {
         select: {
           id: true, action: true, resource: true, metadata: true, createdAt: true,
           user: { select: { fullName: true, email: true } },
+        },
+      }),
+      // Montants inhabituels : juste sous le seuil ANIF (contournement probable)
+      this.prisma.transaction.findMany({
+        where: {
+          amount: { gte: UNUSUAL_LOW, lt: UNUSUAL_HIGH },
+          createdAt: { gte: d30 },
+          status: { not: TransactionStatus.FAILED },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        include: {
+          sender: { select: { phone: true, fullName: true } },
+          receiver: { select: { phone: true, fullName: true } },
         },
       }),
     ]);
@@ -602,6 +652,65 @@ export class AdminService {
       };
     });
 
+    // ── Détection smurfing ──────────────────────────────────────────────────
+    // Utilisateurs ayant envoyé > 10 tx en 24h, chacune < 50 000 FCFA,
+    // mais dont le total dépasse 300 000 FCFA.
+    const smurfingCandidates = frequentSenders.filter(
+      (s) => s.senderId !== null && s._count._all > 10,
+    );
+
+    let smurfingAlerts: {
+      senderId: string;
+      count: number;
+      totalAmount: bigint;
+      phone: string;
+      fullName: string | null;
+    }[] = [];
+
+    if (smurfingCandidates.length > 0) {
+      const smurfingChecks = await Promise.all(
+        smurfingCandidates.map(async (s) => {
+          const agg = await this.prisma.transaction.aggregate({
+            _sum: { amount: true },
+            _count: { _all: true },
+            where: {
+              senderId: s.senderId!,
+              createdAt: { gte: d24h },
+              status: { not: TransactionStatus.FAILED },
+              amount: { lt: SMURFING_UNIT_MAX },
+            },
+          });
+          const total = agg._sum.amount ?? 0n;
+          const count = agg._count._all;
+          return { senderId: s.senderId!, count, total };
+        }),
+      );
+
+      const matchedIds = smurfingChecks
+        .filter((c) => c.count > 10 && c.total > SMURFING_TOTAL)
+        .map((c) => c.senderId);
+
+      const smurfUsers = matchedIds.length
+        ? await this.prisma.user.findMany({
+            where: { id: { in: matchedIds } },
+            select: { id: true, phone: true, fullName: true },
+          })
+        : [];
+
+      smurfingAlerts = smurfingChecks
+        .filter((c) => c.count > 10 && c.total > SMURFING_TOTAL)
+        .map((c) => {
+          const u = smurfUsers.find((u) => u.id === c.senderId);
+          return {
+            senderId: c.senderId,
+            count: c.count,
+            totalAmount: c.total,
+            phone: u?.phone ?? '—',
+            fullName: u?.fullName ?? null,
+          };
+        });
+    }
+
     return {
       highValue: largeTx.map((tx) => ({
         id: tx.id,
@@ -613,6 +722,17 @@ export class AdminService {
         createdAt: tx.createdAt,
       })),
       frequentSenders: frequentWithDetails,
+      smurfing: smurfingAlerts,
+      unusualAmounts: unusualTx.map((tx) => ({
+        id: tx.id,
+        amount: tx.amount,
+        type: tx.type,
+        status: tx.status,
+        sender: tx.sender,
+        receiver: tx.receiver,
+        createdAt: tx.createdAt,
+        flag: 'JUSTE_SOUS_SEUIL',
+      })),
       cases,
       threshold: ANIF_THRESHOLD.toString(),
     };
@@ -778,6 +898,239 @@ export class AdminService {
       stalePendingTx: stalePending,
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  // ─── Rapport ANIF structuré (JSON) ──────────────────────────────────────
+  async getAnifReport() {
+    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const ANIF_THRESHOLD    = 50_000_000n;
+    const SMURFING_UNIT_MAX = 5_000_000n;
+    const SMURFING_TOTAL    = 30_000_000n;
+    const UNUSUAL_LOW       = 49_000_000n;
+
+    const [highValueTx, frequentSenders, openCases, unusualTx] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { amount: { gte: ANIF_THRESHOLD }, createdAt: { gte: d30 } },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          sender: { select: { phone: true, fullName: true } },
+          receiver: { select: { phone: true, fullName: true } },
+        },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['senderId'],
+        where: {
+          createdAt: { gte: d30 },
+          status: { not: TransactionStatus.FAILED },
+          senderId: { not: null },
+        },
+        _count: { _all: true },
+        _sum: { amount: true },
+        having: { senderId: { _count: { gt: 10 } } },
+      }),
+      this.prisma.auditLog.findMany({
+        where: { action: 'ANIF_CASE_OPEN' },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          id: true, action: true, resource: true, metadata: true, createdAt: true,
+          user: { select: { fullName: true, email: true } },
+        },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          amount: { gte: UNUSUAL_LOW, lt: ANIF_THRESHOLD },
+          createdAt: { gte: d30 },
+          status: { not: TransactionStatus.FAILED },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          sender: { select: { phone: true, fullName: true } },
+          receiver: { select: { phone: true, fullName: true } },
+        },
+      }),
+    ]);
+
+    // Identifier les cas de smurfing parmi les émetteurs fréquents
+    const senderIds = frequentSenders
+      .filter((s) => s.senderId !== null)
+      .map((s) => s.senderId as string);
+
+    const smurfingCount = senderIds.length
+      ? (
+          await Promise.all(
+            frequentSenders.map(async (s) => {
+              const agg = await this.prisma.transaction.aggregate({
+                _sum: { amount: true },
+                _count: { _all: true },
+                where: {
+                  senderId: s.senderId!,
+                  createdAt: { gte: new Date(Date.now() - 24 * 3600 * 1000) },
+                  status: { not: TransactionStatus.FAILED },
+                  amount: { lt: SMURFING_UNIT_MAX },
+                },
+              });
+              return (agg._count._all > 10 && (agg._sum.amount ?? 0n) > SMURFING_TOTAL)
+                ? 1
+                : 0;
+            }),
+          )
+        ).reduce((a, b) => a + b, 0)
+      : 0;
+
+    const senderUsers = senderIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: senderIds } },
+          select: { id: true, phone: true, fullName: true },
+        })
+      : [];
+
+    const frequentSendersList = frequentSenders.map((s) => {
+      const u = senderUsers.find((u) => u.id === s.senderId);
+      return {
+        senderId: s.senderId,
+        count: s._count._all,
+        totalAmount: s._sum.amount ?? 0n,
+        phone: u?.phone ?? '—',
+        fullName: u?.fullName ?? null,
+      };
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      period: '30 derniers jours',
+      summary: {
+        highValueCount: highValueTx.length,
+        smurfingCount,
+        frequentSendersCount: frequentSenders.length,
+        unusualAmountsCount: unusualTx.length,
+        totalOpenCases: openCases.length,
+      },
+      highValueTransactions: highValueTx.map((tx) => ({
+        id: tx.id,
+        amount: tx.amount,
+        type: tx.type,
+        status: tx.status,
+        sender: tx.sender,
+        receiver: tx.receiver,
+        createdAt: tx.createdAt,
+      })),
+      suspiciousPatterns: {
+        smurfers: frequentSendersList.filter(
+          (s) => s.count > 10 && s.totalAmount > SMURFING_TOTAL,
+        ),
+        unusualAmounts: unusualTx.map((tx) => ({
+          id: tx.id,
+          amount: tx.amount,
+          sender: tx.sender,
+          receiver: tx.receiver,
+          createdAt: tx.createdAt,
+          flag: 'JUSTE_SOUS_SEUIL',
+        })),
+      },
+      openCases,
+      frequentSenders: frequentSendersList,
+    };
+  }
+
+  // ─── Paramètres système ──────────────────────────────────────────────────
+  private readonly SETTINGS_DEFAULTS: Record<string, string> = {
+    daily_limit_fcfa:        '500000',
+    monthly_limit_fcfa:      '5000000',
+    p2p_fee_rate:            '0',
+    session_duration_minutes: '15',
+    anif_threshold_fcfa:     '500000',
+  };
+
+  async getSettings(): Promise<Record<string, string>> {
+    const rows = await this.prisma.systemSettings.findMany();
+    const result = { ...this.SETTINGS_DEFAULTS };
+    for (const row of rows) {
+      result[row.key] = row.value;
+    }
+    return result;
+  }
+
+  async updateSettings(adminId: string, updates: Record<string, string>) {
+    const allowedKeys = Object.keys(this.SETTINGS_DEFAULTS);
+    const entries = Object.entries(updates).filter(([k]) => allowedKeys.includes(k));
+
+    await Promise.all(
+      entries.map(([key, value]) =>
+        this.prisma.systemSettings.upsert({
+          where: { key },
+          create: { key, value, updatedBy: adminId },
+          update: { value, updatedBy: adminId },
+        }),
+      ),
+    );
+
+    void this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'SETTINGS_UPDATE',
+        resource: 'SystemSettings',
+        metadata: { updates: Object.fromEntries(entries) },
+      },
+    });
+
+    return this.getSettings();
+  }
+
+  // ─── Taux de succès par opérateur ────────────────────────────────────────
+  async getOperatorSuccessRate() {
+    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const operators = ['ORANGE_MONEY', 'MTN_MOMO'] as const;
+
+    const results = await Promise.all(
+      operators.map(async (op) => {
+        const [total, completed] = await Promise.all([
+          this.prisma.transaction.count({
+            where: { operator: op, createdAt: { gte: d30 } },
+          }),
+          this.prisma.transaction.count({
+            where: {
+              operator: op,
+              status: TransactionStatus.COMPLETED,
+              createdAt: { gte: d30 },
+            },
+          }),
+        ]);
+        return {
+          name: op === 'ORANGE_MONEY' ? 'Orange Money' : 'MTN MoMo',
+          key: op,
+          total,
+          completed,
+          rate: total > 0 ? Math.round((completed / total) * 10000) / 100 : 0,
+        };
+      }),
+    );
+
+    return { operators: results, period: '30j' };
+  }
+
+  // ─── Clôture de dossier ANIF ─────────────────────────────────────────────
+  async closeAnifCase(adminId: string, caseId: string, resolution: string) {
+    const existing = await this.prisma.auditLog.findFirst({
+      where: { id: caseId, action: 'ANIF_CASE_OPEN' },
+      select: { id: true, resource: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Dossier ANIF introuvable ou déjà traité');
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'ANIF_CASE_CLOSE',
+        resource: `AuditLog:${caseId}`,
+        metadata: { resolution, closedBy: adminId, originalResource: existing.resource },
+      },
+    });
+
+    return { ok: true, caseId, resolution };
   }
 
   // Force la réinitialisation du PIN : le hash est vidé (l'utilisateur doit

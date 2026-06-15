@@ -294,3 +294,17 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PARAMÈTRES SYSTÈME — clés de configuration modifiables par l'admin
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SystemSettings {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("system_settings")
+}

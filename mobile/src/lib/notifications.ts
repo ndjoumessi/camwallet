@@ -84,3 +84,17 @@ export async function clearBadge(): Promise<void> {
     /* no-op */
   }
 }
+
+// Ajoute un gestionnaire de tap sur notification (deep link vers l'historique).
+// Retourne un objet { remove } pour nettoyer le listener dans un useEffect.
+export function addNotificationTapHandler(
+  onTap: (data?: Record<string, unknown>) => void,
+): { remove: () => void } {
+  const subscription = Notifications.addNotificationResponseReceivedListener(
+    (response) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      onTap(data);
+    },
+  );
+  return { remove: () => subscription.remove() };
+}

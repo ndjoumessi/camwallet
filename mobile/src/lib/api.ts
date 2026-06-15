@@ -71,6 +71,31 @@ export async function hasSession(): Promise<boolean> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Retry avec backoff exponentiel (erreurs réseau et 5xx uniquement)
+// Ne s'applique pas aux routes auth.
+// ─────────────────────────────────────────────────────────────────────────────
+const RETRY_DELAYS_MS = [1000, 2000, 4000]; // 3 tentatives après l'essai initial
+
+async function withRetry<T>(fn: () => Promise<T>, isAuthRoute: boolean): Promise<T> {
+  if (isAuthRoute) return fn();
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const status: number | undefined = err?.response?.status;
+      // Ne retry que si pas de réponse (réseau) ou 5xx — jamais les 4xx.
+      const isRetryable = status === undefined || status >= 500;
+      if (!isRetryable || attempt === RETRY_DELAYS_MS.length) throw err;
+      lastError = err;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastError;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Instance axios + intercepteurs (Bearer + refresh automatique sur 401)
 // ─────────────────────────────────────────────────────────────────────────────
 const api: AxiosInstance = axios.create({
@@ -108,10 +133,24 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const original = error.config as
-      | (InternalAxiosRequestConfig & { _retry?: boolean })
+      | (InternalAxiosRequestConfig & { _retry?: boolean; _retryCount?: number })
       | undefined;
 
     const isAuthRoute = original?.url?.includes('/auth/');
+
+    // ── Retry backoff sur erreurs réseau ou 5xx (hors auth) ──────────────
+    if (!isAuthRoute && original) {
+      const status = error.response?.status;
+      const isRetryable = status === undefined || status >= 500;
+      const retryCount = original._retryCount ?? 0;
+      if (isRetryable && retryCount < RETRY_DELAYS_MS.length) {
+        original._retryCount = retryCount + 1;
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[retryCount]));
+        return api(original);
+      }
+    }
+
+    // ── Refresh sur 401 ───────────────────────────────────────────────────
     if (error.response?.status === 401 && original && !original._retry && !isAuthRoute) {
       original._retry = true;
       refreshing = refreshing ?? refreshSession();
