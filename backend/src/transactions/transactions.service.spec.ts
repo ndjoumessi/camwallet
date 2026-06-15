@@ -248,4 +248,99 @@ describe('TransactionsService', () => {
       expect(capturedCreate.fee).toBe(500n);
     });
   });
+
+  // ─── getHistory ───────────────────────────────────────────────────────────
+
+  describe('getHistory', () => {
+    const fakeTx = (id: string) => ({
+      id,
+      type: 'P2P',
+      amount: 50000n,
+      senderId: 'user-1',
+      receiverId: 'user-2',
+      createdAt: new Date(),
+      sender: { phone: '+237677000001', fullName: 'Alice' },
+      receiver: { phone: '+237677000002', fullName: 'Bob' },
+    });
+
+    it('retourne la première page avec métadonnées', async () => {
+      prisma.transaction.findMany.mockResolvedValue([fakeTx('tx-1'), fakeTx('tx-2')]);
+      prisma.transaction.count.mockResolvedValue(15);
+
+      const result = await service.getHistory('user-1');
+
+      expect(result.data).toHaveLength(2);
+      expect(result.meta).toEqual({ total: 15, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('calcule totalPages correctement', async () => {
+      prisma.transaction.findMany.mockResolvedValue([fakeTx('tx-1')]);
+      prisma.transaction.count.mockResolvedValue(45);
+
+      const result = await service.getHistory('user-1', 2, 20);
+
+      expect(result.meta.totalPages).toBe(3); // ceil(45/20)
+      expect(result.meta.page).toBe(2);
+    });
+
+    it('applique le skip de pagination correctement', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      await service.getHistory('user-1', 3, 10);
+
+      expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+    });
+
+    it('filtre par type si fourni', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      await service.getHistory('user-1', 1, 20, 'P2P' as any);
+
+      expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ type: 'P2P' }),
+        }),
+      );
+    });
+
+    it('n\'applique pas de filtre type si absent', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      await service.getHistory('user-1');
+
+      const call = prisma.transaction.findMany.mock.calls[0][0];
+      expect(call.where).not.toHaveProperty('type');
+    });
+
+    it('inclut les transactions où l\'utilisateur est expéditeur ou destinataire', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      await service.getHistory('user-1');
+
+      expect(prisma.transaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ senderId: 'user-1' }, { receiverId: 'user-1' }],
+          }),
+        }),
+      );
+    });
+
+    it('retourne une liste vide si aucune transaction', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      const result = await service.getHistory('user-inconnu');
+
+      expect(result.data).toHaveLength(0);
+      expect(result.meta.total).toBe(0);
+      expect(result.meta.totalPages).toBe(0);
+    });
+  });
 });

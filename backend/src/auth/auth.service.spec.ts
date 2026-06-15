@@ -248,6 +248,94 @@ describe('AuthService', () => {
     });
   });
 
+  // ─── refresh ──────────────────────────────────────────────────────────────
+
+  describe('refresh', () => {
+    it('rejette un refresh token absent', async () => {
+      await expect(service.refresh('')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejette un refresh token invalide (verify lève)', async () => {
+      jwtService.verify.mockImplementation(() => { throw new Error('expired'); });
+
+      await expect(service.refresh('bad-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('renouvelle les tokens d\'un utilisateur avec tokenVersion correcte', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'user-1', role: 'USER', tv: 2 });
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'USER', tokenVersion: 2 });
+
+      const result = await service.refresh('valid-refresh-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+    });
+
+    it('rejette si tokenVersion ne correspond plus (déconnexion sur un autre appareil)', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'user-1', role: 'USER', tv: 1 });
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'USER', tokenVersion: 2 });
+
+      await expect(service.refresh('stale-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejette si tv absent du payload (token pré-migration)', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'user-1', role: 'USER' }); // tv undefined
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'USER', tokenVersion: 0 });
+
+      await expect(service.refresh('old-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejette si l\'utilisateur est introuvable', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'ghost', role: 'USER', tv: 0 });
+      prisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.refresh('token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('renouvelle les tokens d\'un admin si le credHash est valide', async () => {
+      // credHash = sha256('admin@camwallet.cm:Admin@2025!')
+      const crypto = await import('crypto');
+      const credHash = crypto
+        .createHash('sha256')
+        .update('admin@camwallet.cm:Admin@2025!')
+        .digest('hex');
+
+      jwtService.verify.mockReturnValue({ sub: 'admin-id', role: 'ADMIN', adminCredHash: credHash });
+
+      const result = await service.refresh('admin-token');
+
+      expect(result).toHaveProperty('accessToken');
+    });
+
+    it('rejette le refresh admin si les identifiants ont changé depuis l\'émission', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'admin-id', role: 'ADMIN', adminCredHash: 'ancien-hash' });
+
+      await expect(service.refresh('admin-token')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejette le refresh admin si adminCredHash absent du payload', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'admin-id', role: 'ADMIN' });
+
+      await expect(service.refresh('admin-token')).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // ─── logout ───────────────────────────────────────────────────────────────
+
+  describe('logout', () => {
+    it('incrémente tokenVersion et retourne un message', async () => {
+      prisma.user.update.mockResolvedValue({});
+
+      const result = await service.logout('user-1');
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      expect(result).toHaveProperty('message');
+    });
+  });
+
   // ─── changePin ────────────────────────────────────────────────────────────
 
   describe('changePin', () => {
