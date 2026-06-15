@@ -23,8 +23,10 @@ RUN addgroup --system --gid 1001 nodejs \
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Client Prisma généré (depuis le builder)
+# Client Prisma généré + CLI (prisma est en devDependencies, absent après --omit=dev)
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Artefacts compilés et migrations
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
