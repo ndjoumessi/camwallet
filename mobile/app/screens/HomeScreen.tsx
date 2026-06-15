@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
   Animated,
   Easing,
   AccessibilityInfo,
@@ -24,11 +23,7 @@ import RechargeModal from './modals/RechargeModal';
 import WithdrawModal from './modals/WithdrawModal';
 import ScanModal, { ScannedRecipient } from './modals/ScanModal';
 
-const { width } = Dimensions.get('window');
-
 type ModalType = 'send' | 'receive' | 'recharge' | 'withdraw' | 'scan' | null;
-
-const QUICK_AMOUNTS = [5000, 10000, 25000];
 const BALANCE_CARD_GRADIENT: [string, string] = ['#0d2a1f', '#0a1628'];
 
 export default function HomeScreen() {
@@ -133,9 +128,14 @@ export default function HomeScreen() {
           <View style={styles.orbBottom} />
 
           <View style={styles.balanceRow}>
-            <View>
+            <View style={styles.balanceInfo}>
               <Text style={styles.balanceLabel}>{t('home.availableBalance')}</Text>
-              <Text style={[styles.balanceAmount, !showBalance && styles.balanceHidden]}>
+              <Text
+                style={[styles.balanceAmount, !showBalance && styles.balanceHidden]}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+                minimumFontScale={0.72}
+              >
                 {showBalance ? fmt(balance) : '•••••• FCFA'}
               </Text>
             </View>
@@ -212,6 +212,7 @@ export default function HomeScreen() {
                   key={c.phone}
                   style={styles.contactItem}
                   onPress={() => setActiveModal('send')}
+                  activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel={`Envoyer à ${c.name}`}
                 >
@@ -333,6 +334,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: Spacing.lg,
   },
+  balanceInfo: { flex: 1, marginRight: Spacing.sm },
   balanceLabel: { color: Colors.textMuted, fontSize: Typography.sm, marginBottom: 6 },
   balanceAmount: {
     color: Colors.text,
@@ -366,8 +368,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
   },
   actionIcon: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     alignItems: 'center',
@@ -394,8 +396,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   txIcon: {
-    width: 42,
-    height: 42,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
