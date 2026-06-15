@@ -156,36 +156,52 @@ export class CamPayService {
   }
 
   // ─── Vérification de signature webhook ────────────────────────────────────
-  // Signature CamPay : sha256(app_token + reference)
+  // CamPay signe ses callbacks avec un JWT HS256 dont le secret est CAMPAY_WEBHOOK_KEY.
+  // Format : {"alg":"HS256","app":"camwallet","typ":"JWT"} / {"source":"CamPay","exp":...}
+  verifyWebhookSignature(payload: { signature?: string }): boolean {
+    const webhookKey = this.config.get<string>('CAMPAY_WEBHOOK_KEY');
 
-  verifyWebhookSignature(payload: { reference?: string; signature?: string }): boolean {
-    const appToken = this.config.get<string>('CAMPAY_APP_TOKEN');
-
-    if (!appToken) {
-      if (this.config.get('NODE_ENV') === 'production') {
-        throw new InternalServerErrorException('CAMPAY_APP_TOKEN requis en production');
-      }
-      this.logger.warn('[SÉCU] CAMPAY_APP_TOKEN non configuré — validation signature désactivée (dev uniquement)');
-      return true;
+    if (!webhookKey) {
+      throw new InternalServerErrorException('CAMPAY_WEBHOOK_KEY non configuré');
     }
 
-    if (!payload.signature || !payload.reference) {
+    if (!payload.signature) {
       return false;
     }
 
-    const expected = crypto
-      .createHash('sha256')
-      .update(appToken + payload.reference)
-      .digest('hex');
+    const parts = payload.signature.split('.');
+    if (parts.length !== 3) {
+      return false;
+    }
 
-    const ha = Buffer.from(expected, 'hex');
-    const hb = Buffer.from(
-      payload.signature.padEnd(expected.length, '0').slice(0, expected.length),
-      'hex',
-    );
+    const [headerB64, payloadB64, sigB64] = parts;
 
     try {
-      return payload.signature.length === expected.length && crypto.timingSafeEqual(ha, hb);
+      // Vérifier la signature HS256 à temps constant
+      const expected = crypto
+        .createHmac('sha256', webhookKey)
+        .update(`${headerB64}.${payloadB64}`)
+        .digest();
+
+      const b64urlDecode = (s: string) =>
+        Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+      const actual = b64urlDecode(sigB64);
+      if (expected.length !== actual.length) return false;
+      if (!crypto.timingSafeEqual(expected, actual)) return false;
+
+      // Vérifier les claims (expiration + source)
+      const claims = JSON.parse(b64urlDecode(payloadB64).toString('utf8'));
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (claims.exp && claims.exp < nowSec) {
+        this.logger.warn('JWT webhook CamPay expiré');
+        return false;
+      }
+      if (claims.source !== 'CamPay') {
+        return false;
+      }
+
+      return true;
     } catch {
       return false;
     }

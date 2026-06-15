@@ -31,6 +31,28 @@ export class WebhooksService {
 
     this.logger.log(`Webhook CamPay reçu : ${JSON.stringify(payload)}`);
 
+    // Défense-en-profondeur : le schéma de signature CamPay (sha256(token+reference))
+    // ne couvre pas le montant. On cross-valide donc le montant payload vs. la
+    // transaction DB avant tout crédit. Cela empêche qu'un attaquant qui connaîtrait
+    // la reference d'une tx PENDING ne falsifie le montant.
+    if (payload.status === 'SUCCESSFUL' && payload.external_reference) {
+      const tx = await this.prisma.transaction.findFirst({
+        where: { operatorRef: payload.external_reference, status: TransactionStatus.PENDING },
+        select: { amount: true },
+      });
+      if (tx) {
+        // CamPay envoie le montant en FCFA entiers ; la DB stocke en centimes.
+        const payloadAmountCentimes = BigInt(Math.round(parseFloat(payload.amount ?? '0') * 100));
+        if (payloadAmountCentimes !== tx.amount) {
+          this.logger.error(
+            `Webhook CamPay rejeté : montant payload (${payloadAmountCentimes} centimes) ≠ ` +
+            `montant DB (${tx.amount} centimes) pour extRef=${payload.external_reference}`,
+          );
+          throw new UnauthorizedException('Montant webhook CamPay incohérent avec la transaction');
+        }
+      }
+    }
+
     // Normalisation du payload CamPay → format interne
     const normalized = {
       externalId: payload.external_reference,
