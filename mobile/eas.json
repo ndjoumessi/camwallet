@@ -1,0 +1,69 @@
+{
+  "cli": {
+    "version": ">= 16.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "env": {
+          "EXPO_PUBLIC_ENV": "development",
+          "EXPO_PUBLIC_API_URL": "http://localhost:3000"
+        }
+      },
+      "ios": {
+        "simulator": true,
+        "env": {
+          "EXPO_PUBLIC_ENV": "development",
+          "EXPO_PUBLIC_API_URL": "http://localhost:3000"
+        }
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "env": {
+          "EXPO_PUBLIC_ENV": "production",
+          "EXPO_PUBLIC_API_URL": "https://api.camwallet.cm"
+        }
+      },
+      "ios": {
+        "env": {
+          "EXPO_PUBLIC_ENV": "production",
+          "EXPO_PUBLIC_API_URL": "https://api.camwallet.cm"
+        }
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle",
+        "env": {
+          "EXPO_PUBLIC_ENV": "production",
+          "EXPO_PUBLIC_API_URL": "https://api.camwallet.cm"
+        }
+      },
+      "ios": {
+        "env": {
+          "EXPO_PUBLIC_ENV": "production",
+          "EXPO_PUBLIC_API_URL": "https://api.camwallet.cm"
+        }
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-play-service-account.json",
+        "track": "internal"
+      },
+      "ios": {
+        "appleId": "<apple_id>",
+        "ascAppId": "<app_store_connect_app_id>",
+        "appleTeamId": "<apple_team_id>"
+      }
+    }
+  }
+}

@@ -18,6 +18,7 @@ import { MerchantModule } from './merchant/merchant.module';
 import { DisputesModule } from './disputes/disputes.module';
 import { SseModule } from './sse/sse.module';
 import { CamPayModule } from './campay/campay.module';
+import { HealthModule } from './health/health.module';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 
 @Module({
@@ -53,6 +54,7 @@ import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middlewa
     DisputesModule,
     SseModule,
     CamPayModule,
+    HealthModule,
   ],
 })
 export class AppModule implements NestModule {

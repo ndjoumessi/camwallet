@@ -62,6 +62,18 @@
     "scheme": "camwallet",
     "experiments": {
       "typedRoutes": true
+    },
+    "owner": "ndjoumessi",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/<EAS_PROJECT_ID>"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "<EAS_PROJECT_ID>"
+      }
     }
   }
 }
