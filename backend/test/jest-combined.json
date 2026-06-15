@@ -1,0 +1,15 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testMatch": [
+    "<rootDir>/src/**/*.spec.ts",
+    "<rootDir>/test/**/*.e2e-spec.ts"
+  ],
+  "transform": {
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": "<rootDir>/tsconfig.json" }]
+  },
+  "collectCoverageFrom": ["<rootDir>/src/**/*.ts", "!<rootDir>/src/main.ts"],
+  "coverageDirectory": "<rootDir>/coverage",
+  "coverageReporters": ["text", "lcov", "text-summary"]
+}
