@@ -20,6 +20,7 @@ import { SseModule } from './sse/sse.module';
 import { CamPayModule } from './campay/campay.module';
 import { HealthModule } from './health/health.module';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
+import { AdminOriginMiddleware } from './common/middleware/admin-origin.middleware';
 
 @Module({
   imports: [
@@ -60,7 +61,7 @@ import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middlewa
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(IpWhitelistMiddleware)
+      .apply(IpWhitelistMiddleware, AdminOriginMiddleware)
       .forRoutes({ path: 'api/v1/admin/*path', method: RequestMethod.ALL });
   }
 }
