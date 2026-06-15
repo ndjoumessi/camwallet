@@ -4,7 +4,7 @@ import { Subject } from 'rxjs';
 import { randomUUID } from 'crypto';
 
 export interface SseEvent {
-  type: 'transaction' | 'user' | 'kyc' | 'ping';
+  type: 'transaction' | 'user' | 'kyc' | 'dispute' | 'ping';
   payload?: Record<string, any>;
 }
 
@@ -61,4 +61,7 @@ export class SseService {
 
   @OnEvent('kyc.submitted')
   onKyc(payload: any) { this.emit({ type: 'kyc', payload }); }
+
+  @OnEvent('dispute.opened')
+  onDispute(payload: any) { this.emit({ type: 'dispute', payload }); }
 }

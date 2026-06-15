@@ -81,6 +81,7 @@ export class TransactionsService {
       type: 'P2P',
       amountCentimes: amount,
       from: sender?.fullName,
+      transactionId: transaction.id,
     });
 
     // Alerte ANIF automatique pour les transactions > 500 000 FCFA (§5.3 CDC)
@@ -169,6 +170,7 @@ export class TransactionsService {
     void this.notifications.notifyTransactionReceived(qrCode.userId, {
       type: 'QR_PAYMENT',
       amountCentimes: transaction.net,
+      transactionId: transaction.created.id,
     });
 
     return transaction.created;
@@ -191,7 +193,38 @@ export class TransactionsService {
         metadata: { transactionId, reason } as any,
       },
     });
+
+    // Notifie le dashboard admin en temps réel (SSE, non bloquant).
+    this.eventEmitter.emit('dispute.opened', {
+      disputeId: dispute.id,
+      transactionId,
+      requesterId,
+      reason,
+    });
+
     return dispute;
+  }
+
+  // ─── Mes contestations ────────────────────────────────────────────────────
+  async getUserDisputes(userId: string) {
+    const disputes = await this.prisma.disputeRequest.findMany({
+      where: { requesterId: userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // La contestation ne porte qu'un transactionId (pas de relation Prisma) —
+    // on rapatrie les transactions associées en une requête puis on les rattache.
+    const txIds = disputes.map((d) => d.transactionId);
+    const transactions = await this.prisma.transaction.findMany({
+      where: { id: { in: txIds } },
+      include: {
+        sender: { select: { phone: true, fullName: true } },
+        receiver: { select: { phone: true, fullName: true } },
+      },
+    });
+    const byId = new Map(transactions.map((t) => [t.id, t]));
+
+    return disputes.map((d) => ({ ...d, transaction: byId.get(d.transactionId) ?? null }));
   }
 
   // ─── Historique utilisateur ───────────────────────────────────────────────

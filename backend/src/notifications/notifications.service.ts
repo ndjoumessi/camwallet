@@ -24,7 +24,7 @@ export class NotificationsService {
   // Non bloquant : un échec d'envoi ne doit jamais faire échouer la transaction.
   async notifyTransactionReceived(
     userId: string,
-    opts: { type: ReceivedType; amountCentimes: bigint; from?: string | null },
+    opts: { type: ReceivedType; amountCentimes: bigint; from?: string | null; transactionId?: string },
   ): Promise<void> {
     const montant = (Number(opts.amountCentimes) / 100).toLocaleString('fr-FR');
     const titles: Record<ReceivedType, string> = {
@@ -41,6 +41,8 @@ export class NotificationsService {
     await this.sendToUser(userId, titles[opts.type], body, {
       type: opts.type,
       amount: Number(opts.amountCentimes) / 100,
+      // Deep-link : ouvre directement la transaction concernée au tap sur la notif.
+      transactionId: opts.transactionId,
     });
   }
 

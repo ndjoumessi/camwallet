@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '@nestjs/passport';
@@ -90,6 +90,18 @@ export class AuthController {
     return this.authService.changePin(req.user.id, dto.currentPin, dto.newPin);
   }
 
+  @Post('verify-pin')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiOperation({ summary: 'Vérifier le PIN courant (sans reconnexion)' })
+  @ApiResponse({ status: 200, description: 'PIN correct' })
+  @ApiResponse({ status: 401, description: 'PIN incorrect' })
+  verifyPin(@Request() req: any, @Body('pin') pin: string) {
+    return this.authService.verifyPin(req.user.id, pin);
+  }
+
   // ─── 2FA TOTP ─────────────────────────────────────────────────────────────
 
   @Post('2fa/setup')
@@ -117,5 +129,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Désactiver le 2FA (code TOTP requis)' })
   disable2FA(@Request() req: any, @Body('code') code: string) {
     return this.authService.disable2FA(req.user.id, code);
+  }
+
+  @Get('2fa/status')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Statut d\'activation du 2FA TOTP' })
+  status2FA(@Request() req: any) {
+    return this.authService.get2FAStatus(req.user.id);
   }
 }

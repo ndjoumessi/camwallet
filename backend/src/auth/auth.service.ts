@@ -302,6 +302,18 @@ export class AuthService {
     return { message: 'PIN modifié avec succès — reconnectez-vous' };
   }
 
+  // ─── Vérification du PIN courant (sans reconnexion) ───────────────────────
+  // Utilisé par le flux « changer le PIN » côté mobile : on confirme l'ancien
+  // PIN avant de présenter la saisie du nouveau. Ne compte pas dans le verrou
+  // anti brute-force (rate-limit via le Throttler côté contrôleur).
+  async verifyPin(userId: string, pin: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    const valid = await bcrypt.compare(pin ?? '', user.pinHash);
+    if (!valid) throw new UnauthorizedException('PIN incorrect');
+    return { valid: true };
+  }
+
   // ─── Reset PIN via OTP ────────────────────────────────────────────────────
   async requestPinReset(phone: string) {
     const user = await this.prisma.user.findUnique({ where: { phone } });
@@ -346,6 +358,14 @@ export class AuthService {
     if (!valid) throw new UnauthorizedException('Code TOTP invalide');
     await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: false, totpSecret: null } });
     return { ok: true };
+  }
+
+  async get2FAStatus(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { totpEnabled: true },
+    });
+    return { totpEnabled: !!user?.totpEnabled };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
