@@ -15,6 +15,9 @@ import { disputeApi } from '../../../src/lib/api';
 import { useStore, Transaction } from '../../store/useStore';
 
 const MAX_REASON = 60;
+const MIN_REASON = 5;
+
+const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
 
 interface DisputeModalProps {
   visible: boolean;
@@ -23,8 +26,6 @@ interface DisputeModalProps {
   onSuccess?: (msg: string) => void;
 }
 
-// Modale de demande de remboursement (contestation) d'une transaction.
-// Motif obligatoire, 60 caractères max, puis confirmation avant envoi.
 export default function DisputeModal({ visible, transaction, onClose, onSuccess }: DisputeModalProps) {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,8 +36,8 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
 
   const submit = async () => {
     const trimmed = reason.trim();
-    if (!trimmed) {
-      Alert.alert('Motif requis', 'Veuillez saisir le motif de votre demande de remboursement.');
+    if (!trimmed || trimmed.length < MIN_REASON) {
+      Alert.alert('Motif trop court', `Décrivez le problème en au moins ${MIN_REASON} caractères.`);
       return;
     }
     if (!transaction) return;
@@ -61,6 +62,9 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
     }
   };
 
+  const trimmedLen = reason.trim().length;
+  const canSubmit = !loading && !!transaction && trimmedLen >= MIN_REASON;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
       <View style={styles.overlay}>
@@ -69,36 +73,59 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
             <Ionicons name="return-up-back-outline" size={28} color={Colors.yellow} />
           </View>
           <Text style={styles.title}>Demande de remboursement</Text>
+
+          {transaction ? (
+            <View style={styles.txContext}>
+              <Text style={styles.txContextName} numberOfLines={1}>{transaction.name}</Text>
+              <Text style={styles.txContextAmount}>{fmt(transaction.amount)}</Text>
+            </View>
+          ) : null}
+
           <Text style={styles.desc}>
             Expliquez en quelques mots la raison de votre contestation. Notre équipe l'examinera sous 48h.
           </Text>
 
-          <View style={styles.inputWrap}>
-            <TextInput
-              style={styles.input}
-              value={reason}
-              onChangeText={(v) => setReason(v.slice(0, MAX_REASON))}
-              placeholder="Ex : Paiement effectué par erreur…"
-              placeholderTextColor={Colors.textMuted}
-              multiline
-              numberOfLines={3}
-              maxLength={MAX_REASON}
-              autoFocus
-              editable={!loading}
-              accessibilityLabel="Motif du remboursement"
-            />
-            <Text style={styles.counter}>{reason.length}/{MAX_REASON}</Text>
-          </View>
+          {transaction ? (
+            <>
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={reason}
+                  onChangeText={(v) => setReason(v.slice(0, MAX_REASON))}
+                  placeholder="Ex : Paiement effectué par erreur…"
+                  placeholderTextColor={Colors.textMuted}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={MAX_REASON}
+                  autoFocus
+                  editable={!loading}
+                  accessibilityLabel="Motif du remboursement"
+                  accessibilityHint={`Minimum ${MIN_REASON} caractères requis`}
+                />
+                <View style={styles.counterRow}>
+                  {trimmedLen > 0 && trimmedLen < MIN_REASON && (
+                    <Text style={styles.counterHint}>Minimum {MIN_REASON} caractères</Text>
+                  )}
+                  <Text style={[styles.counter, trimmedLen === MAX_REASON && { color: Colors.red }]}>
+                    {reason.length}/{MAX_REASON}
+                  </Text>
+                </View>
+              </View>
 
-          <TouchableOpacity
-            style={[styles.submitBtn, (loading || !reason.trim()) && { opacity: 0.6 }]}
-            onPress={submit}
-            disabled={loading || !reason.trim()}
-            accessibilityRole="button"
-            accessibilityLabel="Envoyer la demande de remboursement"
-          >
-            <Text style={styles.submitText}>{loading ? 'Envoi…' : 'Envoyer la demande'}</Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitBtn, !canSubmit && { opacity: 0.5 }]}
+                onPress={submit}
+                disabled={!canSubmit}
+                accessibilityRole="button"
+                accessibilityLabel="Envoyer la demande de remboursement"
+              >
+                <Text style={styles.submitText}>{loading ? 'Envoi…' : 'Envoyer la demande'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={styles.noTxText}>Aucune transaction sélectionnée.</Text>
+          )}
+
           <TouchableOpacity onPress={close} disabled={loading} accessibilityRole="button" accessibilityLabel="Annuler">
             <Text style={styles.cancelText}>Annuler</Text>
           </TouchableOpacity>
@@ -122,6 +149,18 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   title: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.black, textAlign: 'center' },
+  txContext: {
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  txContextName: {
+    color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium, flex: 1,
+  },
+  txContextAmount: {
+    color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.bold, flexShrink: 0,
+  },
   desc: { color: Colors.textSoft, fontSize: Typography.sm, textAlign: 'center', lineHeight: 20 },
   inputWrap: { width: '100%' },
   input: {
@@ -129,11 +168,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text,
     fontSize: Typography.base, textAlignVertical: 'top', minHeight: 80,
   },
-  counter: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'right', marginTop: 4 },
+  counterRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4,
+  },
+  counterHint: { color: Colors.yellow, fontSize: Typography.xs, flex: 1 },
+  counter: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'right' },
   submitBtn: {
     backgroundColor: Colors.yellow, borderRadius: BorderRadius.sm,
     paddingVertical: Spacing.md, width: '100%', alignItems: 'center',
   },
-  submitText: { color: '#000', fontWeight: Typography.bold, fontSize: Typography.base },
+  submitText: { color: Colors.bg, fontWeight: Typography.bold, fontSize: Typography.base },
   cancelText: { color: Colors.textMuted, fontSize: Typography.base, padding: Spacing.sm },
+  noTxText: { color: Colors.textMuted, fontSize: Typography.sm, textAlign: 'center' },
 });

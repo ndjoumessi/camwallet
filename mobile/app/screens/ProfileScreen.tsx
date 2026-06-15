@@ -45,7 +45,7 @@ const KYC_BADGE: Record<string, { label: string; icon: IoniconName; color: strin
 
 const initials = (name?: string | null, phone?: string) =>
   name
-    ? name.split(/\s+/).map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+    ? name.split(/\s+/).map((n) => n[0] ?? '').filter(Boolean).join('').slice(0, 2).toUpperCase()
     : (phone ?? '?').replace(/\D/g, '').slice(-2);
 
 const fcfa = (centimes: number) => Math.round(centimes / 100).toLocaleString('fr-FR');
@@ -301,6 +301,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <TouchableOpacity
           onPress={pickAvatar}
           activeOpacity={0.8}
+          disabled={uploading}
           style={styles.profileAvatar}
           accessibilityRole="button"
           accessibilityLabel="Changer la photo de profil"
@@ -338,7 +339,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         </View>
       </LinearGradient>
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && (
+        <View style={styles.errorWrap}>
+          <Text style={styles.errorText}>{error}</Text>
+          <Pressable onPress={load} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Réessayer">
+            <Ionicons name="refresh-outline" size={14} color={Colors.primary} />
+            <Text style={styles.retryText}>Réessayer</Text>
+          </Pressable>
+        </View>
+      )}
       {loading && !me ? (
         <View style={styles.skeletonWrap}>
           {/* Bouton Modifier */}
@@ -599,7 +608,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>Supprimer mon compte</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v2.7.0 · Marché Cameroun</Text>
+      <Text style={styles.version}>CamWallet v2.7.1 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
@@ -657,6 +666,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                     keyboardType="numeric"
                     secureTextEntry
                     maxLength={6}
+                    autoFocus={key === 'next'}
                     accessibilityLabel={label}
                   />
                 </View>
@@ -846,7 +856,7 @@ const styles = StyleSheet.create({
   cancelBtn: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   cancelBtnText: { color: Colors.textSoft, fontWeight: Typography.semibold },
   saveBtn: { backgroundColor: Colors.primary },
-  saveBtnText: { color: '#fff', fontWeight: Typography.bold },
+  saveBtnText: { color: Colors.bg, fontWeight: Typography.bold },
   statsRow: {
     flexDirection: 'row', backgroundColor: Colors.card,
     borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg,
@@ -880,6 +890,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg, padding: Spacing.lg, alignItems: 'center',
   },
   logoutText: { color: Colors.red, fontSize: Typography.base, fontWeight: Typography.bold },
+  errorWrap: { alignItems: 'center', gap: Spacing.xs, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: Spacing.xs },
+  retryText: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.semibold },
   version: {
     color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center',
     marginBottom: Spacing.md,
@@ -907,7 +920,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md, paddingHorizontal: Spacing.xl,
     width: '100%', alignItems: 'center',
   },
-  deleteProceedText: { color: '#fff', fontWeight: Typography.bold, fontSize: Typography.base },
+  deleteProceedText: { color: Colors.bg, fontWeight: Typography.bold, fontSize: Typography.base },
   deleteCancelText: { color: Colors.textMuted, fontSize: Typography.base, padding: Spacing.sm },
   pinInput: {
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,

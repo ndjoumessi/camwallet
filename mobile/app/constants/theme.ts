@@ -26,7 +26,7 @@ export const Colors = {
 
   // Text
   text: '#EEF2FF',
-  textMuted: '#64748B',
+  textMuted: '#8596AC',
   textSoft: '#94A3B8',
 
   // Semantic

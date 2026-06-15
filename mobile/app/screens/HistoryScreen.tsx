@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -23,12 +23,13 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 const FILTERS = ['Tout', 'Reçus', 'Envois', 'Recharges', 'Retraits'];
 
+const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
+
 function buildPdfHtml(
   transactions: ReturnType<typeof useStore.getState>['transactions'],
   filter: string,
   search: string,
 ) {
-  const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
   const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
   const total = transactions.reduce((s, tx) => s + tx.amount, 0);
   const rows = transactions
@@ -79,13 +80,32 @@ function buildPdfHtml(
 </html>`;
 }
 
+// Stable component — no dependency on parent state.
+const ListEmpty = () => (
+  <View style={styles.empty}>
+    <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
+    <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
+  </View>
+);
+
+interface ListFooterProps { loading: boolean; hasMore: boolean; total: number; }
+const ListFooter = React.memo(({ loading, hasMore, total }: ListFooterProps) => (
+  <View style={styles.listFooter}>
+    {loading ? (
+      <ActivityIndicator size="small" color={Colors.primary} />
+    ) : !hasMore && total > 0 ? (
+      <Text style={styles.listFooterText}>Toutes les transactions chargées</Text>
+    ) : null}
+    <View style={{ height: 80 }} />
+  </View>
+));
+
 export default function HistoryScreen() {
   const { transactions, historyHasMore, historyLoading, fetchHistoryPage, resetHistory, openTransaction } = useStore();
   const [activeFilter, setActiveFilter] = useState('Tout');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
 
-  // Chargement initial : réinitialise la pagination et charge la première page.
   useEffect(() => {
     resetHistory();
     fetchHistoryPage(1);
@@ -128,15 +148,15 @@ export default function HistoryScreen() {
     }
   };
 
-  const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
-
-  const handleLoadMore = () => {
+  const handleLoadMore = useCallback(() => {
     const { historyPage, historyHasMore: hasMore, historyLoading: loading } = useStore.getState();
     if (!hasMore || loading) return;
     fetchHistoryPage(historyPage + 1);
-  };
+  }, [fetchHistoryPage]);
 
-  const renderTx = ({ item: tx }: { item: Transaction }) => (
+  const keyExtractor = useCallback((item: Transaction) => item.id, []);
+
+  const renderTx = useCallback(({ item: tx }: { item: Transaction }) => (
     <Pressable
       style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
       onPress={() => openTransaction(tx)}
@@ -161,25 +181,11 @@ export default function HistoryScreen() {
         />
       </View>
     </Pressable>
-  );
+  ), [openTransaction]);
 
-  const ListEmpty = () => (
-    <View style={styles.empty}>
-      <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
-      <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
-    </View>
-  );
-
-  const ListFooter = () => (
-    <View style={styles.listFooter}>
-      {historyLoading ? (
-        <ActivityIndicator size="small" color={Colors.primary} />
-      ) : !historyHasMore && transactions.length > 0 ? (
-        <Text style={styles.listFooterText}>Toutes les transactions chargées</Text>
-      ) : null}
-      <View style={{ height: 80 }} />
-    </View>
-  );
+  const listFooter = useMemo(() => (
+    <ListFooter loading={historyLoading} hasMore={historyHasMore} total={transactions.length} />
+  ), [historyLoading, historyHasMore, transactions.length]);
 
   return (
     <View style={styles.container}>
@@ -254,7 +260,7 @@ export default function HistoryScreen() {
       {/* Liste de transactions avec scroll infini */}
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         renderItem={renderTx}
         style={styles.flatList}
         contentContainerStyle={filtered.length === 0 ? styles.listEmpty : styles.list}
@@ -262,7 +268,11 @@ export default function HistoryScreen() {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.2}
         ListEmptyComponent={ListEmpty}
-        ListFooterComponent={ListFooter}
+        ListFooterComponent={() => listFooter}
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+        windowSize={10}
+        removeClippedSubviews
       />
       {/* Le détail transaction est rendu globalement (app/index.tsx) via le store. */}
     </View>

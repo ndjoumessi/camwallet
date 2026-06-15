@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Animated, Easing, AccessibilityInfo } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Typography, Spacing } from '../constants/theme';
 
@@ -15,50 +15,67 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
   const spinnerRotate = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Logo entrance
-    Animated.parallel([
-      Animated.spring(logoScale, {
-        toValue: 1,
-        damping: 14,
-        stiffness: 180,
-        useNativeDriver: true,
-      }),
-      Animated.timing(logoOpacity, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      // Text fade in
-      Animated.timing(textOpacity, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
+    let cancelled = false;
 
-      // Spinner
-      Animated.timing(spinnerOpacity, {
-        toValue: 1,
-        duration: 300,
-        delay: 200,
-        useNativeDriver: true,
-      }).start();
-    });
+    const startAnimations = () => {
+      Animated.parallel([
+        Animated.spring(logoScale, {
+          toValue: 1,
+          damping: 14,
+          stiffness: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoOpacity, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        if (cancelled) return;
+        Animated.timing(textOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+        Animated.timing(spinnerOpacity, {
+          toValue: 1,
+          duration: 300,
+          delay: 200,
+          useNativeDriver: true,
+        }).start();
+      });
 
-    // Spinner rotation
-    Animated.loop(
-      Animated.timing(spinnerRotate, {
-        toValue: 1,
-        duration: 1000,
-        easing: Easing.linear,
-        useNativeDriver: true,
+      Animated.loop(
+        Animated.timing(spinnerRotate, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    };
+
+    const showInstant = () => {
+      logoScale.setValue(1);
+      logoOpacity.setValue(1);
+      textOpacity.setValue(1);
+      spinnerOpacity.setValue(1);
+    };
+
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((reduceMotion) => {
+        if (cancelled) return;
+        if (reduceMotion) showInstant();
+        else startAnimations();
       })
-    ).start();
+      .catch(() => { if (!cancelled) startAnimations(); });
 
-    // Navigate after 2.5s
     const timer = setTimeout(onFinish, 2500);
-    return () => clearTimeout(timer);
-  }, []);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [onFinish]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const spin = spinnerRotate.interpolate({
     inputRange: [0, 1],
@@ -109,7 +126,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       />
 
       {/* Version */}
-      <Text style={styles.version}>v1.0.0</Text>
+      <Text style={styles.version}>v2.7.1</Text>
     </LinearGradient>
   );
 }
