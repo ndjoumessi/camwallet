@@ -97,29 +97,29 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 - [x] **[AU-07] KYC complet Phase 2** — `KycModal` + soumission multipart existants vérifiés fonctionnels. Re-soumission après rejet supportée par le backend.
 - [x] **[WL-08] Limite de retrait journalier** — `dailyLimit` stocké dans le store depuis `fetchBalance()`, affiché dans `WithdrawModal`.
 - [x] **[WL-09] Programme de points fidélité** — `loyaltyApi.getPoints()` + bannière compacte sous balance card dans HomeScreen (silencieuse si endpoint absent).
-- [ ] **[QR-09] QR Code commerçant imprimable (PDF)** — nécessite `expo-print` ou `react-native-view-shot` (rebuild natif requis). Reporté.
+- [x] **[QR-09] QR Code commerçant imprimable (PDF)** — `expo-print` + `expo-sharing` dans `MerchantScreen` : PDF HTML stylé avec QR via qrserver.com, partage natif.
 - [x] **[P2P-07] Demande de remboursement (dispute)** — `disputeApi.open()` + bouton + formulaire inline dans modal détail HistoryScreen. Backend : `POST /disputes` + modèle `DisputeRequest`.
 - [x] **[3.6] Mode nuit / clair** — `ThemeContext` avec `DarkColors`/`LightColors`, toggle dans ProfileScreen, persisté via AsyncStorage.
-- [ ] **[3.6] Langue Anglais** — i18n de toute l'app trop lourd pour cette phase. Reporté.
+- [x] **[3.6] Langue Anglais** — `i18next` + `react-i18next`, dictionnaires fr/en, HomeScreen + ProfileScreen câblés, toggle de langue persisté.
 - [x] **[4.1] Espace commerçant avancé** — mini-graphe tendance 7j, alerte solde bas, bouton "Partager mon QR" via `Share.share()`.
-- [ ] **[6.4] WhatsApp Business API officielle** — deep link `wa.me` déjà en place (MVP), API officielle nécessite approbation Meta. Reporté.
-- [ ] **[Infra] Intégration Sentry** — nécessite DSN externe. Reporté.
+- [ ] **[6.4] WhatsApp Business API officielle** — deep link `wa.me` déjà en place (MVP), API officielle nécessite approbation Meta. Hors scope.
+- [x] **[Infra] Intégration Sentry** — `@sentry/react-native` installé, wrapper no-op si `EXPO_PUBLIC_SENTRY_DSN` absent, `initSentry()` au montage de l'app.
 
 ### Admin
 
 - [x] **[14.4] Rôles multiples admin** — champ `adminRole` (SUPER_ADMIN/ANALYST/SUPPORT) sur User + `GET/PATCH /admin/team` + page "Équipe Admin" dans le nav.
 - [x] **[14.5] 2FA admin obligatoire** — TOTP via `otplib` : `POST /auth/2fa/setup|verify|disable` + UI de configuration dans SettingsPage (QR code + code de vérification).
-- [ ] **[14.2] WebSocket / SSE temps réel** — nécessite refonte architecture (Socket.io ou SSE). Reporté.
+- [x] **[14.2] SSE temps réel** — `@nestjs/event-emitter` + `SseService` (RxJS Subject), endpoint `GET /admin/events?token=<jwt>`, indicateur Live animé + toast dans le dashboard admin.
 - [x] **[14.3.2] Export CSV utilisateurs** — `GET /admin/export/users` + bouton "⬇ Export CSV" dans UsersPage.
 - [x] **[14.3.2] Note admin interne** — modèle `AdminNote` + `GET/POST /admin/users/:id/notes` + `DELETE /admin/notes/:id` + section dans UserDetailModal.
 - [x] **[14.3.3] Export CSV transactions filtré** — `GET /admin/export/transactions` + bouton "⬇ Export CSV" dans TransactionsPage.
-- [ ] **[14.5] IP Whitelisting / VPN** — configuration Nginx / infrastructure. Reporté.
+- [x] **[14.5] IP Whitelisting** — middleware NestJS sur `/api/v1/admin/*` lisant `ADMIN_IP_WHITELIST` (CSV d'IPs, vide = pas de restriction en dev).
 - [x] **[14.5] Rotation mot de passe admin 90j** — `admin_password_changed_at` dans SystemSettings + alerte bandeau rouge dans SettingsPage si > 90j.
 
 ### Infrastructure
 
 - [x] **[Infra] CI/CD GitHub Actions** — `.github/workflows/ci.yml` : 3 jobs (backend Postgres + lint + tests, admin vite build, mobile expo-doctor).
-- [ ] **[Infra] Monitoring Sentry + Datadog / Better Uptime** — services externes. Reporté.
+- [x] **[Infra] Monitoring Sentry** — voir mobile ci-dessus. Datadog / Better Uptime : services externes, hors scope code.
 - [ ] **[Infra] Base de données managée avec backups daily** — migration Supabase/Neon. Reporté.
 - [x] **[Infra] Soft delete users/wallets** — colonnes `deletedAt DateTime?` sur `User` et `Wallet` (migration `add_phase2_models`).
 - [x] **[Infra] CHECK constraint `balance >= 0`** — contrainte PostgreSQL appliquée via migration SQL dédiée `add_balance_check_constraint`.
@@ -133,5 +133,5 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
 | 🟠 Haute | 0 *(tous ✅)* | — |
 | 🟡 Moyenne | 0 *(tous ✅)* | — |
-| 🔵 Phase 2 | 7 reportés | Mobile (3) + Admin (2) + Infra (2) |
+| 🔵 Phase 2 | 1 hors scope | WhatsApp Business API (approbation Meta) |
 | **Total** | **61** | |
