@@ -21,7 +21,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "CamWallet a besoin d'accéder à la caméra pour scanner les QR Codes.",
         "NSFaceIDUsageDescription": "CamWallet utilise Face ID pour sécuriser l'accès à votre compte.",
-        "NSLocalAuthenticationDescription": "Authentification biométrique pour CamWallet"
+        "NSLocalAuthenticationDescription": "Authentification biométrique pour CamWallet",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -56,8 +57,7 @@
         }
       ],
       "expo-asset",
-      "expo-notifications",
-      "@sentry/react-native"
+      "expo-notifications"
     ],
     "scheme": "camwallet",
     "experiments": {
