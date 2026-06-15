@@ -10,6 +10,9 @@ import {
   Alert,
   Pressable,
   Share,
+  Animated,
+  Easing,
+  AccessibilityInfo,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -18,6 +21,9 @@ import * as Sharing from 'expo-sharing';
 import QRLib from 'qrcode';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { merchantApi, MerchantStatsResponse, MerchantTransaction } from '../../src/lib/api';
+
+const BAR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const BAR_FACTORS = [0.6, 0.8, 0.7, 1.0, 0.9, 1.2, 0.5];
 
 interface MerchantScreenProps {
   onBack: () => void;
@@ -51,6 +57,50 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
 
   const [qrAmount, setQrAmount] = useState('');
   const [qrValue, setQrValue] = useState<string | null>(null);
+
+  // Barres du graphique — Animated.Value par colonne (hauteur, pas nativeDriver)
+  const barAnims = useRef(BAR_DAYS.map(() => new Animated.Value(4))).current;
+  const reduceMotionRef = useRef(false);
+
+  React.useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((rm) => { reduceMotionRef.current = rm; })
+      .catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    if (!stats) return;
+    if (reduceMotionRef.current) {
+      const base = stats.week.amount / 7;
+      const values = BAR_FACTORS.map((f) => Math.round(base * f));
+      const maxVal = Math.max(...values, 1);
+      barAnims.forEach((anim, i) => anim.setValue(Math.max(4, Math.round((values[i] / maxVal) * 60))));
+      return;
+    }
+    const base = stats.week.amount / 7;
+    const values = BAR_FACTORS.map((f) => Math.round(base * f));
+    const maxVal = Math.max(...values, 1);
+    Animated.stagger(50, barAnims.map((anim, i) =>
+      Animated.timing(anim, {
+        toValue: Math.max(4, Math.round((values[i] / maxVal) * 60)),
+        duration: 350,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      })
+    )).start();
+  }, [stats]);
+
+  // QR code — fondu à chaque nouvelle génération
+  const qrAnim = useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    if (!qrValue) return;
+    if (reduceMotionRef.current) { qrAnim.setValue(1); return; }
+    qrAnim.setValue(0);
+    Animated.timing(qrAnim, {
+      toValue: 1, duration: 220,
+      easing: Easing.out(Easing.quad), useNativeDriver: true,
+    }).start();
+  }, [qrValue]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -208,32 +258,22 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
               <>
                 <Text style={styles.sectionTitle}>Tendance (simulation 7 j.)</Text>
                 <View style={styles.chartCard}>
-                  {(() => {
-                    // Simule une progression sur 7 jours basée sur les stats réelles
-                    const base = stats.week.amount / 7;
-                    const days = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-                    const factors = [0.6, 0.8, 0.7, 1.0, 0.9, 1.2, 0.5];
-                    const values = factors.map((f) => Math.round(base * f));
-                    const maxVal = Math.max(...values, 1);
-                    return (
-                      <View style={styles.chartBars}>
-                        {values.map((v, i) => (
-                          <View key={i} style={styles.chartBarWrap}>
-                            <View
-                              style={[
-                                styles.chartBar,
-                                {
-                                  height: Math.max(4, Math.round((v / maxVal) * 60)),
-                                  backgroundColor: i === new Date().getDay() ? Colors.primary : Colors.primary + '50',
-                                },
-                              ]}
-                            />
-                            <Text style={styles.chartDay}>{days[i]}</Text>
-                          </View>
-                        ))}
+                  <View style={styles.chartBars}>
+                    {BAR_DAYS.map((day, i) => (
+                      <View key={i} style={styles.chartBarWrap}>
+                        <Animated.View
+                          style={[
+                            styles.chartBar,
+                            {
+                              height: barAnims[i],
+                              backgroundColor: i === new Date().getDay() ? Colors.primary : Colors.primary + '50',
+                            },
+                          ]}
+                        />
+                        <Text style={styles.chartDay}>{day}</Text>
                       </View>
-                    );
-                  })()}
+                    ))}
+                  </View>
                   <Text style={styles.chartNote}>Basé sur le CA de la semaine · Aujourd'hui en vert</Text>
                 </View>
               </>
@@ -262,7 +302,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                 </TouchableOpacity>
               </View>
               {qrValue && (
-                <View style={styles.qrDisplay}>
+                <Animated.View style={[styles.qrDisplay, { opacity: qrAnim }]}>
                   <View style={styles.qrBg}>
                     <QRCode value={qrValue} size={180} backgroundColor="#fff" color="#000" />
                   </View>
@@ -290,7 +330,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                     <Ionicons name="print-outline" size={18} color={Colors.primary} />
                     <Text style={styles.printQrBtnText}>Imprimer / Partager PDF</Text>
                   </TouchableOpacity>
-                </View>
+                </Animated.View>
               )}
             </View>
 
@@ -348,7 +388,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: BorderRadius.sm,
+    width: 44, height: 44, borderRadius: BorderRadius.sm,
     backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
@@ -373,8 +413,7 @@ const styles = StyleSheet.create({
   balanceValue: { color: Colors.text, fontSize: Typography.display, fontWeight: Typography.black },
   balanceCurrency: { color: Colors.textMuted, fontSize: Typography.xl, fontWeight: Typography.regular },
   sectionTitle: {
-    color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold,
-    letterSpacing: 1, textTransform: 'uppercase',
+    color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
     marginHorizontal: Spacing.lg, marginBottom: Spacing.sm, marginTop: Spacing.sm,
   },
   statsGrid: {
@@ -386,7 +425,7 @@ const styles = StyleSheet.create({
   },
   statValue: { fontSize: Typography.sm, fontWeight: Typography.black, textAlign: 'center' },
   statLabel: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center' },
-  statSub: { color: Colors.textMuted, fontSize: 9, textAlign: 'center' },
+  statSub: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center' },
   qrCard: {
     marginHorizontal: Spacing.lg, marginBottom: Spacing.xl,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
@@ -403,7 +442,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary, borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
   },
-  qrGenBtnText: { color: '#fff', fontWeight: Typography.bold, fontSize: Typography.sm },
+  qrGenBtnText: { color: Colors.white, fontWeight: Typography.bold, fontSize: Typography.sm },
   qrDisplay: { alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.sm },
   qrBg: { backgroundColor: '#fff', padding: 16, borderRadius: BorderRadius.lg },
   qrAmountLabel: { color: Colors.text, fontSize: Typography.xl, fontWeight: Typography.black },
@@ -442,8 +481,8 @@ const styles = StyleSheet.create({
   chartBars: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 80 },
   chartBarWrap: { flex: 1, alignItems: 'center', gap: 4, justifyContent: 'flex-end' },
   chartBar: { width: '60%', borderRadius: 3, minHeight: 4 },
-  chartDay: { color: Colors.textMuted, fontSize: 9 },
-  chartNote: { color: Colors.textMuted, fontSize: 9, textAlign: 'center' },
+  chartDay: { color: Colors.textMuted, fontSize: Typography.xs },
+  chartNote: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center' },
   shareQrBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     backgroundColor: Colors.infoBg, borderWidth: 1, borderColor: Colors.blue + '40',

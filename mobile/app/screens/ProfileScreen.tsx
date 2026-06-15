@@ -259,12 +259,6 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   };
 
   const handleDeleteAccount = async () => {
-    // Étape 1 : première confirmation
-    if (deleteStep === 'idle') {
-      setDeleteStep('confirm');
-      return;
-    }
-    // Étape 2 : vérification PIN (deleteStep === 'pin')
     if (deletePin.length !== 6) {
       Alert.alert('PIN invalide', 'Saisissez votre PIN à 6 chiffres.');
       return;
@@ -605,7 +599,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>Supprimer mon compte</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v1.6.0 · Marché Cameroun</Text>
+      <Text style={styles.version}>CamWallet v2.7.0 · Marché Cameroun</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
@@ -864,8 +858,8 @@ const styles = StyleSheet.create({
   statDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 4 },
   menuGroup: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
   groupLabel: {
-    color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold,
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: Spacing.sm,
+    color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
+    marginBottom: Spacing.sm,
   },
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,

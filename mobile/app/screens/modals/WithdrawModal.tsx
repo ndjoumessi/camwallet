@@ -8,7 +8,8 @@ import {
   TextInput,
   ScrollView,
   Animated,
-  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -104,8 +105,9 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
   const amt = parseInt(amount) || 0;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <Animated.View style={[styles.flex, animStyle]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Retrait Mobile Money</Text>
@@ -124,7 +126,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
             </View>
           )}
 
-          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {step === 'operator' && (
               <>
                 <Text style={styles.sectionLabel}>Choisir l'opérateur</Text>
@@ -174,6 +176,9 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                     placeholder="+237 6XX XXX XXX"
                     placeholderTextColor={Colors.textMuted}
                     keyboardType="phone-pad"
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    accessibilityLabel={`Numéro de réception ${operator?.label ?? ''}`}
                   />
                 </View>
 
@@ -210,6 +215,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                   ))}
                 </View>
 
+
                 <View style={styles.limitNote}>
                   <Text style={styles.limitText}>Min: 500 FCFA · Max: 500 000 FCFA</Text>
                   {dailyLimit > 0 && (
@@ -221,16 +227,13 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
 
                 {error && <Text style={styles.errorText}>{error}</Text>}
 
-                {loading ? (
-                  <ActivityIndicator color={Colors.orange} style={{ marginTop: Spacing.md }} />
-                ) : (
-                  <Button
-                    label={`Retirer${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
-                    onPress={handleWithdraw}
-                    disabled={amt < 500 || loading}
-                    fullWidth
-                  />
-                )}
+                <Button
+                  label={`Retirer${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
+                  onPress={handleWithdraw}
+                  loading={loading}
+                  disabled={loading || amt < 500}
+                  fullWidth
+                />
               </>
             )}
 
@@ -249,6 +252,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
             )}
           </ScrollView>
         </Animated.View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -266,8 +270,8 @@ const styles = StyleSheet.create({
   backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
   sectionLabel: {
-    color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold,
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: Spacing.sm,
+    color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
+    marginBottom: Spacing.sm,
   },
   opCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
@@ -301,7 +305,7 @@ const styles = StyleSheet.create({
   quickGrid: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   quickBtn: {
     flex: 1, minWidth: '22%', backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center',
+    borderRadius: BorderRadius.sm, minHeight: 44, alignItems: 'center', justifyContent: 'center',
   },
   quickBtnText: { color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium },
   limitNote: { alignItems: 'center' },

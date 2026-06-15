@@ -214,8 +214,8 @@ const styles = StyleSheet.create({
   heroIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
   heroAmount: { fontSize: 36, fontWeight: Typography.black },
   sectionTitle: {
-    color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold,
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: Spacing.md,
+    color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
+    marginBottom: Spacing.md,
   },
   timeline: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,

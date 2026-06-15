@@ -8,6 +8,8 @@ import {
   Share,
   ScrollView,
   Animated,
+  TextInput,
+  AccessibilityInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,39 +29,50 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const { user } = useStore();
   const [activeTab, setActiveTab] = useState<'static' | 'dynamic'>('static');
   const [dynamicAmount, setDynamicAmount] = useState('');
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+  }, []);
 
   // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
   const enter = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (visible) {
-      Animated.spring(enter, {
-        toValue: 1,
-        damping: Animation.spring.damping,
-        stiffness: Animation.spring.stiffness,
-        useNativeDriver: true,
-      }).start();
+      if (reduceMotion) {
+        enter.setValue(1);
+      } else {
+        Animated.spring(enter, {
+          toValue: 1,
+          damping: Animation.spring.damping,
+          stiffness: Animation.spring.stiffness,
+          useNativeDriver: true,
+        }).start();
+      }
     } else {
       enter.setValue(0);
     }
-  }, [visible, enter]);
+  }, [visible, reduceMotion, enter]);
   const animStyle = {
     opacity: enter,
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
   };
 
-  const qrValue = `camwallet://pay?to=${user.phone.replace(/\s/g, '')}&name=${encodeURIComponent(user.name)}${dynamicAmount ? `&amount=${dynamicAmount}` : ''}`;
+  const rawPhone = (user?.phone ?? '').replace(/\s/g, '');
+  const displayPhone = formatPhone(user?.phone ?? '');
+  const qrValue = `camwallet://pay?to=${rawPhone}&name=${encodeURIComponent(user?.name ?? '')}${dynamicAmount ? `&amount=${dynamicAmount}` : ''}`;
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Payez-moi via CamWallet\n${formatPhone(user.phone)}\nRéférence: ${user.phone.replace(/\s/g, '')}`,
+        message: `Payez-moi via CamWallet\n${displayPhone}\nRéférence: ${rawPhone}`,
         title: 'CamWallet — Mon QR de paiement',
       });
     } catch {}
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
         <Animated.View style={[styles.flex, animStyle]}>
           {/* Header */}
@@ -114,8 +127,8 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
 
           {/* User info */}
           <View style={styles.infoCard}>
-            <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userPhone}>{formatPhone(user.phone)}</Text>
+            <Text style={styles.userName}>{user?.name ?? '—'}</Text>
+            <Text style={styles.userPhone}>{displayPhone || '—'}</Text>
             {activeTab === 'static' && (
               <Text style={styles.infoNote}>Ce QR code est permanent. Partagez-le librement.</Text>
             )}
@@ -126,8 +139,17 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
             <View style={styles.dynamicWrap}>
               <Text style={styles.dynamicLabel}>Montant spécifique (optionnel)</Text>
               <View style={styles.inputRow}>
+                <TextInput
+                  style={styles.dynamicInput}
+                  value={dynamicAmount}
+                  onChangeText={(v) => setDynamicAmount(v.replace(/\D/g, ''))}
+                  placeholder="0"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="numeric"
+                  autoCorrect={false}
+                  accessibilityLabel="Montant à encoder dans le QR code"
+                />
                 <Text style={styles.currency}>FCFA</Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: Colors.border }} />
               </View>
               <Text style={styles.dynamicNote}>
                 Le QR dynamique expire dans 15 minutes et inclut le montant exact.
@@ -141,10 +163,15 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
               {[500, 1000, 2000, 5000].map((q) => (
                 <TouchableOpacity
                   key={q}
-                  style={styles.quickBtn}
+                  style={[styles.quickBtn, dynamicAmount === q.toString() && styles.quickBtnActive]}
                   onPress={() => setDynamicAmount(q.toString())}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${q.toLocaleString('fr-FR')} FCFA`}
                 >
-                  <Text style={styles.quickBtnText}>{(q / 1000).toLocaleString('fr-FR')}k</Text>
+                  <Text style={[styles.quickBtnText, dynamicAmount === q.toString() && styles.quickBtnTextActive]}>
+                    {q < 1000 ? `${q}` : `${(q / 1000).toLocaleString('fr-FR')}k`}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -203,12 +230,22 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card, borderRadius: BorderRadius.md,
     borderWidth: 1, borderColor: Colors.border, padding: Spacing.md,
   },
+  dynamicInput: {
+    flex: 1,
+    fontSize: Typography.xl,
+    fontWeight: Typography.bold,
+    color: Colors.text,
+    textAlign: 'right',
+    paddingVertical: 0,
+  },
   currency: { color: Colors.textSoft, fontSize: Typography.base },
   dynamicNote: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: Spacing.sm },
   quickAmounts: { flexDirection: 'row', gap: Spacing.sm, width: '100%' },
   quickBtn: {
     flex: 1, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center',
+    borderRadius: BorderRadius.sm, minHeight: 44, alignItems: 'center', justifyContent: 'center',
   },
+  quickBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
   quickBtnText: { color: Colors.textSoft, fontSize: Typography.sm },
+  quickBtnTextActive: { color: Colors.primary, fontWeight: Typography.semibold },
 });

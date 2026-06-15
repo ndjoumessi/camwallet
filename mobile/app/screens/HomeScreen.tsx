@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  Animated,
+  Easing,
+  AccessibilityInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +29,7 @@ const { width } = Dimensions.get('window');
 type ModalType = 'send' | 'receive' | 'recharge' | 'withdraw' | 'scan' | null;
 
 const QUICK_AMOUNTS = [5000, 10000, 25000];
+const BALANCE_CARD_GRADIENT: [string, string] = ['#0d2a1f', '#0a1628'];
 
 export default function HomeScreen() {
   const { user, balance, showBalance, toggleShowBalance, recentContacts, transactions, fetchBalance, fetchHistory, openTransaction } = useStore();
@@ -33,6 +37,38 @@ export default function HomeScreen() {
   const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [loyalty, setLoyalty] = useState<{ points: number; nextReward: number } | null>(null);
+
+  // Animation d'entrée — balance card + stagger des boutons d'action
+  const cardEnter = useRef(new Animated.Value(0)).current;
+  const actionAnims = useRef(Array.from({ length: 5 }, () => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    const runEntrance = () => {
+      Animated.parallel([
+        Animated.timing(cardEnter, {
+          toValue: 1, duration: 350, delay: 50,
+          easing: Easing.out(Easing.quad), useNativeDriver: true,
+        }),
+        Animated.stagger(60, actionAnims.map((a) =>
+          Animated.timing(a, {
+            toValue: 1, duration: 220, delay: 200,
+            easing: Easing.out(Easing.quad), useNativeDriver: true,
+          })
+        )),
+      ]).start();
+    };
+
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((rm) => {
+        if (rm) {
+          cardEnter.setValue(1);
+          actionAnims.forEach((a) => a.setValue(1));
+        } else {
+          runEntrance();
+        }
+      })
+      .catch(runEntrance);
+  }, []);
 
   useEffect(() => {
     loyaltyApi.getPoints().then(setLoyalty).catch(() => {
@@ -75,19 +111,19 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>{t('home.greeting')}</Text>
             <Text style={styles.userName}>{user.name.split(' ')[0]}</Text>
           </View>
-          <TouchableOpacity onPress={() => {}}>
-            <LinearGradient
-              colors={[Colors.primary, Colors.blue]}
-              style={styles.avatarGradient}
-            >
-              <Text style={styles.avatarText}>{user.avatar}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          <View style={styles.avatarGradient} accessibilityElementsHidden>
+            <Text style={styles.avatarText}>{user.avatar}</Text>
+          </View>
         </View>
 
         {/* Balance Card */}
+        <Animated.View style={{
+          marginBottom: Spacing.xl,
+          opacity: cardEnter,
+          transform: [{ translateY: cardEnter.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+        }}>
         <LinearGradient
-          colors={['#0d2a1f', '#0a1628']}
+          colors={BALANCE_CARD_GRADIENT}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.balanceCard}
@@ -119,6 +155,7 @@ export default function HomeScreen() {
             <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
           </View>
         </LinearGradient>
+        </Animated.View>
 
         {/* Bannière fidélité */}
         {loyalty !== null && (
@@ -136,23 +173,27 @@ export default function HomeScreen() {
           style={styles.actionScroll}
           contentContainerStyle={styles.actionGrid}
         >
-          {ACTION_BTNS.map((a) => (
-            <TouchableOpacity
+          {ACTION_BTNS.map((a, idx) => (
+            <Animated.View
               key={a.modal}
-              style={styles.actionBtn}
-              onPress={() => setActiveModal(a.modal)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={a.label}
+              style={{
+                opacity: actionAnims[idx],
+                transform: [{ translateY: actionAnims[idx].interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+              }}
             >
-              <LinearGradient
-                colors={[a.color + '30', a.color + '15']}
-                style={[styles.actionIcon, { borderColor: a.color + '50' }]}
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => setActiveModal(a.modal)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={a.label}
               >
-                <Ionicons name={a.icon} size={20} color={a.color} />
-              </LinearGradient>
-              <Text style={styles.actionLabel}>{a.label}</Text>
-            </TouchableOpacity>
+                <View style={[styles.actionIcon, { backgroundColor: a.color + '20', borderColor: a.color + '40' }]}>
+                  <Ionicons name={a.icon} size={20} color={a.color} />
+                </View>
+                <Text style={styles.actionLabel}>{a.label}</Text>
+              </TouchableOpacity>
+            </Animated.View>
           ))}
         </ScrollView>
 
@@ -254,6 +295,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -263,7 +305,6 @@ const styles = StyleSheet.create({
   balanceCard: {
     borderRadius: BorderRadius.xxl,
     padding: Spacing.xxl,
-    marginBottom: Spacing.xl,
     borderWidth: 1,
     borderColor: Colors.primary + '30',
     overflow: 'hidden',
@@ -336,7 +377,7 @@ const styles = StyleSheet.create({
 
   // Contacts
   contactsScroll: { marginBottom: Spacing.xxl },
-  contactsContent: { gap: Spacing.lg, paddingVertical: 8 },
+  contactsContent: { gap: Spacing.lg, paddingVertical: Spacing.sm },
   contactItem: { alignItems: 'center', gap: 6 },
   contactName: { color: Colors.textSoft, fontSize: Typography.xs },
 

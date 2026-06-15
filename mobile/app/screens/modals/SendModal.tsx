@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,10 @@ import {
   Animated,
   Linking,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
+
+const { width: SCREEN_W } = Dimensions.get('window');
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
@@ -48,6 +51,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const [pinErrMsg, setPinErrMsg] = useState('PIN incorrect');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [txRef, setTxRef] = useState('');
+  const [txDate, setTxDate] = useState('');
   const shake = useRef(new Animated.Value(0)).current;
 
   // Pré-remplit le destinataire depuis un QR scanné et saute à l'étape montant.
@@ -64,11 +69,6 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     setStep('amount');
   }, [visible, initialRecipient]);
 
-  const ref = `TX_${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
-  const dateStr = new Date().toLocaleString('fr-FR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
 
   const reset = () => {
     setStep('contact');
@@ -81,6 +81,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     setPinErrMsg('PIN incorrect');
     setSending(false);
     setSendError(null);
+    setTxRef('');
+    setTxDate('');
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -104,7 +106,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
   };
 
-  const triggerShake = () => {
+  const triggerShake = useCallback(() => {
     Animated.sequence([
       Animated.timing(shake, { toValue: 10, duration: 60, useNativeDriver: true }),
       Animated.timing(shake, { toValue: -10, duration: 60, useNativeDriver: true }),
@@ -112,7 +114,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       Animated.timing(shake, { toValue: -6, duration: 60, useNativeDriver: true }),
       Animated.timing(shake, { toValue: 0, duration: 60, useNativeDriver: true }),
     ]).start();
-  };
+  }, [shake]);
 
   const handlePin = async (digit: string) => {
     if (pin.length >= 6 || sending) return;
@@ -142,6 +144,11 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       // PIN validé — envoi de la transaction
       const recipientPhone = normalizePhone(selectedContact!.phone);
       await sendMoney(recipientPhone, amt, motif || undefined);
+      setTxRef(`TX_${Math.random().toString(36).slice(2, 10).toUpperCase()}`);
+      setTxDate(new Date().toLocaleString('fr-FR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      }));
       setStep('done');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
@@ -159,14 +166,14 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const amt = parseInt(amount) || 0;
   const canSend = amt >= 100 && amt <= balance - FRAIS;
 
-  const waText = encodeURIComponent(
+  const waText = useMemo(() => encodeURIComponent(
     `🧾 *REÇU CAMWALLET*\n━━━━━━━━━━━━━━━━━━\n✅ *Transfert réussi*\n\n` +
     `💰 *Montant :* ${amt.toLocaleString('fr-FR')} FCFA\n` +
     `💳 *Frais :* ${FRAIS} FCFA\n` +
     `💵 *Total débité :* ${(amt + FRAIS).toLocaleString('fr-FR')} FCFA\n` +
     `${motif ? `📝 *Motif :* ${motif}\n` : ''}` +
-    `🔖 *Réf :* ${ref}\n📅 *Date :* ${dateStr}\n━━━━━━━━━━━━━━━━━━\n_CamWallet — Cameroun_`
-  );
+    `🔖 *Réf :* ${txRef}\n📅 *Date :* ${txDate}\n━━━━━━━━━━━━━━━━━━\n_CamWallet — Cameroun_`
+  ), [amt, motif, txRef, txDate]);
 
   const renderStep = () => {
     switch (step) {
@@ -265,13 +272,15 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               {[1000, 2000, 5000, 10000].map((q) => (
                 <TouchableOpacity
                   key={q}
-                  style={styles.quickBtn}
+                  style={[styles.quickBtn, parseInt(amount) === q && styles.quickBtnActive]}
                   onPress={() => setAmount(q.toString())}
                   activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel={`${q.toLocaleString('fr-FR')} FCFA`}
                 >
-                  <Text style={styles.quickBtnText}>{(q / 1000).toLocaleString('fr-FR')}k</Text>
+                  <Text style={[styles.quickBtnText, parseInt(amount) === q && styles.quickBtnTextActive]}>
+                    {(q / 1000).toLocaleString('fr-FR')}k
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -285,6 +294,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 placeholder="Motif (optionnel)"
                 placeholderTextColor={Colors.textMuted}
                 maxLength={60}
+                returnKeyType="done"
+                accessibilityLabel="Motif du transfert (optionnel)"
               />
               <Text style={styles.motifCount}>{motif.length}/60</Text>
             </View>
@@ -390,8 +401,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 ['Frais', `${FRAIS} FCFA`],
                 ['Total débité', `${(amt + FRAIS).toLocaleString('fr-FR')} FCFA`],
                 ...(motif ? [['Motif', motif]] : []),
-                ['Référence', ref],
-                ['Date', dateStr],
+                ['Référence', txRef],
+                ['Date', txDate],
               ].map(([label, value], i) => (
                 <View key={i} style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>{label}</Text>
@@ -470,9 +481,8 @@ const styles = StyleSheet.create({
   backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
   sectionLabel: {
-    color: Colors.textMuted, fontSize: Typography.xs,
-    fontWeight: Typography.bold, letterSpacing: 1,
-    textTransform: 'uppercase', marginBottom: Spacing.sm,
+    color: Colors.textMuted, fontSize: Typography.sm,
+    fontWeight: Typography.semibold, marginBottom: Spacing.sm,
   },
   phoneInputRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md,
@@ -509,9 +519,11 @@ const styles = StyleSheet.create({
   quickAmounts: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
   quickBtn: {
     flex: 1, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center',
+    borderRadius: BorderRadius.sm, minHeight: 44, alignItems: 'center', justifyContent: 'center',
   },
+  quickBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
   quickBtnText: { color: Colors.textSoft, fontSize: Typography.sm },
+  quickBtnTextActive: { color: Colors.primary, fontWeight: Typography.semibold },
   motifRow: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
     borderRadius: BorderRadius.md, padding: Spacing.md, marginBottom: Spacing.md,

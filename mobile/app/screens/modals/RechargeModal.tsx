@@ -8,7 +8,8 @@ import {
   TextInput,
   ScrollView,
   Animated,
-  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -114,15 +115,16 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
   const amt = parseInt(amount) || 0;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <Animated.View style={[styles.flex, animStyle]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Recharger mon compte</Text>
             <IconButton icon="close" onPress={handleClose} accessibilityLabel="Fermer" />
           </View>
 
-          {step !== 'method' && (
+          {step === 'amount' && (
             <View style={styles.backRow}>
               <IconButton
                 icon="arrow-back"
@@ -134,7 +136,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
             </View>
           )}
 
-          <ScrollView contentContainerStyle={styles.body}>
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {step === 'method' && (
             <>
               <Text style={styles.sectionLabel}>Choisir la méthode</Text>
@@ -186,6 +188,9 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                     placeholder="+237 6XX XXX XXX"
                     placeholderTextColor={Colors.textMuted}
                     keyboardType="phone-pad"
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    accessibilityLabel={`Numéro ${method?.label?.split(' ')[0] ?? ''}`}
                   />
                 </View>
               )}
@@ -219,7 +224,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                     onPress={() => setAmount(q.toString())}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={`${q.toLocaleString('fr-FR')} FCFA`}
+                    accessibilityLabel={IS_SANDBOX ? `${q} FCFA` : `${q.toLocaleString('fr-FR')} FCFA`}
                   >
                     <Text style={[styles.quickBtnText, parseInt(amount) === q && { color: method.color }]}>
                       {IS_SANDBOX ? q.toString() : `${(q / 1000).toLocaleString('fr-FR')}k`}
@@ -236,16 +241,13 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
 
               {error && <Text style={styles.errorText}>{error}</Text>}
 
-              {loading ? (
-                <ActivityIndicator color={Colors.primary} style={{ marginTop: Spacing.md }} />
-              ) : (
-                <Button
-                  label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
-                  onPress={handleRecharge}
-                  disabled={IS_SANDBOX ? (amt < 1 || amt > 25) : (amt < 500)}
-                  fullWidth
-                />
-              )}
+              <Button
+                label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
+                onPress={handleRecharge}
+                loading={loading}
+                disabled={loading || (IS_SANDBOX ? (amt < 1 || amt > 25) : (amt < 500))}
+                fullWidth
+              />
             </>
           )}
 
@@ -264,6 +266,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
           )}
           </ScrollView>
         </Animated.View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -281,8 +284,8 @@ const styles = StyleSheet.create({
   backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
   sectionLabel: {
-    color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold,
-    letterSpacing: 1, textTransform: 'uppercase', marginBottom: Spacing.sm,
+    color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
+    marginBottom: Spacing.sm,
   },
   methodCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
@@ -309,7 +312,7 @@ const styles = StyleSheet.create({
   quickGrid: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
   quickBtn: {
     flex: 1, minWidth: '22%', backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center',
+    borderRadius: BorderRadius.sm, minHeight: 44, alignItems: 'center', justifyContent: 'center',
   },
   quickBtnText: { color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium },
   limitNote: { alignItems: 'center' },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -91,7 +91,7 @@ export default function HistoryScreen() {
     fetchHistoryPage(1);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = transactions.filter((tx) => {
+  const filtered = useMemo(() => transactions.filter((tx) => {
     const matchFilter =
       activeFilter === 'Tout' ||
       (activeFilter === 'Envois' && (tx.type === 'sent' || tx.type === 'qr_payment')) ||
@@ -100,7 +100,7 @@ export default function HistoryScreen() {
       (activeFilter === 'Retraits' && tx.type === 'withdrawal');
     const matchSearch = search === '' || tx.name.toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
-  });
+  }), [transactions, activeFilter, search]);
 
   const exportPdf = async () => {
     if (filtered.length === 0) {
@@ -193,6 +193,8 @@ export default function HistoryScreen() {
           onChangeText={setSearch}
           placeholder="Rechercher une transaction…"
           placeholderTextColor={Colors.textMuted}
+          accessibilityLabel="Rechercher une transaction"
+          autoCorrect={false}
         />
         {search !== '' && (
           <IconButton
@@ -293,16 +295,16 @@ const styles = StyleSheet.create({
   filterContent: {
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: 8,
+    paddingVertical: Spacing.sm,
   },
   filterChip: {
     backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 18, height: 36, paddingHorizontal: 16,
+    borderRadius: 18, minHeight: 44, paddingHorizontal: 16,
     alignItems: 'center', justifyContent: 'center',
   },
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterText: { color: '#64748B', fontSize: Typography.sm, fontWeight: Typography.medium },
-  filterTextActive: { color: Colors.white, fontWeight: '700' as const },
+  filterText: { color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.medium },
+  filterTextActive: { color: Colors.white, fontWeight: Typography.bold },
   flatList: { flex: 1 },
   list: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   listEmpty: { flexGrow: 1, paddingHorizontal: Spacing.lg },
@@ -324,45 +326,4 @@ const styles = StyleSheet.create({
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
   listFooter: { alignItems: 'center', paddingVertical: Spacing.md },
   listFooterText: { color: Colors.textMuted, fontSize: Typography.sm },
-
-  // Modale détail
-  detailSheet: { flex: 1, backgroundColor: Colors.surface },
-  detailHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  detailTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  detailBody: { padding: Spacing.xl, gap: Spacing.md },
-  detailHero: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.md },
-  detailIcon: {
-    width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center',
-  },
-  detailAmount: { fontSize: 36, fontWeight: Typography.black },
-  detailRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.md, padding: Spacing.md,
-  },
-  detailRowLabel: { color: Colors.textMuted, fontSize: Typography.sm, flex: 1 },
-  detailRowValue: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold, flex: 2, textAlign: 'right' },
-  disputeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
-    backgroundColor: Colors.yellow + '15', borderWidth: 1, borderColor: Colors.yellow + '40',
-    borderRadius: BorderRadius.md, padding: Spacing.md,
-    justifyContent: 'center',
-  },
-  disputeBtnText: { color: Colors.yellow, fontSize: Typography.base, fontWeight: Typography.bold },
-  disputeForm: {
-    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.yellow + '40',
-    borderRadius: BorderRadius.md, padding: Spacing.md, gap: Spacing.sm,
-  },
-  disputeFormTitle: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.bold },
-  disputeInput: {
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text,
-    fontSize: Typography.base, textAlignVertical: 'top', minHeight: 80,
-  },
-  disputeActionBtn: {
-    flex: 1, borderRadius: BorderRadius.sm, padding: Spacing.md, alignItems: 'center',
-  },
 });

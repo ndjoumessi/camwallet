@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StatusBar,
   Pressable,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -32,12 +33,14 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
 
   const [phone, setPhone] = useState('+237');
   const [pin, setPin] = useState('');
+  const pinRef = useRef<TextInput>(null);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [bioEnabled, setBioEnabled] = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
   const [showBioPrompt, setShowBioPrompt] = useState(false);
 
-  const canSubmit = phone.trim().length >= 8 && pin.length === 6 && !loading;
+  const isPhoneValid = /^\+237[62]\d{8}$/.test(phone.trim().replace(/\s/g, ''));
+  const canSubmit = isPhoneValid && pin.length === 6 && !loading;
 
   // Vérifie si la biométrie est activée et disponible
   useEffect(() => {
@@ -141,7 +144,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
         <View style={styles.container}>
@@ -165,7 +168,10 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               accessibilityRole="button"
               accessibilityLabel="Se connecter avec la biométrie"
             >
-              <Text style={styles.bioBtnIcon}>🔑</Text>
+              {bioLoading
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <Text style={styles.bioBtnIcon}>🔑</Text>
+              }
               <Text style={styles.bioBtnText}>
                 {bioLoading ? 'Vérification…' : 'Se connecter avec Face ID / Empreinte'}
               </Text>
@@ -194,6 +200,9 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               autoCapitalize="none"
               autoCorrect={false}
               editable={!loading}
+              returnKeyType="next"
+              onSubmitEditing={() => pinRef.current?.focus()}
+              blurOnSubmit={false}
             />
           </View>
 
@@ -201,6 +210,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
           <View style={styles.field}>
             <Text style={styles.label}>Code PIN</Text>
             <TextInput
+              ref={pinRef}
               style={styles.input}
               value={pin}
               onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))}
@@ -210,6 +220,8 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               secureTextEntry
               maxLength={6}
               editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={() => { if (canSubmit) handleLogin(); }}
             />
             <View style={styles.pinDots}>
               {Array.from({ length: 6 }).map((_, i) => (
@@ -221,7 +233,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
             </View>
           </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          {error ? <Text style={styles.error} numberOfLines={3}>{error}</Text> : null}
 
           <Button
             label="Se connecter"
@@ -245,7 +257,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
             </Pressable>
           ) : null}
 
-          <Text style={styles.hint}>Test : +237677000001 · PIN 123456</Text>
+          {__DEV__ && <Text style={styles.hint}>Test : +237677000001 · PIN 123456</Text>}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

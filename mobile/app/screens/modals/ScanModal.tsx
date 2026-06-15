@@ -7,7 +7,12 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const SCAN_BOX_SIZE = Math.min(Math.max(SCREEN_W - 96, 240), 300);
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -98,7 +103,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
     }
   };
 
-  const scanLineTranslate = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, 180] });
+  const scanLineTranslate = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, SCAN_BOX_SIZE - 60] });
   const granted = permission?.granted ?? false;
 
   // Micro-animation d'entrée (translateY + opacité) déclenchée à l'ouverture.
@@ -129,7 +134,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
           <IconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" />
         </View>
 
-        <View style={styles.body}>
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
           <View style={styles.hintRow} accessibilityLiveRegion="polite">
             <Ionicons
               name={scanned ? 'checkmark-circle' : error ? 'warning-outline' : 'qr-code-outline'}
@@ -226,7 +231,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
           >
             <Text style={styles.cancelText}>Annuler</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
         </Animated.View>
       </SafeAreaView>
     </Modal>
@@ -241,11 +246,11 @@ const styles = StyleSheet.create({
     padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
-  body: { flex: 1, alignItems: 'center', paddingTop: Spacing.xxl, gap: Spacing.xl },
+  body: { flexGrow: 1, alignItems: 'center', paddingTop: Spacing.xxl, paddingBottom: Spacing.xl, gap: Spacing.xl },
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   hint: { color: Colors.textSoft, fontSize: Typography.base },
   scanBox: {
-    width: 240, height: 240, borderRadius: BorderRadius.lg,
+    width: SCAN_BOX_SIZE, height: SCAN_BOX_SIZE, borderRadius: BorderRadius.lg,
     backgroundColor: '#000',
     position: 'relative', overflow: 'hidden',
   },
@@ -288,6 +293,6 @@ const styles = StyleSheet.create({
   resultAvatarText: { color: Colors.yellow, fontWeight: Typography.black, fontSize: Typography.sm },
   resultName: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
   resultPhone: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
-  cancelBtn: { padding: Spacing.md },
+  cancelBtn: { padding: Spacing.md, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: Colors.textMuted, fontSize: Typography.base },
 });
