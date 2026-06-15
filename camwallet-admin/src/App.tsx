@@ -177,29 +177,33 @@ function useDebounced<T>(value: T, ms: number): T {
 }
 
 // ── SSE temps réel ────────────────────────────────────────
-// Se connecte au flux SSE /admin/events et appelle onEvent pour chaque message.
-// La reconnexion automatique est gérée nativement par EventSource.
+// Flux en 2 étapes pour éviter que le JWT transite dans l'URL (loggée côté
+// serveur, visible dans l'historique browser et les headers Referer) :
+// 1. POST /admin/sse-ticket (Authorization: Bearer JWT) → ticket opaque 60s
+// 2. GET  /admin/events?ticket=<opaque>  (ticket single-use)
 function useLiveEvents(onEvent: (e: { type: string; payload?: any }) => void) {
   useEffect(() => {
-    const token = localStorage.getItem('cw_admin_access')
-    if (!token) return
-
     const base = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
-    const url = `${base}/api/v1/admin/events?token=${encodeURIComponent(token)}`
-    const source = new EventSource(url)
+    let source: EventSource | null = null
+    let cancelled = false
 
-    source.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        onEvent(data)
-      } catch { /* payload non-JSON, ignorer */ }
+    // Étape 1 : obtenir un ticket opaque via l'API JSON classique (JWT en header)
+    request<{ ticket: string }>(`${base}/api/v1/admin/sse-ticket`, { method: 'POST' })
+      .then(({ ticket }) => {
+        if (cancelled) return
+        // Étape 2 : ouvrir le flux SSE avec le ticket (pas de JWT dans l'URL)
+        source = new EventSource(`${base}/api/v1/admin/events?ticket=${encodeURIComponent(ticket)}`)
+        source.onmessage = (event) => {
+          try { onEvent(JSON.parse(event.data)) } catch { /* ignorer */ }
+        }
+        // EventSource gère la reconnexion automatiquement — pas d'action nécessaire.
+      })
+      .catch(() => { /* Pas de SSE si le ticket échoue (ex: non connecté) */ })
+
+    return () => {
+      cancelled = true
+      source?.close()
     }
-
-    source.onerror = () => {
-      // Reconnexion automatique gérée par le navigateur (EventSource natif)
-    }
-
-    return () => source.close()
   }, [onEvent])
 }
 

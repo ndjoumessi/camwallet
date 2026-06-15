@@ -18,7 +18,6 @@ import {
 } from '@nestjs/common';
 import { Observable, merge, interval } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { JwtService } from '@nestjs/jwt';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { SseService } from '../sse/sse.module';
 import { AuthGuard } from '@nestjs/passport';
@@ -36,7 +35,6 @@ export class AdminController {
   constructor(
     private adminService: AdminService,
     private readonly sseService: SseService,
-    private readonly jwtService: JwtService,
   ) {}
 
   @Get('stats')
@@ -297,17 +295,29 @@ export class AdminController {
   }
 
   // ─── SSE temps réel ──────────────────────────────────────────────────────────
+  // Pattern ticket opaque : le JWT ne transite jamais dans l'URL (qui est loguée
+  // côté serveur, dans l'historique browser et les headers Referer).
+  // 1. POST /admin/sse-ticket  (JWT Authorization header → ticket UUID 60s)
+  // 2. GET  /admin/events?ticket=<uuid>  (ticket single-use, pas de JWT dans l'URL)
+
+  @Post('sse-ticket')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Émet un ticket SSE opaque à usage unique (60 s)' })
+  createSseTicket(@Request() req: any) {
+    const ticket = this.sseService.createTicket(req.user.id);
+    return { ticket };
+  }
 
   @Get('events')
   @Sse()
-  @ApiOperation({ summary: 'Flux SSE temps réel (transactions, users, kyc)' })
-  liveEvents(@Query('token') token: string): Observable<MessageEvent> {
-    try {
-      this.jwtService.verify(token, { secret: process.env.JWT_ACCESS_SECRET });
-    } catch {
-      return new Observable(subscriber => {
-        subscriber.next({ data: { error: 'Non autorisé' } } as MessageEvent);
-        subscriber.complete();
+  @ApiOperation({ summary: 'Flux SSE temps réel — authentifié par ticket opaque' })
+  liveEvents(@Query('ticket') ticket: string): Observable<MessageEvent> {
+    const userId = this.sseService.consumeTicket(ticket ?? '');
+    if (!userId) {
+      // Ticket inconnu, expiré ou déjà consommé → fermeture immédiate du flux.
+      return new Observable(sub => {
+        sub.next({ data: { error: 'Ticket SSE invalide ou expiré' } } as MessageEvent);
+        sub.complete();
       });
     }
 

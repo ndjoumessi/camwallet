@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import QRLib from 'qrcode';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { merchantApi, MerchantStatsResponse, MerchantTransaction } from '../../src/lib/api';
 
@@ -96,28 +97,34 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
   const handlePrintQr = async () => {
     if (!qrValue) return;
     const amountFcfa = parseInt(qrAmount, 10) || 0;
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head><meta charset="utf-8"><style>
-        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
-        h1 { color: #00C896; font-size: 24px; margin-bottom: 8px; }
-        .amount { font-size: 32px; font-weight: bold; color: #0F172A; margin: 16px 0; }
-        .qr-container { border: 3px solid #00C896; border-radius: 16px; padding: 20px; margin: 20px 0; }
-        img { width: 220px; height: 220px; }
-        .footer { color: #64748B; font-size: 12px; margin-top: 24px; text-align: center; }
-      </style></head>
-      <body>
-        <h1>CamWallet — QR de paiement</h1>
-        <div class="amount">${amountFcfa.toLocaleString('fr-FR')} FCFA</div>
-        <div class="qr-container">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrValue)}" />
-        </div>
-        <p class="footer">Scannez ce QR avec l'application CamWallet pour payer</p>
-      </body>
-      </html>
-    `;
     try {
+      // QR généré localement en SVG — aucune donnée ne quitte l'appareil.
+      const svg = await QRLib.toString(qrValue, { type: 'svg', width: 220, margin: 2 });
+      const svgB64 = btoa(unescape(encodeURIComponent(svg)));
+      const qrDataUri = `data:image/svg+xml;base64,${svgB64}`;
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><style>
+          body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
+          h1 { color: #00C896; font-size: 24px; margin-bottom: 8px; }
+          .amount { font-size: 32px; font-weight: bold; color: #0F172A; margin: 16px 0; }
+          .qr-container { border: 3px solid #00C896; border-radius: 16px; padding: 20px; margin: 20px 0; }
+          img { width: 220px; height: 220px; }
+          .footer { color: #64748B; font-size: 12px; margin-top: 24px; text-align: center; }
+        </style></head>
+        <body>
+          <h1>CamWallet — QR de paiement</h1>
+          <div class="amount">${amountFcfa.toLocaleString('fr-FR')} FCFA</div>
+          <div class="qr-container">
+            <img src="${qrDataUri}" />
+          </div>
+          <p class="footer">Scannez ce QR avec l'application CamWallet pour payer</p>
+        </body>
+        </html>
+      `;
+
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Partager le QR de paiement' });

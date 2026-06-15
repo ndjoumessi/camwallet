@@ -20,6 +20,15 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
 
+  // Trust proxy : activer uniquement quand l'app est derrière un reverse proxy
+  // connu (Nginx, Caddy, load balancer cloud). Sinon Express se fie à
+  // req.socket.remoteAddress et ignore les headers X-Forwarded-For (spoofables).
+  const trustProxy = configService.get<string>('TRUST_PROXY', '');
+  if (trustProxy && trustProxy !== 'false') {
+    // Accepte '1', 'loopback', un CIDR ou 'true' (= toutes les IPs proxies).
+    app.getHttpAdapter().getInstance().set('trust proxy', trustProxy === 'true' ? 1 : trustProxy);
+  }
+
   // Sécurité
   app.use(helmet());
   app.use(compression());

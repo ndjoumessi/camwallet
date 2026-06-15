@@ -120,7 +120,7 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 
 - [x] **[Infra] CI/CD GitHub Actions** — `.github/workflows/ci.yml` : 3 jobs (backend Postgres + lint + tests, admin vite build, mobile expo-doctor).
 - [x] **[Infra] Monitoring Sentry** — voir mobile ci-dessus. Datadog / Better Uptime : services externes, hors scope code.
-- [ ] **[Infra] Base de données managée avec backups daily** — migration Supabase/Neon. Reporté.
+- [x] **[Infra] Base de données managée avec backups daily** — `directUrl` dans `schema.prisma` pour Supabase/Neon + exemples dans `.env.example`. Script `scripts/backup.sh` (pg_dump + gzip + rotation 30j, cron-ready).
 - [x] **[Infra] Soft delete users/wallets** — colonnes `deletedAt DateTime?` sur `User` et `Wallet` (migration `add_phase2_models`).
 - [x] **[Infra] CHECK constraint `balance >= 0`** — contrainte PostgreSQL appliquée via migration SQL dédiée `add_balance_check_constraint`.
 
@@ -133,5 +133,5 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
 | 🟠 Haute | 0 *(tous ✅)* | — |
 | 🟡 Moyenne | 0 *(tous ✅)* | — |
-| 🔵 Phase 2 | 1 hors scope | WhatsApp Business API (approbation Meta) |
+| 🔵 Phase 2 | 1 hors scope | WhatsApp Business API officielle (approbation Meta) |
 | **Total** | **61** | |

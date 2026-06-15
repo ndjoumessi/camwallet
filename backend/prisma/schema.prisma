@@ -6,8 +6,13 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // directUrl est utilisé uniquement par Prisma Migrate/Studio (pas les requêtes
+  // runtime). Requis quand DATABASE_URL pointe vers un pooler (Supabase pgBouncer,
+  // Neon serverless) qui ne supporte pas les commandes DDL en transaction mode.
+  // En dev local avec PostgreSQL direct, laisser vide ou commenter.
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
