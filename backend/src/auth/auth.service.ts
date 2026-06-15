@@ -5,6 +5,7 @@ import {
   ConflictException,
   Logger,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -38,6 +39,7 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
     private otpService: OtpService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   // Comparaison à temps constant, indépendante de la longueur (digests SHA-256).
@@ -73,6 +75,9 @@ export class AuthService {
         wallet: { create: {} },
       },
     });
+
+    // Événement temps réel pour le dashboard admin (non bloquant).
+    this.eventEmitter.emit('user.registered', { phone: dto.phone });
 
     await this.otpService.sendOtp(user.id, OtpPurpose.REGISTRATION);
     this.logger.log(`Nouveau compte créé : ${user.phone}`);

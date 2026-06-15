@@ -25,6 +25,8 @@ import { userApi, authApi, MeResponse } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
 import KycModal from './modals/KycModal';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from 'react-i18next';
+import { setLanguage } from '../../src/i18n';
 import * as Haptics from 'expo-haptics';
 
 const BIO_KEY = 'cw_biometric_enabled';
@@ -84,6 +86,8 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [biometric, setBiometric] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const { mode: themeMode, toggleTheme } = useTheme();
+  const { i18n } = useTranslation();
+  const currentLang = i18n.language as 'fr' | 'en';
   const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'pin'>('idle');
   const [deletePin, setDeletePin] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -495,6 +499,22 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 trackColor={{ false: Colors.border, true: Colors.primary }}
                 thumbColor="#fff"
                 accessibilityLabel="Activer les notifications push"
+              />
+            </View>
+            <View style={styles.menuItem}>
+              <View style={styles.menuItemIcon}>
+                <Ionicons name="language-outline" size={20} color={Colors.text} />
+              </View>
+              <View style={styles.menuItemInfo}>
+                <Text style={styles.menuItemLabel}>Langue</Text>
+                <Text style={styles.menuItemDesc}>{currentLang === 'fr' ? 'Français' : 'English'}</Text>
+              </View>
+              <Switch
+                value={currentLang === 'en'}
+                onValueChange={() => setLanguage(currentLang === 'fr' ? 'en' : 'fr')}
+                trackColor={{ false: Colors.border, true: Colors.blue }}
+                thumbColor="#fff"
+                accessibilityLabel="Basculer la langue FR / EN"
               />
             </View>
           </View>

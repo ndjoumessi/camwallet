@@ -22,6 +22,8 @@ import MerchantScreen from './screens/MerchantScreen';
 import { useStore } from './store/useStore';
 import { registerForPushNotifications, addNotificationTapHandler } from '../src/lib/notifications';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { initSentry } from '../src/lib/sentry';
+import { initI18n } from '../src/i18n';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
@@ -42,6 +44,12 @@ function AppContent() {
   const logout = useStore((s) => s.logout);
   const isAuthenticated = useStore((s) => s.isAuthenticated);
   const pushRegistered = useRef(false);
+
+  // Initialisation au démarrage : Sentry + i18n
+  useEffect(() => {
+    initSentry();
+    initI18n();
+  }, []);
 
   // ── Timer d'inactivité (AU-09 CDC) — déconnexion après 15 min sans interaction
   const INACTIVITY_MS = 15 * 60 * 1000;

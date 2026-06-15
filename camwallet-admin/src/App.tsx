@@ -176,6 +176,33 @@ function useDebounced<T>(value: T, ms: number): T {
   return debounced
 }
 
+// ── SSE temps réel ────────────────────────────────────────
+// Se connecte au flux SSE /admin/events et appelle onEvent pour chaque message.
+// La reconnexion automatique est gérée nativement par EventSource.
+function useLiveEvents(onEvent: (e: { type: string; payload?: any }) => void) {
+  useEffect(() => {
+    const token = localStorage.getItem('cw_admin_access')
+    if (!token) return
+
+    const base = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+    const url = `${base}/api/v1/admin/events?token=${encodeURIComponent(token)}`
+    const source = new EventSource(url)
+
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        onEvent(data)
+      } catch { /* payload non-JSON, ignorer */ }
+    }
+
+    source.onerror = () => {
+      // Reconnexion automatique gérée par le navigateur (EventSource natif)
+    }
+
+    return () => source.close()
+  }, [onEvent])
+}
+
 // ── Status badges ─────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string, text: string, label: string, icon?: LucideIcon }> = {
@@ -265,8 +292,8 @@ const ChartTooltip = ({ active, payload, label }: any) => {
 // ── Pages ────────────────────────────────────────────────
 function DashboardPage() {
   // Sources indépendantes : l'échec de l'une n'efface pas l'autre.
-  const { data: stats, loading: statsLoading, error: statsError } = useFetch(() => getStats(), [])
-  const { data: recentData, loading: recentLoading, error: recentError } = useFetch(
+  const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useFetch(() => getStats(), [])
+  const { data: recentData, loading: recentLoading, error: recentError, refetch: refetchRecent } = useFetch(
     () => getTransactions({ limit: 5 }), [],
   )
   const recent = recentData?.data ?? []
@@ -274,6 +301,21 @@ function DashboardPage() {
   // Séries temporelles réelles (volume, frais, tx, users) selon la période.
   const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
   const { data: ts } = useFetch(() => getTimeseries(period), [period])
+
+  // ── Flux SSE temps réel ────────────────────────────────
+  const [liveCount, setLiveCount] = useState(0)
+  const [lastEvent, setLastEvent] = useState<{ type: string; time: string } | null>(null)
+
+  const handleLiveEvent = useCallback((event: { type: string; payload?: any }) => {
+    if (event.type === 'ping') return
+    setLiveCount(c => c + 1)
+    setLastEvent({ type: event.type, time: new Date().toLocaleTimeString('fr-FR') })
+    refetchStats()
+    refetchRecent()
+  }, [refetchStats, refetchRecent])
+
+  useLiveEvents(handleLiveEvent)
+
   const chart = (ts?.series ?? []).map((p) => ({
     date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
     volume: toFcfa(p.volume),
@@ -295,9 +337,16 @@ function DashboardPage() {
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vue d'ensemble</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vue d'ensemble</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 20, padding: '4px 12px', fontSize: 12, color: C.green, flexShrink: 0 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} />
+          Live{liveCount > 0 && ` · ${liveCount}`}
+          {lastEvent && <span style={{ color: C.textMuted, marginLeft: 4 }}>{lastEvent.type} {lastEvent.time}</span>}
+        </div>
       </div>
 
       {(statsLoading || statsError) && <StateRow loading={statsLoading} error={statsError} />}
@@ -2051,6 +2100,15 @@ export default function App() {
     window.addEventListener('cw-session-expired', onExpired)
     return () => window.removeEventListener('cw-session-expired', onExpired)
   }, [handleLogout])
+
+  // ── SSE global : toasts pour les événements temps réel ──
+  const handleGlobalEvent = useCallback((event: { type: string; payload?: any }) => {
+    if (event.type === 'transaction') showToast('Nouvelle transaction reçue')
+    if (event.type === 'user') showToast('Nouvel utilisateur inscrit')
+    if (event.type === 'kyc') showToast('Nouvelle demande KYC')
+  }, [showToast])
+
+  useLiveEvents(handleGlobalEvent)
 
   if (!authed) {
     return <LoginPage onSuccess={() => setAuthed(true)} />

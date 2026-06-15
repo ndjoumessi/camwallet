@@ -13,8 +13,14 @@ import {
   Res,
   UseGuards,
   BadRequestException,
+  Sse,
+  MessageEvent,
 } from '@nestjs/common';
+import { Observable, merge, interval } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { JwtService } from '@nestjs/jwt';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { SseService } from '../sse/sse.module';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './guards/admin.guard';
 import { AdminService } from './admin.service';
@@ -27,7 +33,11 @@ import { SetUserStatusDto } from './dto/set-user-status.dto';
 @UseGuards(AuthGuard('jwt'), AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(
+    private adminService: AdminService,
+    private readonly sseService: SseService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   @Get('stats')
   @ApiOperation({ summary: 'Statistiques globales de la plateforme' })
@@ -284,5 +294,25 @@ export class AdminController {
   @ApiOperation({ summary: 'Supprimer une note admin' })
   deleteAdminNote(@Request() req: any, @Param('noteId') noteId: string) {
     return this.adminService.deleteAdminNote(req.user.id, noteId);
+  }
+
+  // ─── SSE temps réel ──────────────────────────────────────────────────────────
+
+  @Get('events')
+  @Sse()
+  @ApiOperation({ summary: 'Flux SSE temps réel (transactions, users, kyc)' })
+  liveEvents(@Query('token') token: string): Observable<MessageEvent> {
+    try {
+      this.jwtService.verify(token, { secret: process.env.JWT_ACCESS_SECRET });
+    } catch {
+      return new Observable(subscriber => {
+        subscriber.next({ data: { error: 'Non autorisé' } } as MessageEvent);
+        subscriber.complete();
+      });
+    }
+
+    const events$ = this.sseService.stream.pipe(map(e => ({ data: e } as MessageEvent)));
+    const ping$ = interval(30000).pipe(map(() => ({ data: { type: 'ping' } } as MessageEvent)));
+    return merge(events$, ping$);
   }
 }

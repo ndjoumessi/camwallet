@@ -1,0 +1,77 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "error": "Une erreur est survenue",
+    "retry": "Réessayer",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "save": "Enregistrer",
+    "back": "Retour",
+    "send": "Envoyer",
+    "amount": "Montant",
+    "currency": "FCFA"
+  },
+  "home": {
+    "greeting": "Bonjour 👋",
+    "availableBalance": "Solde disponible",
+    "recentTransactions": "Transactions récentes",
+    "noTransactions": "Aucune transaction",
+    "actions": {
+      "send": "Envoyer",
+      "receive": "Recevoir",
+      "recharge": "Recharger",
+      "withdraw": "Retirer",
+      "scan": "Scanner"
+    }
+  },
+  "auth": {
+    "login": "Connexion",
+    "phone": "Numéro de téléphone",
+    "pin": "Code PIN",
+    "loginBtn": "Se connecter",
+    "biometric": "Se connecter avec Face ID / Empreinte",
+    "forgotPin": "PIN oublié ?",
+    "register": "Créer un compte",
+    "logout": "Se déconnecter"
+  },
+  "profile": {
+    "title": "Mon profil",
+    "personalInfo": "Informations personnelles",
+    "security": "Sécurité",
+    "notifications": "Notifications",
+    "legal": "Informations légales",
+    "changePin": "Changer le PIN",
+    "biometric": "Connexion biométrique",
+    "pushNotif": "Notifications push",
+    "darkMode": "Thème clair",
+    "language": "Langue",
+    "cgu": "Conditions d'utilisation",
+    "privacy": "Politique de confidentialité",
+    "version": "Version"
+  },
+  "history": {
+    "title": "Historique",
+    "noHistory": "Aucune transaction",
+    "loadMore": "Charger plus",
+    "allLoaded": "Toutes les transactions chargées",
+    "filters": {
+      "all": "Tout",
+      "sent": "Envoyés",
+      "received": "Reçus",
+      "recharge": "Recharges"
+    }
+  },
+  "merchant": {
+    "title": "Tableau de bord marchand",
+    "balance": "Solde du compte marchand",
+    "revenue": "Chiffre d'affaires",
+    "today": "Aujourd'hui",
+    "thisWeek": "Cette semaine",
+    "thisMonth": "Ce mois",
+    "generateQr": "QR code par montant",
+    "printQr": "Imprimer / Partager PDF",
+    "shareQr": "Partager mon QR",
+    "lastTransactions": "Dernières transactions reçues",
+    "lowBalance": "Solde bas — pensez à recharger votre compte"
+  }
+}

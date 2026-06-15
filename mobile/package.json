@@ -17,6 +17,7 @@
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.1.0",
+    "@sentry/react-native": "~7.2.0",
     "axios": "^1.7.9",
     "date-fns": "^3.6.0",
     "expo": "~54.0.0",
@@ -34,8 +35,10 @@
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",
+    "i18next": "^26.3.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-i18next": "^17.0.8",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-qrcode-svg": "^6.3.2",
@@ -49,9 +52,9 @@
   "devDependencies": {
     "@babel/core": "^7.25.0",
     "@types/react": "~19.1.10",
-    "typescript": "^5.9.2",
     "eslint": "^9.25.1",
-    "eslint-config-expo": "~10.0.0"
+    "eslint-config-expo": "~10.0.0",
+    "typescript": "^5.9.2"
   },
   "private": true
 }

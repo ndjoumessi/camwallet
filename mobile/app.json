@@ -56,7 +56,8 @@
         }
       ],
       "expo-asset",
-      "expo-notifications"
+      "expo-notifications",
+      "@sentry/react-native"
     ],
     "scheme": "camwallet",
     "experiments": {

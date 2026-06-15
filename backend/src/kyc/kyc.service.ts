@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { KycStatus } from '@prisma/client';
@@ -10,6 +11,7 @@ export class KycService {
   constructor(
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   // Soumission KYC : CNI recto + verso + selfie. Upload Cloudinary (ou data URI
@@ -48,6 +50,9 @@ export class KycService {
         data: { kycStatus: KycStatus.SUBMITTED },
       }),
     ]);
+
+    // Événement temps réel pour le dashboard admin (non bloquant).
+    this.eventEmitter.emit('kyc.submitted', { userId });
 
     this.logger.log(`KYC soumis : ${userId}`);
     return { status: KycStatus.SUBMITTED };

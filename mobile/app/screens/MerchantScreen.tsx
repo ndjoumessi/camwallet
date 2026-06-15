@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { merchantApi, MerchantStatsResponse, MerchantTransaction } from '../../src/lib/api';
 
@@ -88,6 +90,42 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
       if (e?.message !== 'User did not share') {
         Alert.alert('Erreur', e?.message ?? 'Impossible de partager');
       }
+    }
+  };
+
+  const handlePrintQr = async () => {
+    if (!qrValue) return;
+    const amountFcfa = parseInt(qrAmount, 10) || 0;
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8"><style>
+        body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
+        h1 { color: #00C896; font-size: 24px; margin-bottom: 8px; }
+        .amount { font-size: 32px; font-weight: bold; color: #0F172A; margin: 16px 0; }
+        .qr-container { border: 3px solid #00C896; border-radius: 16px; padding: 20px; margin: 20px 0; }
+        img { width: 220px; height: 220px; }
+        .footer { color: #64748B; font-size: 12px; margin-top: 24px; text-align: center; }
+      </style></head>
+      <body>
+        <h1>CamWallet — QR de paiement</h1>
+        <div class="amount">${amountFcfa.toLocaleString('fr-FR')} FCFA</div>
+        <div class="qr-container">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(qrValue)}" />
+        </div>
+        <p class="footer">Scannez ce QR avec l'application CamWallet pour payer</p>
+      </body>
+      </html>
+    `;
+    try {
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Partager le QR de paiement' });
+      } else {
+        await Print.printAsync({ uri });
+      }
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible de générer le PDF');
     }
   };
 
@@ -234,6 +272,16 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                   >
                     <Ionicons name="share-outline" size={18} color={Colors.blue} />
                     <Text style={styles.shareQrBtnText}>Partager mon QR</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.printQrBtn}
+                    onPress={handlePrintQr}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Imprimer ou partager en PDF"
+                  >
+                    <Ionicons name="print-outline" size={18} color={Colors.primary} />
+                    <Text style={styles.printQrBtnText}>Imprimer / Partager PDF</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -396,4 +444,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   shareQrBtnText: { color: Colors.blue, fontSize: Typography.sm, fontWeight: Typography.semibold },
+  printQrBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primary + '40',
+    borderRadius: BorderRadius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  printQrBtnText: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.semibold },
 });

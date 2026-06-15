@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { WalletsModule } from './wallets/wallets.module';
@@ -15,6 +16,8 @@ import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MerchantModule } from './merchant/merchant.module';
 import { DisputesModule } from './disputes/disputes.module';
+import { SseModule } from './sse/sse.module';
+import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { DisputesModule } from './disputes/disputes.module';
       limit: 10,
     }]),
 
+    // Bus d'événements pour le temps réel (SSE)
+    EventEmitterModule.forRoot(),
+
     // Modules métier
     PrismaModule,
     AuthModule,
@@ -44,6 +50,13 @@ import { DisputesModule } from './disputes/disputes.module';
     CloudinaryModule,
     MerchantModule,
     DisputesModule,
+    SseModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(IpWhitelistMiddleware)
+      .forRoutes({ path: 'api/v1/admin/*path', method: RequestMethod.ALL });
+  }
+}

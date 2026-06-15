@@ -54,6 +54,7 @@ style.textContent = `
   @keyframes cw-fadeup { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes cw-trend-up { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
   @keyframes cw-trend-down { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   .cw-trend-up { animation: cw-trend-up 1.6s ease-in-out infinite; }
   .cw-trend-down { animation: cw-trend-down 1.6s ease-in-out infinite; }
   .cw-toast { animation: cw-fadeup .22s ease-out; }

@@ -15,6 +15,7 @@ import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui
 import { useStore } from '../store/useStore';
 import { loyaltyApi } from '../../src/lib/api';
 import SendModal from './modals/SendModal';
+import { useTranslation } from 'react-i18next';
 import ReceiveModal from './modals/ReceiveModal';
 import RechargeModal from './modals/RechargeModal';
 import WithdrawModal from './modals/WithdrawModal';
@@ -52,12 +53,14 @@ export default function HomeScreen() {
 
   const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
 
+  const { t } = useTranslation();
+
   const ACTION_BTNS: { icon: keyof typeof Ionicons.glyphMap; label: string; color: string; modal: ModalType }[] = [
-    { icon: 'arrow-up', label: 'Envoyer', color: Colors.blue, modal: 'send' },
-    { icon: 'arrow-down', label: 'Recevoir', color: Colors.primary, modal: 'receive' },
-    { icon: 'flash', label: 'Recharger', color: Colors.yellow, modal: 'recharge' },
-    { icon: 'arrow-undo', label: 'Retirer', color: Colors.orange, modal: 'withdraw' },
-    { icon: 'scan-outline', label: 'Scanner', color: Colors.purple, modal: 'scan' },
+    { icon: 'arrow-up', label: t('home.actions.send'), color: Colors.blue, modal: 'send' },
+    { icon: 'arrow-down', label: t('home.actions.receive'), color: Colors.primary, modal: 'receive' },
+    { icon: 'flash', label: t('home.actions.recharge'), color: Colors.yellow, modal: 'recharge' },
+    { icon: 'arrow-undo', label: t('home.actions.withdraw'), color: Colors.orange, modal: 'withdraw' },
+    { icon: 'scan-outline', label: t('home.actions.scan'), color: Colors.purple, modal: 'scan' },
   ];
 
   return (
@@ -69,7 +72,7 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Bonjour 👋</Text>
+            <Text style={styles.greeting}>{t('home.greeting')}</Text>
             <Text style={styles.userName}>{user.name.split(' ')[0]}</Text>
           </View>
           <TouchableOpacity onPress={() => {}}>
@@ -95,7 +98,7 @@ export default function HomeScreen() {
 
           <View style={styles.balanceRow}>
             <View>
-              <Text style={styles.balanceLabel}>Solde disponible</Text>
+              <Text style={styles.balanceLabel}>{t('home.availableBalance')}</Text>
               <Text style={[styles.balanceAmount, !showBalance && styles.balanceHidden]}>
                 {showBalance ? fmt(balance) : '•••••• FCFA'}
               </Text>
@@ -180,7 +183,7 @@ export default function HomeScreen() {
         )}
 
         {/* Transactions récentes */}
-        <SectionTitle label="Transactions récentes" />
+        <SectionTitle label={t('home.recentTransactions')} />
         {transactions.slice(0, 5).map((tx) => {
           const meta = txMeta(tx.type);
           return (

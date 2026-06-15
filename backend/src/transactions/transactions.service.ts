@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TransactionType, TransactionStatus, MobileOperator } from '@prisma/client';
@@ -16,6 +17,7 @@ export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   // ─── Paiement P2P (CamWallet → CamWallet) ────────────────────────────────
@@ -66,6 +68,9 @@ export class TransactionsService {
       this.logger.log(`P2P ${amount} FCFA : ${senderId} → ${receiver.id}`);
       return created;
     });
+
+    // Événement temps réel pour le dashboard admin (non bloquant).
+    this.eventEmitter.emit('transaction.created', { type: 'P2P', amount: Number(amount) / 100 });
 
     // Notification push au destinataire (hors transaction, non bloquant).
     const sender = await this.prisma.user.findUnique({
