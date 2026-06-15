@@ -1,6 +1,6 @@
 {
   "name": "camwallet-backend",
-  "version": "2.5.0",
+  "version": "2.7.5",
   "description": "CamWallet API — Backend NestJS + PostgreSQL",
   "private": true,
   "scripts": {
