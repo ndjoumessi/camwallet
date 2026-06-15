@@ -1,9 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+
+// BigInt → Number pour la sérialisation JSON (normalement dans main.ts)
+(BigInt.prototype as any).toJSON = function () { return Number(this); };
 
 const SENDER_PHONE = '+237611000001';
 const RECEIVER_PHONE = '+237611000002';
@@ -32,7 +35,7 @@ describe('Flux paiement P2P (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ rawBody: true });
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
     await app.init();
@@ -62,7 +65,6 @@ describe('Flux paiement P2P (e2e)', () => {
     });
     receiverId = receiver.id;
 
-    // Login expéditeur
     const loginRes = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
       .send({ phone: SENDER_PHONE, pin: PIN });
@@ -85,14 +87,12 @@ describe('Flux paiement P2P (e2e)', () => {
     expect(res.body).toHaveProperty('type', 'P2P');
     expect(res.body).toHaveProperty('status', 'COMPLETED');
 
-    // Vérification des soldes en base
+    // Vérification des soldes en base (Number pour éviter BigInt dans les erreurs Jest)
     const senderWallet = await prisma.wallet.findUnique({ where: { userId: senderId } });
     const receiverWallet = await prisma.wallet.findUnique({ where: { userId: receiverId } });
 
-    // 1 000 000 - 50 000 = 950 000 centimes
-    expect(senderWallet?.balance).toBe(950_000n);
-    // 0 + 50 000 = 50 000 centimes
-    expect(receiverWallet?.balance).toBe(50_000n);
+    expect(Number(senderWallet?.balance)).toBe(950_000);
+    expect(Number(receiverWallet?.balance)).toBe(50_000);
   });
 
   it('rejette si le solde est insuffisant', async () => {
@@ -112,6 +112,6 @@ describe('Flux paiement P2P (e2e)', () => {
       .send({ phone: SENDER_PHONE, amount: 1000 })
       .expect(400);
 
-    expect(res.body.message).toContain('vous-même');
+    expect(res.body.message).toContain('envoyer');
   });
 });

@@ -1,12 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
-// Ces tests requièrent une base PostgreSQL de test.
-// Définir DATABASE_TEST_URL dans .env.test ou via CI.
-// Exemple : postgresql://camwallet:camwallet@localhost:5432/camwallet_test
+// BigInt → Number pour la sérialisation JSON (normalement dans main.ts)
+(BigInt.prototype as any).toJSON = function () { return Number(this); };
 
 const TEST_PHONE = '+237699000099';
 const TEST_PIN = '654321';
@@ -22,7 +21,7 @@ describe('Flux authentification (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ rawBody: true });
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
     await app.init();
@@ -36,9 +35,9 @@ describe('Flux authentification (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.otpCode.deleteMany({ where: { user: { phone: TEST_PHONE } } });
-    await prisma.wallet.deleteMany({ where: { user: { phone: TEST_PHONE } } });
-    await prisma.user.deleteMany({ where: { phone: TEST_PHONE } });
+    await prisma.otpCode.deleteMany({ where: { user: { phone: TEST_PHONE } } }).catch(() => {});
+    await prisma.wallet.deleteMany({ where: { user: { phone: TEST_PHONE } } }).catch(() => {});
+    await prisma.user.deleteMany({ where: { phone: TEST_PHONE } }).catch(() => {});
     await app.close();
   });
 
@@ -53,20 +52,13 @@ describe('Flux authentification (e2e)', () => {
   });
 
   it('Étape 2 — verifyOtp : vérifie le code OTP depuis la base', async () => {
-    // En mode sandbox, le code est dans la table otpCode (hash bcrypt)
-    // On récupère le dernier OTP en DB pour ce test
     const otp = await prisma.otpCode.findFirst({
       where: { userId, purpose: 'REGISTRATION', usedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     expect(otp).toBeTruthy();
 
-    // En sandbox (AT_USERNAME=sandbox), le code n'est pas envoyé par SMS.
-    // On lit le hash et bypass pour tester la route avec un mock OTP.
-    // Pour un vrai test e2e, utiliser l'SMS reçu ou une table de codes de test.
-    // Ici on teste que la route valide correctement un code via le service.
-
-    // Utilisation d'un patch direct pour les tests : mettre un code connu en DB.
+    // Injection d'un code connu (bcrypt cost 1) pour le test
     const bcrypt = await import('bcryptjs');
     const testCode = '123456';
     await prisma.otpCode.update({
@@ -86,7 +78,7 @@ describe('Flux authentification (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/auth/set-pin')
       .send({ userId, pin: TEST_PIN })
-      .expect(201);
+      .expect(200); // controller @HttpCode(HttpStatus.OK)
 
     expect(res.body).toHaveProperty('accessToken');
     expect(res.body).toHaveProperty('refreshToken');
