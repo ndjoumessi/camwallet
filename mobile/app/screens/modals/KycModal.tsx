@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   stepTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
   hint: { color: Colors.textMuted, fontSize: Typography.sm, marginBottom: Spacing.sm },
   cameraBox: {
-    width: 280, height: 200, borderRadius: BorderRadius.lg, backgroundColor: '#000',
+    width: 280, height: 200, borderRadius: BorderRadius.lg, backgroundColor: Colors.black,
     overflow: 'hidden', position: 'relative', marginBottom: Spacing.md,
   },
   placeholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm } as any,

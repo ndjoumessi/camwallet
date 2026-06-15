@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, AccessibilityInfo } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Typography, Spacing } from '../constants/theme';
+import { Colors, Typography, Spacing, BALANCE_GRADIENT } from '../constants/theme';
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -84,7 +84,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
 
   return (
     <LinearGradient
-      colors={['#0d2a1f', Colors.bg]}
+      colors={[BALANCE_GRADIENT[0], Colors.bg]}
       locations={[0, 0.7]}
       style={styles.container}
     >
