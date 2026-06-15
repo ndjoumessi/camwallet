@@ -19,6 +19,7 @@ import HomeScreen from './screens/HomeScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import MerchantScreen from './screens/MerchantScreen';
+import TransactionDetailScreen from './screens/TransactionDetailScreen';
 import { useStore } from './store/useStore';
 import { registerForPushNotifications, addNotificationTapHandler } from '../src/lib/notifications';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -43,6 +44,9 @@ function AppContent() {
   const restoreSession = useStore((s) => s.restoreSession);
   const logout = useStore((s) => s.logout);
   const isAuthenticated = useStore((s) => s.isAuthenticated);
+  const selectedTransaction = useStore((s) => s.selectedTransaction);
+  const closeTransaction = useStore((s) => s.closeTransaction);
+  const openTransactionById = useStore((s) => s.openTransactionById);
   const pushRegistered = useRef(false);
 
   // Initialisation au démarrage : Sentry + i18n
@@ -101,14 +105,19 @@ function AppContent() {
     if (!isAuthenticated) pushRegistered.current = false; // ré-enregistrer au prochain login
   }, [phase, isAuthenticated]);
 
-  // Deep link : un tap sur une notification ouvre l'onglet Historique.
+  // Deep link : un tap sur une notification ouvre la transaction concernée
+  // (data.transactionId), sinon bascule simplement sur l'onglet Historique.
   useEffect(() => {
     if (phase !== 'app') return;
-    const handler = addNotificationTapHandler(() => {
+    const handler = addNotificationTapHandler((data) => {
       setActiveTab('history');
+      const txId = data?.transactionId;
+      if (typeof txId === 'string' && txId) {
+        void openTransactionById(txId);
+      }
     });
     return () => handler.remove();
-  }, [phase]);
+  }, [phase, openTransactionById]);
 
   // Au démarrage : tente de restaurer une session existante (tokens SecureStore).
   useEffect(() => {
@@ -189,6 +198,9 @@ function AppContent() {
           </>
         )}
       </View>
+
+      {/* Détail transaction — partagé (Accueil / Historique / deep-link notif) */}
+      <TransactionDetailScreen transaction={selectedTransaction} onClose={closeTransaction} />
 
       {/* Bottom navigation */}
       <View style={styles.bottomNav}>

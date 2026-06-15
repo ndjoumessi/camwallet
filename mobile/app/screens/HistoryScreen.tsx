@@ -10,9 +10,7 @@ import {
   Alert,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -20,7 +18,6 @@ import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Badge, IconButton } from '../components/ui';
 import { useStore, Transaction } from '../store/useStore';
-import { disputeApi } from '../../src/lib/api';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -83,15 +80,10 @@ function buildPdfHtml(
 }
 
 export default function HistoryScreen() {
-  const { transactions, historyHasMore, historyLoading, fetchHistoryPage, resetHistory } = useStore();
+  const { transactions, historyHasMore, historyLoading, fetchHistoryPage, resetHistory, openTransaction } = useStore();
   const [activeFilter, setActiveFilter] = useState('Tout');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const userId = useStore((s) => s.user.id);
-  const [disputeReason, setDisputeReason] = useState('');
-  const [disputeLoading, setDisputeLoading] = useState(false);
-  const [disputeOpen, setDisputeOpen] = useState(false);
 
   // Chargement initial : réinitialise la pagination et charge la première page.
   useEffect(() => {
@@ -144,30 +136,10 @@ export default function HistoryScreen() {
     fetchHistoryPage(historyPage + 1);
   };
 
-  const handleDispute = async () => {
-    if (!selectedTx || !disputeReason.trim()) {
-      Alert.alert('Motif requis', 'Veuillez saisir le motif de votre demande de remboursement.');
-      return;
-    }
-    setDisputeLoading(true);
-    try {
-      await disputeApi.open(selectedTx.id, disputeReason.trim());
-      setDisputeOpen(false);
-      setDisputeReason('');
-      setSelectedTx(null);
-      Alert.alert('Demande envoyée', 'Votre demande de remboursement a été enregistrée. Nous reviendrons vers vous dans les 48h.');
-    } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la demande';
-      Alert.alert('Erreur', Array.isArray(msg) ? msg.join(', ') : msg);
-    } finally {
-      setDisputeLoading(false);
-    }
-  };
-
   const renderTx = ({ item: tx }: { item: Transaction }) => (
     <Pressable
       style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
-      onPress={() => setSelectedTx(tx)}
+      onPress={() => openTransaction(tx)}
       accessibilityRole="button"
       accessibilityLabel={`${txMeta(tx.type).label} ${tx.name}, ${fmt(tx.amount)}`}
     >
@@ -287,106 +259,7 @@ export default function HistoryScreen() {
         ListEmptyComponent={ListEmpty}
         ListFooterComponent={ListFooter}
       />
-
-      {/* Modale de détail transaction */}
-      <Modal
-        visible={!!selectedTx}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setSelectedTx(null)}
-      >
-        {selectedTx && (
-          <SafeAreaView style={styles.detailSheet} edges={['top']}>
-            <View style={styles.detailHeader}>
-              <Text style={styles.detailTitle}>Détail transaction</Text>
-              <IconButton icon="close" onPress={() => setSelectedTx(null)} accessibilityLabel="Fermer" />
-            </View>
-
-            <ScrollView contentContainerStyle={styles.detailBody}>
-              {/* Icône + montant */}
-              <View style={styles.detailHero}>
-                <View style={[styles.detailIcon, { backgroundColor: txMeta(selectedTx.type).amountColor + '22' }]}>
-                  <Ionicons name={txMeta(selectedTx.type).icon as IoniconName} size={32} color={txMeta(selectedTx.type).amountColor} />
-                </View>
-                <Text style={[styles.detailAmount, { color: txMeta(selectedTx.type).amountColor }]}>
-                  {selectedTx.amount > 0 ? '+' : ''}{fmt(selectedTx.amount)}
-                </Text>
-                <Badge
-                  label={txMeta(selectedTx.type).label}
-                  color={txMeta(selectedTx.type).badgeText}
-                  bg={txMeta(selectedTx.type).badgeBg}
-                />
-              </View>
-
-              {/* Lignes de détail */}
-              {[
-                { label: 'Référence', value: selectedTx.ref || '—' },
-                { label: 'Opération', value: selectedTx.name },
-                { label: 'Date', value: selectedTx.date },
-                { label: 'Statut', value: selectedTx.status === 'success' ? 'Effectuée' : selectedTx.status === 'pending' ? 'En cours' : 'Échouée' },
-                selectedTx.motif ? { label: 'Motif', value: selectedTx.motif } : null,
-              ].filter(Boolean).map((row: any) => (
-                <View key={row.label} style={styles.detailRow}>
-                  <Text style={styles.detailRowLabel}>{row.label}</Text>
-                  <Text style={styles.detailRowValue} selectable>{row.value}</Text>
-                </View>
-              ))}
-
-              {/* Bouton remboursement : P2P reçu et complété */}
-              {selectedTx.type === 'received' &&
-               selectedTx.status === 'success' && (
-                <View style={{ marginTop: Spacing.lg }}>
-                  {!disputeOpen ? (
-                    <TouchableOpacity
-                      style={styles.disputeBtn}
-                      onPress={() => { setDisputeOpen(true); setDisputeReason(''); }}
-                      activeOpacity={0.7}
-                      accessibilityRole="button"
-                      accessibilityLabel="Demander un remboursement"
-                    >
-                      <Ionicons name="return-up-back-outline" size={18} color={Colors.yellow} />
-                      <Text style={styles.disputeBtnText}>Demander un remboursement</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.disputeForm}>
-                      <Text style={styles.disputeFormTitle}>Motif du remboursement</Text>
-                      <TextInput
-                        style={styles.disputeInput}
-                        value={disputeReason}
-                        onChangeText={setDisputeReason}
-                        placeholder="Ex: Transaction effectuée par erreur..."
-                        placeholderTextColor={Colors.textMuted}
-                        multiline
-                        numberOfLines={3}
-                        autoFocus
-                        editable={!disputeLoading}
-                      />
-                      <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm }}>
-                        <TouchableOpacity
-                          style={[styles.disputeActionBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
-                          onPress={() => { setDisputeOpen(false); setDisputeReason(''); }}
-                          disabled={disputeLoading}
-                        >
-                          <Text style={{ color: Colors.textSoft, fontWeight: Typography.semibold }}>Annuler</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.disputeActionBtn, { backgroundColor: Colors.yellow, flex: 2 }, disputeLoading && { opacity: 0.6 }]}
-                          onPress={handleDispute}
-                          disabled={disputeLoading}
-                        >
-                          <Text style={{ color: '#000', fontWeight: Typography.bold }}>
-                            {disputeLoading ? 'Envoi…' : 'Envoyer la demande'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              )}
-            </ScrollView>
-          </SafeAreaView>
-        )}
-      </Modal>
+      {/* Le détail transaction est rendu globalement (app/index.tsx) via le store. */}
     </View>
   );
 }
