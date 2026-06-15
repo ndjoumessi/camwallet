@@ -14,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MerchantModule } from './merchant/merchant.module';
+import { DisputesModule } from './disputes/disputes.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { MerchantModule } from './merchant/merchant.module';
     NotificationsModule,
     CloudinaryModule,
     MerchantModule,
+    DisputesModule,
   ],
 })
 export class AppModule {}

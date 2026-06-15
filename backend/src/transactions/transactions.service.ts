@@ -1,6 +1,7 @@
 import {
   Injectable,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Logger,
 } from '@nestjs/common';
@@ -166,6 +167,26 @@ export class TransactionsService {
     });
 
     return transaction.created;
+  }
+
+  // ─── Contestation de transaction ─────────────────────────────────────────
+  async openDispute(requesterId: string, transactionId: string, reason: string) {
+    const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
+    if (!tx) throw new NotFoundException('Transaction introuvable');
+    if (tx.senderId !== requesterId && tx.receiverId !== requesterId) {
+      throw new ForbiddenException('Non autorisé à contester cette transaction');
+    }
+    const dispute = await this.prisma.disputeRequest.create({
+      data: { transactionId, requesterId, reason },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        userId: requesterId,
+        action: 'DISPUTE_OPEN',
+        metadata: { transactionId, reason } as any,
+      },
+    });
+    return dispute;
   }
 
   // ─── Historique utilisateur ───────────────────────────────────────────────

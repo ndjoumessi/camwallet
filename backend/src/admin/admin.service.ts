@@ -1050,6 +1050,17 @@ export class AdminService {
     for (const row of rows) {
       result[row.key] = row.value;
     }
+
+    // Vérification expiration mot de passe admin (rotation 90 jours).
+    const changedAtRow = rows.find((r) => r.key === 'admin_password_changed_at');
+    if (changedAtRow) {
+      const changedAt = new Date(changedAtRow.value);
+      const daysSince = (Date.now() - changedAt.getTime()) / (24 * 3600 * 1000);
+      if (daysSince > 90) {
+        result['admin_password_expired'] = 'true';
+      }
+    }
+
     return result;
   }
 
@@ -1148,5 +1159,116 @@ export class AdminService {
     });
     await this.writeAudit(adminId, 'USER_PIN_RESET', `User:${userId}`);
     return { ok: true };
+  }
+
+  // ─── Équipe admin (rôles multiples) ─────────────────────────────────────
+
+  async getAdminTeam() {
+    return this.prisma.user.findMany({
+      where: { role: 'ADMIN', deletedAt: null },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        adminRole: true,
+        createdAt: true,
+        totpEnabled: true,
+      },
+    });
+  }
+
+  async setAdminRole(actorId: string, userId: string, adminRole: string | null) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { adminRole },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        userId: actorId,
+        action: 'ADMIN_ROLE_CHANGE',
+        metadata: { targetId: userId, newRole: adminRole } as any,
+      },
+    });
+    return updated;
+  }
+
+  // ─── Export CSV ──────────────────────────────────────────────────────────
+
+  async exportUsersCsv(_params: any): Promise<string> {
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null },
+      include: { wallet: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    const header = 'id,phone,fullName,email,role,status,kycStatus,balance,createdAt';
+    const rows = users.map((u) =>
+      [
+        u.id,
+        u.phone,
+        u.fullName ?? '',
+        u.email ?? '',
+        u.role,
+        u.status,
+        u.kycStatus,
+        u.wallet ? Number(u.wallet.balance) / 100 : 0,
+        u.createdAt.toISOString(),
+      ]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(','),
+    );
+    return [header, ...rows].join('\n');
+  }
+
+  async exportTransactionsCsv(_params: any): Promise<string> {
+    const txs = await this.prisma.transaction.findMany({
+      include: {
+        sender: { select: { phone: true } },
+        receiver: { select: { phone: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const header =
+      'id,reference,type,status,amount_fcfa,fee_fcfa,senderPhone,receiverPhone,operator,createdAt';
+    const rows = txs.map((t) =>
+      [
+        t.id,
+        t.reference ?? '',
+        t.type,
+        t.status,
+        Number(t.amount) / 100,
+        Number(t.fee) / 100,
+        t.sender?.phone ?? '',
+        t.receiver?.phone ?? '',
+        t.operator ?? '',
+        t.createdAt.toISOString(),
+      ]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(','),
+    );
+    return [header, ...rows].join('\n');
+  }
+
+  // ─── Notes admin ─────────────────────────────────────────────────────────
+
+  async getAdminNotes(userId: string) {
+    return this.prisma.adminNote.findMany({
+      where: { targetId: userId },
+      include: { author: { select: { fullName: true, email: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async addAdminNote(authorId: string, targetId: string, content: string) {
+    return this.prisma.adminNote.create({
+      data: { authorId, targetId, content },
+    });
+  }
+
+  async deleteAdminNote(authorId: string, noteId: string) {
+    const note = await this.prisma.adminNote.findUnique({ where: { id: noteId } });
+    if (!note || note.authorId !== authorId) {
+      throw new NotFoundException('Note introuvable ou non autorisé');
+    }
+    return this.prisma.adminNote.delete({ where: { id: noteId } });
   }
 }

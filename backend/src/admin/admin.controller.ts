@@ -3,12 +3,14 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
   HttpCode,
   HttpStatus,
   Request,
+  Res,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
@@ -215,5 +217,72 @@ export class AdminController {
   @ApiOperation({ summary: 'Statut des intégrations OM, MTN, SMS OTP, Push Expo' })
   healthIntegrations() {
     return this.adminService.getHealthIntegrations();
+  }
+
+  // ─── Équipe admin ─────────────────────────────────────────────────────────
+
+  @Get('team')
+  @ApiOperation({ summary: 'Liste des membres de l\'équipe admin' })
+  getAdminTeam() {
+    return this.adminService.getAdminTeam();
+  }
+
+  @Patch('team/:userId/role')
+  @ApiOperation({ summary: 'Attribuer un rôle admin à un utilisateur' })
+  setAdminRole(
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Body() body: { adminRole: string | null },
+  ) {
+    return this.adminService.setAdminRole(req.user.id, userId, body.adminRole);
+  }
+
+  // ─── Export CSV ──────────────────────────────────────────────────────────
+
+  @Get('export/users')
+  @ApiOperation({ summary: 'Exporter les utilisateurs en CSV' })
+  async exportUsers(@Res() res: any) {
+    const csv = await this.adminService.exportUsersCsv({});
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="users.csv"',
+    });
+    res.send(csv);
+  }
+
+  @Get('export/transactions')
+  @ApiOperation({ summary: 'Exporter les transactions en CSV' })
+  async exportTransactions(@Res() res: any) {
+    const csv = await this.adminService.exportTransactionsCsv({});
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="transactions.csv"',
+    });
+    res.send(csv);
+  }
+
+  // ─── Notes admin sur un utilisateur ──────────────────────────────────────
+
+  @Get('users/:id/notes')
+  @ApiOperation({ summary: 'Lire les notes admin sur un utilisateur' })
+  getAdminNotes(@Param('id') id: string) {
+    return this.adminService.getAdminNotes(id);
+  }
+
+  @Post('users/:id/notes')
+  @ApiOperation({ summary: 'Ajouter une note admin sur un utilisateur' })
+  addAdminNote(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body('content') content: string,
+  ) {
+    if (!content) throw new BadRequestException('content est requis');
+    return this.adminService.addAdminNote(req.user.id, id, content);
+  }
+
+  @Delete('notes/:noteId')
+  @ApiOperation({ summary: 'Supprimer une note admin' })
+  deleteAdminNote(@Request() req: any, @Param('noteId') noteId: string) {
+    return this.adminService.deleteAdminNote(req.user.id, noteId);
   }
 }

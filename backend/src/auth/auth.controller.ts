@@ -89,4 +89,33 @@ export class AuthController {
   changePin(@Request() req: any, @Body() dto: ChangePinDto) {
     return this.authService.changePin(req.user.id, dto.currentPin, dto.newPin);
   }
+
+  // ─── 2FA TOTP ─────────────────────────────────────────────────────────────
+
+  @Post('2fa/setup')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Initialiser le TOTP 2FA (génère le secret et l\'URL otpauth)' })
+  setup2FA(@Request() req: any) {
+    return this.authService.setup2FA(req.user.id);
+  }
+
+  @Post('2fa/verify')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Vérifier le code TOTP et activer le 2FA' })
+  verify2FA(@Request() req: any, @Body('code') code: string) {
+    return this.authService.verify2FA(req.user.id, code);
+  }
+
+  @Post('2fa/disable')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Désactiver le 2FA (code TOTP requis)' })
+  disable2FA(@Request() req: any, @Body('code') code: string) {
+    return this.authService.disable2FA(req.user.id, code);
+  }
 }

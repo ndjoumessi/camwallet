@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import { authenticator } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from './otp.service';
 import { RegisterDto } from './dto/register.dto';
@@ -194,9 +195,36 @@ export class AuthService {
     // les actions admin soient traçables dans l'AuditLog. Sinon, sentinelle 'admin'.
     const adminUser = await this.prisma.user.findFirst({
       where: { email: { equals: adminEmail, mode: 'insensitive' }, role: 'ADMIN' },
-      select: { id: true },
+      select: { id: true, totpEnabled: true, totpSecret: true },
     });
     const sub = adminUser?.id ?? 'admin';
+
+    // ── Vérification 2FA TOTP (si activée sur le compte admin) ───────────────
+    if (adminUser?.totpEnabled) {
+      if (!dto.totpCode) {
+        // Informer le frontend qu'une étape TOTP est requise (HTTP 200).
+        return { requiresTOTP: true };
+      }
+      const totpValid = authenticator.verify({
+        token: dto.totpCode,
+        secret: adminUser.totpSecret!,
+      });
+      if (!totpValid) {
+        throw new UnauthorizedException('Code TOTP invalide ou expiré');
+      }
+    }
+
+    // Enregistrer la date de premier login admin si non définie (rotation 90j).
+    void this.prisma.systemSettings.upsert({
+      where: { key: 'admin_password_changed_at' },
+      create: {
+        key: 'admin_password_changed_at',
+        value: new Date().toISOString(),
+        updatedBy: sub,
+      },
+      update: {},
+    });
+
     return this.generateTokens(sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
   }
 
@@ -275,6 +303,33 @@ export class AuthService {
     if (!user) throw new BadRequestException('Numéro introuvable');
     await this.otpService.sendOtp(user.id, OtpPurpose.PIN_RESET);
     return { message: 'Code OTP envoyé', userId: user.id };
+  }
+
+  // ─── 2FA TOTP ─────────────────────────────────────────────────────────────
+
+  async setup2FA(userId: string) {
+    const secret = authenticator.generateSecret();
+    await this.prisma.user.update({ where: { id: userId }, data: { totpSecret: secret } });
+    const otpauthUrl = authenticator.keyuri(`admin`, 'CamWallet', secret);
+    return { otpauthUrl, secret };
+  }
+
+  async verify2FA(userId: string, code: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.totpSecret) throw new UnauthorizedException('2FA non configurée');
+    const valid = authenticator.verify({ token: code, secret: user.totpSecret });
+    if (!valid) throw new UnauthorizedException('Code TOTP invalide');
+    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: true } });
+    return { ok: true };
+  }
+
+  async disable2FA(userId: string, code: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.totpSecret || !user.totpEnabled) throw new UnauthorizedException('2FA non activée');
+    const valid = authenticator.verify({ token: code, secret: user.totpSecret });
+    if (!valid) throw new UnauthorizedException('Code TOTP invalide');
+    await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: false, totpSecret: null } });
+    return { ok: true };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

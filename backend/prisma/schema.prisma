@@ -41,6 +41,14 @@ model User {
   dateOfBirth     DateTime?
   city            String?
 
+  // Admin étendu
+  adminRole       String?  // SUPER_ADMIN | ANALYST | SUPPORT | null
+  totpSecret      String?
+  totpEnabled     Boolean  @default(false)
+
+  // Soft delete
+  deletedAt       DateTime?
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -52,6 +60,10 @@ model User {
   qrCodes         QrCode[]
   otpCodes        OtpCode[]
   auditLogs       AuditLog[]
+  loyaltyPoints   LoyaltyPoints?
+  adminNotes      AdminNote[]    @relation("AdminNotes")
+  authoredNotes   AdminNote[]    @relation("AdminNoteAuthor")
+  disputes        DisputeRequest[] @relation("DisputeRequester")
 
   @@map("users")
 }
@@ -95,6 +107,7 @@ model Wallet {
   monthlyLimit BigInt @default(500000000) // 5 000 000 FCFA/mois
 
   isActive  Boolean  @default(true)
+  deletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -307,4 +320,53 @@ model SystemSettings {
   updatedBy String?
 
   @@map("system_settings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIDÉLITÉ
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LoyaltyPoints {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  points    Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@map("loyalty_points")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTES ADMIN
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AdminNote {
+  id        String   @id @default(uuid())
+  targetId  String
+  target    User     @relation("AdminNotes", fields: [targetId], references: [id])
+  authorId  String
+  author    User     @relation("AdminNoteAuthor", fields: [authorId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_notes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTESTATIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DisputeRequest {
+  id            String   @id @default(uuid())
+  transactionId String
+  requesterId   String
+  requester     User     @relation("DisputeRequester", fields: [requesterId], references: [id])
+  reason        String
+  status        String   @default("OPEN")
+  resolution    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("dispute_requests")
 }
