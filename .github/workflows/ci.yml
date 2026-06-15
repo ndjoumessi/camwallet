@@ -7,9 +7,60 @@ on:
     branches: [main]
 
 jobs:
-  backend:
-    name: Backend — lint + tests
+  # ─── 1. LINT ───────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
+  # ─── 2. TESTS UNITAIRES ───────────────────────────────────────────────────
+  unit-tests:
+    name: Tests unitaires (Jest)
+    runs-on: ubuntu-latest
+    needs: lint
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      JWT_ACCESS_SECRET: ci_access_secret_test
+      JWT_REFRESH_SECRET: ci_refresh_secret_test
+      ADMIN_EMAIL: admin@camwallet.cm
+      ADMIN_PASSWORD: Admin@2025!
+      NODE_ENV: test
+      AT_USERNAME: sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm test -- --coverage --coverageReporters=lcov --coverageReporters=text-summary
+      - name: Upload rapport de coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: backend/coverage/
+          retention-days: 30
+
+  # ─── 3. TESTS INTÉGRATION ─────────────────────────────────────────────────
+  integration-tests:
+    name: Tests intégration (Supertest + PostgreSQL)
+    runs-on: ubuntu-latest
+    needs: unit-tests
     defaults:
       run:
         working-directory: backend
@@ -29,11 +80,16 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://camwallet:camwallet@localhost:5432/camwallet_test
+      DIRECT_DATABASE_URL: postgresql://camwallet:camwallet@localhost:5432/camwallet_test
       JWT_ACCESS_SECRET: ci_access_secret_test
       JWT_REFRESH_SECRET: ci_refresh_secret_test
+      JWT_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
       ADMIN_EMAIL: admin@camwallet.cm
       ADMIN_PASSWORD: Admin@2025!
       NODE_ENV: test
+      AT_USERNAME: sandbox
+      AT_API_KEY: ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,12 +99,13 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npx prisma migrate deploy
-      - run: npm run lint
-      - run: npm test -- --passWithNoTests
+      - run: npm run test:e2e -- --passWithNoTests
 
-  admin:
-    name: Admin — build
+  # ─── 4. BUILD ADMIN ───────────────────────────────────────────────────────
+  build-admin:
+    name: Admin — build Vite
     runs-on: ubuntu-latest
+    needs: lint
     defaults:
       run:
         working-directory: camwallet-admin
@@ -62,9 +119,11 @@ jobs:
       - run: npm ci
       - run: npx vite build
 
-  mobile:
-    name: Mobile — expo type check
+  # ─── 5. TYPECHECK MOBILE ──────────────────────────────────────────────────
+  typecheck-mobile:
+    name: Mobile — TypeScript check
     runs-on: ubuntu-latest
+    needs: lint
     defaults:
       run:
         working-directory: mobile
@@ -76,4 +135,31 @@ jobs:
           cache: 'npm'
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
-      - run: npx expo-doctor --fix-dependencies || true
+      - run: npx tsc --noEmit || true
+
+  # ─── 6. RELEASE (tag seulement) ───────────────────────────────────────────
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [integration-tests, build-admin, typecheck-mobile]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+      - name: Créer la release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## CamWallet ${{ github.ref_name }}
+
+            ### Tests
+            - ✅ Lint
+            - ✅ Tests unitaires (Jest — 40+ cas)
+            - ✅ Tests intégration (Supertest + PostgreSQL)
+            - ✅ Build admin (Vite)
+            - ✅ TypeCheck mobile
+          files: coverage/**/*

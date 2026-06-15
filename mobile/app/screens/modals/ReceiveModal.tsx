@@ -21,6 +21,8 @@ interface ReceiveModalProps {
   onClose: () => void;
 }
 
+const formatPhone = (phone: string) => (phone.startsWith('+') ? phone : `+237 ${phone}`);
+
 export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const { user } = useStore();
   const [activeTab, setActiveTab] = useState<'static' | 'dynamic'>('static');
@@ -50,7 +52,7 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Payez-moi via CamWallet\n+237 ${user.phone}\nRéférence: ${user.phone.replace(/\s/g, '')}`,
+        message: `Payez-moi via CamWallet\n${formatPhone(user.phone)}\nRéférence: ${user.phone.replace(/\s/g, '')}`,
         title: 'CamWallet — Mon QR de paiement',
       });
     } catch {}
@@ -113,7 +115,7 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
           {/* User info */}
           <View style={styles.infoCard}>
             <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userPhone}>+237 {user.phone}</Text>
+            <Text style={styles.userPhone}>{formatPhone(user.phone)}</Text>
             {activeTab === 'static' && (
               <Text style={styles.infoNote}>Ce QR code est permanent. Partagez-le librement.</Text>
             )}

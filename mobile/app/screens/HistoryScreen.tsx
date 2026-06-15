@@ -221,6 +221,7 @@ export default function HistoryScreen() {
       </View>
 
       {/* Filter chips */}
+      <View style={styles.filterWrapper}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -246,13 +247,15 @@ export default function HistoryScreen() {
           </Pressable>
         ))}
       </ScrollView>
+      </View>
 
       {/* Liste de transactions avec scroll infini */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={renderTx}
-        contentContainerStyle={styles.list}
+        style={styles.flatList}
+        contentContainerStyle={filtered.length === 0 ? styles.listEmpty : styles.list}
         showsVerticalScrollIndicator={false}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.2}
@@ -285,7 +288,8 @@ const styles = StyleSheet.create({
   exportBtnText: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.bold },
   searchInput: { flex: 1, color: Colors.text, fontSize: Typography.base, minHeight: 40 },
   pressed: { opacity: 0.7 },
-  filterRow: { marginBottom: Spacing.sm },
+  filterWrapper: { overflow: 'visible', minHeight: 52, marginBottom: Spacing.sm },
+  filterRow: { overflow: 'visible' },
   filterContent: {
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
@@ -299,7 +303,9 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   filterText: { color: '#64748B', fontSize: Typography.sm, fontWeight: Typography.medium },
   filterTextActive: { color: Colors.white, fontWeight: '700' as const },
+  flatList: { flex: 1 },
   list: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  listEmpty: { flexGrow: 1, paddingHorizontal: Spacing.lg },
   txRow: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
@@ -314,7 +320,7 @@ const styles = StyleSheet.create({
   txDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
   txRight: { alignItems: 'flex-end', gap: 4, flexShrink: 0 },
   txAmount: { fontSize: Typography.base, fontWeight: Typography.bold },
-  empty: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: Spacing.xxl, gap: Spacing.md },
   emptyText: { color: Colors.textMuted, fontSize: Typography.base },
   listFooter: { alignItems: 'center', paddingVertical: Spacing.md },
   listFooterText: { color: Colors.textMuted, fontSize: Typography.sm },
