@@ -17,12 +17,12 @@ style.textContent = `
 
   /* ── Accessibilité : focus clavier visible partout ────────── */
   a:focus-visible, button:focus-visible, input:focus-visible,
-  [tabindex]:focus-visible, .cw-row:focus-visible {
+  select:focus-visible, [tabindex]:focus-visible, .cw-row:focus-visible {
     outline: 2px solid #00C896 !important;
     outline-offset: 2px;
     border-radius: 8px;
   }
-  input:focus { border-color: #00C896 !important; }
+  input:focus, select:focus { border-color: #00C896 !important; }
 
   /* ── États interactifs (hover / active) ───────────────────── */
   .cw-btn { transition: filter .15s ease, transform .15s ease, background .15s ease, border-color .15s ease; }
@@ -55,12 +55,15 @@ style.textContent = `
   @keyframes cw-trend-up { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
   @keyframes cw-trend-down { 0%,100% { transform: translateY(0); } 50% { transform: translateY(2px); } }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes cw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .cw-trend-up { animation: cw-trend-up 1.6s ease-in-out infinite; }
   .cw-trend-down { animation: cw-trend-down 1.6s ease-in-out infinite; }
   .cw-toast { animation: cw-fadeup .22s ease-out; }
+  .cw-spin { animation: cw-spin 0.7s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
     .cw-trend-up, .cw-trend-down, .cw-toast, .cw-live-dot { animation: none !important; }
     .cw-card, .cw-btn { transition: none !important; }
+    .cw-spin { animation: none !important; opacity: 0.5; }
   }
 
   /* ── Responsive : rail latéral compact puis masqué ────────── */

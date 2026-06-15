@@ -10,7 +10,7 @@ import {
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
-  Settings, Shield,
+  Settings, Shield, Loader2,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -1018,7 +1018,7 @@ function UsersPage() {
             onChange={e => setSearch(e.target.value)}
             placeholder="Rechercher (nom ou téléphone)…"
             aria-label="Rechercher un utilisateur"
-            style={{ background: 'none', border: 'none', color: C.text, fontSize: 13, flex: 1, outline: 'none' }}
+            style={{ background: 'none', border: 'none', color: C.text, fontSize: 13, flex: 1 }}
           />
         </div>
         {FILTERS.map(f => (
@@ -1085,9 +1085,13 @@ function UsersPage() {
                       style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                       Détails
                     </button>
-                    {u.role === 'ADMIN' ? null : u.status === 'LOCKED' ? (
-                      <button className="cw-btn" onClick={() => toggleBlock(u)} disabled={acting === u.id}
-                        style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
+                    {u.role === 'ADMIN' ? null : acting === u.id ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.textMuted, padding: '4px 10px' }}>
+                        <Loader2 size={12} className="cw-spin" /> En cours…
+                      </span>
+                    ) : u.status === 'LOCKED' ? (
+                      <button className="cw-btn" onClick={() => toggleBlock(u)}
+                        style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                         Débloquer
                       </button>
                     ) : blockConfirm === u.id ? (
@@ -1095,12 +1099,12 @@ function UsersPage() {
                         <span style={{ fontSize: 11, color: C.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Confirmer ?</span>
                         <button className="cw-btn" disabled={acting === u.id} onClick={() => { setBlockConfirm(null); toggleBlock(u) }}
                           style={{ fontSize: 11, color: '#fff', background: C.red, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
-                        <button className="cw-btn" onClick={() => setBlockConfirm(null)}
+                        <button className="cw-btn" onClick={() => setBlockConfirm(null)} aria-label="Annuler le blocage"
                           style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>✕</button>
                       </div>
                     ) : (
-                      <button className="cw-btn" onClick={() => setBlockConfirm(u.id)} disabled={acting === u.id}
-                        style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: acting === u.id ? 'wait' : 'pointer', fontWeight: 600 }}>
+                      <button className="cw-btn" onClick={() => setBlockConfirm(u.id)}
+                        style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                         Bloquer
                       </button>
                     )}
@@ -1987,7 +1991,7 @@ function AuditPage() {
 
   const inputStyle: CSSProperties = {
     background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: '7px 10px', fontSize: 13, outline: 'none',
+    borderRadius: 8, padding: '7px 10px', fontSize: 13,
   }
 
   return (
@@ -2144,7 +2148,7 @@ function SettingsPage() {
 
   const inputStyle: CSSProperties = {
     background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', width: '100%',
+    borderRadius: 8, padding: '9px 12px', fontSize: 14, width: '100%',
   }
 
   return (
@@ -2163,8 +2167,9 @@ function SettingsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
               {fields.map(f => (
                 <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{f.label}</label>
+                  <label htmlFor={`setting-${f.key}`} style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{f.label}</label>
                   <input
+                    id={`setting-${f.key}`}
                     value={form[f.key] ?? ''}
                     onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                     style={inputStyle}
@@ -2193,15 +2198,15 @@ function SettingsPage() {
 
           {/* Section 2FA */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Authentification a deux facteurs (TOTP)</h2>
+            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Authentification à deux facteurs (TOTP)</h2>
             {twoFAStatus?.totpEnabled ? (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                   <span style={{ fontSize: 12, color: C.green, background: C.greenLight, padding: '3px 10px', borderRadius: 20, fontWeight: 700 }}>2FA actif</span>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP pour desactiver" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', width: 220 }} />
-                  <button onClick={handleDisable2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.redLight, border: 'none', borderRadius: 8, color: C.red, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Desactiver la 2FA</button>
+                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP pour désactiver" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
+                  <button onClick={handleDisable2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.redLight, border: 'none', borderRadius: 8, color: C.red, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Désactiver la 2FA</button>
                 </div>
               </div>
             ) : twoFASetup ? (
@@ -2210,7 +2215,7 @@ function SettingsPage() {
                 <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFASetup.otpauthUrl)}`} alt="QR 2FA" style={{ width: 200, height: 200, borderRadius: 8, marginBottom: 12 }} />
                 <div style={{ color: C.textMuted, fontSize: 12, fontFamily: 'monospace', background: C.surface, padding: '6px 10px', borderRadius: 6, marginBottom: 14, wordBreak: 'break-all' }}>Secret: {twoFASetup.secret}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP de verification" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, outline: 'none', width: 220 }} />
+                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP de vérification" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
                   <button onClick={handleVerify2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Activer</button>
                 </div>
               </div>
@@ -2277,7 +2282,7 @@ function TeamPage() {
                     <select
                       value={m.adminRole ?? ''}
                       onChange={e => handleRoleChange(m.id, e.target.value)}
-                      style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer', outline: 'none' }}
+                      style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
                     >
                       <option value="">Aucun</option>
                       <option value="SUPER_ADMIN">SUPER_ADMIN</option>
@@ -2292,7 +2297,7 @@ function TeamPage() {
           </table>
         </div>
         {!loading && !error && (!members || members.length === 0) && (
-          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun membre dans l'equipe</div>
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun membre dans l'équipe</div>
         )}
       </div>
     </div>
