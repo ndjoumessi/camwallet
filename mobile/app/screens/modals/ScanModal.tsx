@@ -9,6 +9,7 @@ import {
   Easing,
   Dimensions,
   ScrollView,
+  AccessibilityInfo,
 } from 'react-native';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -70,6 +71,13 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
   const [scanned, setScanned] = useState<ScannedRecipient | null>(null);
   const [error, setError] = useState(false);
   const scanLine = useState(new Animated.Value(0))[0];
+  const reduceMotionRef = useRef(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((rm) => { reduceMotionRef.current = rm; })
+      .catch(() => {});
+  }, []);
 
   // Demande la permission caméra à la première ouverture.
   useEffect(() => {
@@ -82,10 +90,14 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
   useEffect(() => {
     if (!visible) { setScanned(null); setError(false); return; }
     if (scanned) return;
+    if (reduceMotionRef.current) {
+      scanLine.setValue(0.5); // ligne statique au centre quand reduce-motion est activé
+      return;
+    }
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(scanLine, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(scanLine, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(scanLine, { toValue: 1, duration: 1500, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(scanLine, { toValue: 0, duration: 1500, easing: Easing.linear, useNativeDriver: true }),
       ]),
     );
     anim.start();
@@ -199,7 +211,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
               </View>
               <View>
                 <Text style={styles.resultName}>{scanned.name ?? 'Destinataire'}</Text>
-                <Text style={styles.resultPhone}>+237 {scanned.phone}</Text>
+                <Text style={styles.resultPhone}>+237 {scanned.phone.replace(/^\+?237/, '')}</Text>
                 {scanned.amount && <Text style={styles.resultPhone}>Montant : {scanned.amount} FCFA</Text>}
               </View>
             </View>

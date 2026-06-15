@@ -65,9 +65,11 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    loyaltyApi.getPoints().then(setLoyalty).catch(() => {
-      // Endpoint pas encore déployé — on n'affiche rien
-    });
+    let cancelled = false;
+    loyaltyApi.getPoints()
+      .then((pts) => { if (!cancelled) setLoyalty(pts); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   // Chargement des données réelles au montage (et à chaque retour sur l'écran)

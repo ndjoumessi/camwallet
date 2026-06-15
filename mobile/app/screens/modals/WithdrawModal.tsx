@@ -193,6 +193,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                     placeholderTextColor={Colors.textMuted}
                     keyboardType="numeric"
                     autoFocus
+                    accessibilityLabel="Montant à retirer en FCFA"
                   />
                   <Text style={styles.amountCurrency}>FCFA</Text>
                 </View>

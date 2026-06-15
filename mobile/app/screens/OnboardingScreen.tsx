@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { Button } from '../components/ui';
 import { authApi } from '../../src/lib/api';
 
@@ -27,13 +27,13 @@ const SLIDES = [
     icon: 'phone-portrait-outline' as const,
     title: 'Paiements instantanés',
     desc: "Scannez un QR Code et payez en 3 secondes, n'importe où au Cameroun.",
-    gradient: ['#0d2a1f', Colors.bg] as [string, string],
+    gradient: [BALANCE_GRADIENT[0], Colors.bg] as [string, string],
   },
   {
     icon: 'lock-closed-outline' as const,
     title: 'Sécurisé & fiable',
     desc: 'Chiffrement militaire, PIN à 6 chiffres et alertes SMS en temps réel.',
-    gradient: ['#0a1628', Colors.bg] as [string, string],
+    gradient: [BALANCE_GRADIENT[1], Colors.bg] as [string, string],
   },
   {
     icon: 'flash' as const,

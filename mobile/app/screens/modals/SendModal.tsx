@@ -31,6 +31,7 @@ interface SendModalProps {
 }
 
 const FRAIS = 0; // Les frais P2P sont calculés côté backend
+const WHATSAPP_GREEN = WHATSAPP_GREEN;
 
 const normalizePhone = (phone: string): string => {
   const digits = phone.replace(/\D/g, '');
@@ -280,6 +281,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="numeric"
                 autoFocus
+                accessibilityLabel="Montant en FCFA"
               />
               <Text style={styles.amountCurrency}>FCFA</Text>
             </View>
@@ -589,9 +591,9 @@ const styles = StyleSheet.create({
   receiptValue: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold, maxWidth: '60%', textAlign: 'right' },
   waBtn: {
     flexDirection: 'row', gap: Spacing.sm,
-    backgroundColor: '#25D366' + '20', borderWidth: 1, borderColor: '#25D366' + '50',
+    backgroundColor: WHATSAPP_GREEN + '20', borderWidth: 1, borderColor: WHATSAPP_GREEN + '50',
     borderRadius: BorderRadius.md, padding: Spacing.md, marginTop: Spacing.xl,
     width: '100%', alignItems: 'center', justifyContent: 'center', minHeight: 48,
   },
-  waBtnText: { color: '#25D366', fontWeight: Typography.bold },
+  waBtnText: { color: WHATSAPP_GREEN, fontWeight: Typography.bold },
 });
