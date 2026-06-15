@@ -6,11 +6,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
-    super({
-      log: process.env.NODE_ENV === 'development'
-        ? ['query', 'info', 'warn', 'error']
-        : ['error'],
-    });
+    const levels = (process.env.DATABASE_LOG_LEVEL ?? (process.env.NODE_ENV === 'development' ? 'query,info,warn,error' : 'error'))
+      .split(',')
+      .map(l => l.trim()) as ('query' | 'info' | 'warn' | 'error')[];
+    super({ log: levels });
   }
 
   async onModuleInit() {
