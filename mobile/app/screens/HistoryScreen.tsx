@@ -37,7 +37,7 @@ function buildPdfHtml(
       (tx) => `
     <tr>
       <td>${tx.date}</td>
-      <td>${tx.name}</td>
+      <td>${tx.name ?? '(sans nom)'}</td>
       <td>${txMeta(tx.type).label}</td>
       <td style="color:${tx.amount >= 0 ? '#00C896' : '#FF4D6D'};font-weight:700">
         ${tx.amount >= 0 ? '+' : ''}${fmt(tx.amount)}
@@ -118,7 +118,7 @@ export default function HistoryScreen() {
       (activeFilter === 'Reçus' && (tx.type === 'received' || tx.type === 'refund')) ||
       (activeFilter === 'Recharges' && tx.type === 'recharge') ||
       (activeFilter === 'Retraits' && tx.type === 'withdrawal');
-    const matchSearch = search === '' || tx.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = search === '' || (tx.name ?? '').toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
   }), [transactions, activeFilter, search]);
 

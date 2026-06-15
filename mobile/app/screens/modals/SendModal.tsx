@@ -39,6 +39,12 @@ const normalizePhone = (phone: string): string => {
   return phone;
 };
 
+const fmtPhone = (phone: string): string => {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('237')) return `+237 ${digits.slice(3)}`;
+  return `+237 ${digits}`;
+};
+
 export default function SendModal({ visible, onClose, onSuccess, initialContact, initialRecipient }: SendModalProps) {
   const { user, balance, recentContacts, sendMoney } = useStore();
   const [step, setStep] = useState<'contact' | 'amount' | 'pin' | 'done'>('contact');
@@ -54,6 +60,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const [txRef, setTxRef] = useState('');
   const [txDate, setTxDate] = useState('');
   const shake = useRef(new Animated.Value(0)).current;
+  const pinErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendErrTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Pré-remplit le destinataire depuis un QR scanné et saute à l'étape montant.
   useEffect(() => {
@@ -101,6 +109,14 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       enter.setValue(0);
     }
   }, [visible, enter]);
+
+  useEffect(() => {
+    return () => {
+      if (pinErrTimer.current) clearTimeout(pinErrTimer.current);
+      if (sendErrTimer.current) clearTimeout(sendErrTimer.current);
+    };
+  }, []);
+
   const animStyle = {
     opacity: enter,
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
@@ -136,7 +152,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       setPin('');
       triggerShake();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setTimeout(() => { setPinError(false); setPinErrMsg('PIN incorrect'); }, 2000);
+      pinErrTimer.current = setTimeout(() => { setPinError(false); setPinErrMsg('PIN incorrect'); }, 2000);
       return;
     }
 
@@ -157,7 +173,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       setSendError(Array.isArray(msg) ? (msg as string[]).join(', ') : msg);
       setPin('');
       triggerShake();
-      setTimeout(() => setSendError(null), 3000);
+      sendErrTimer.current = setTimeout(() => setSendError(null), 3000);
     } finally {
       setSending(false);
     }
@@ -247,7 +263,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 <Avatar initials={selectedContact.avatar} size={40} color={selectedContact.color} bg={selectedContact.color + '20'} />
                 <View>
                   <Text style={styles.contactName}>{selectedContact.name}</Text>
-                  <Text style={styles.contactPhone}>+237 {selectedContact.phone}</Text>
+                  <Text style={styles.contactPhone}>{fmtPhone(selectedContact.phone)}</Text>
                 </View>
               </View>
             )}

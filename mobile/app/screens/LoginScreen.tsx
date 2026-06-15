@@ -164,7 +164,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
             <Pressable
               style={({ pressed }) => [styles.bioBtn, pressed && styles.pressed]}
               onPress={handleBioLogin}
-              disabled={bioLoading}
+              disabled={bioLoading || loading}
               accessibilityRole="button"
               accessibilityLabel="Se connecter avec la biométrie"
             >
@@ -199,6 +199,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               keyboardType="phone-pad"
               autoCapitalize="none"
               autoCorrect={false}
+              accessibilityLabel="Numéro de téléphone"
               editable={!loading}
               returnKeyType="next"
               onSubmitEditing={() => pinRef.current?.focus()}
@@ -219,6 +220,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}
+              accessibilityLabel="Code PIN à 6 chiffres"
               editable={!loading}
               returnKeyType="done"
               onSubmitEditing={() => { if (canSubmit) handleLogin(); }}

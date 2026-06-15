@@ -2,9 +2,10 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionStatus, UserStatus } from '@prisma/client';
+import { TransactionStatus, UserStatus, KycStatus } from '@prisma/client';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 // Champs renvoyés au client — jamais le pinHash.
@@ -65,6 +66,19 @@ export class UsersService {
       });
       if (existing && existing.id !== userId) {
         throw new ConflictException('Cet email est déjà utilisé');
+      }
+    }
+
+    // Bloquer la modification de dateOfBirth si KYC approuvé
+    if (dto.dateOfBirth !== undefined) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { kycStatus: true },
+      });
+      if (user?.kycStatus === KycStatus.APPROVED) {
+        throw new BadRequestException(
+          'La date de naissance ne peut pas être modifiée après vérification KYC',
+        );
       }
     }
 

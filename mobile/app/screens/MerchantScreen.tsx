@@ -24,6 +24,7 @@ import { merchantApi, MerchantStatsResponse, MerchantTransaction } from '../../s
 
 const BAR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const BAR_FACTORS = [0.6, 0.8, 0.7, 1.0, 0.9, 1.2, 0.5];
+const BAR_MAX_H = 60;
 
 interface MerchantScreenProps {
   onBack: () => void;
@@ -58,8 +59,8 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
   const [qrAmount, setQrAmount] = useState('');
   const [qrValue, setQrValue] = useState<string | null>(null);
 
-  // Barres du graphique — Animated.Value par colonne (hauteur, pas nativeDriver)
-  const barAnims = useRef(BAR_DAYS.map(() => new Animated.Value(4))).current;
+  // Barres du graphique — ratio 0→1, nativeDriver:true (scaleY+translateY, pas height)
+  const barAnims = useRef(BAR_DAYS.map(() => new Animated.Value(0))).current;
   const reduceMotionRef = useRef(false);
 
   React.useEffect(() => {
@@ -70,22 +71,21 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
 
   React.useEffect(() => {
     if (!stats) return;
-    if (reduceMotionRef.current) {
-      const base = stats.week.amount / 7;
-      const values = BAR_FACTORS.map((f) => Math.round(base * f));
-      const maxVal = Math.max(...values, 1);
-      barAnims.forEach((anim, i) => anim.setValue(Math.max(4, Math.round((values[i] / maxVal) * 60))));
-      return;
-    }
     const base = stats.week.amount / 7;
     const values = BAR_FACTORS.map((f) => Math.round(base * f));
     const maxVal = Math.max(...values, 1);
+    // Ratio minimum 0.067 ≈ 4px visible à BAR_MAX_H=60
+    const ratios = values.map((v) => Math.max(0.067, v / maxVal));
+    if (reduceMotionRef.current) {
+      barAnims.forEach((anim, i) => anim.setValue(ratios[i]));
+      return;
+    }
     Animated.stagger(50, barAnims.map((anim, i) =>
       Animated.timing(anim, {
-        toValue: Math.max(4, Math.round((values[i] / maxVal) * 60)),
+        toValue: ratios[i],
         duration: 350,
         easing: Easing.out(Easing.quad),
-        useNativeDriver: false,
+        useNativeDriver: true,
       })
     )).start();
   }, [stats]);
@@ -200,7 +200,15 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {error && <Text style={styles.errorText}>{error}</Text>}
+        {error && (
+          <View style={styles.errorWrap}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={load} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Réessayer">
+              <Ionicons name="refresh-outline" size={14} color={Colors.red} />
+              <Text style={styles.retryText}>Réessayer</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {loading && !stats ? (
           <View style={styles.loadingWrap}>
@@ -265,8 +273,16 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                           style={[
                             styles.chartBar,
                             {
-                              height: barAnims[i],
-                              backgroundColor: i === new Date().getDay() ? Colors.primary : Colors.primary + '50',
+                              backgroundColor: i === (new Date().getDay() + 6) % 7 ? Colors.primary : Colors.primary + '50',
+                              transform: [
+                                {
+                                  translateY: barAnims[i].interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [BAR_MAX_H / 2, 0],
+                                  }),
+                                },
+                                { scaleY: barAnims[i] },
+                              ],
                             },
                           ]}
                         />
@@ -351,7 +367,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                     <View style={styles.txInfo}>
                       <Text style={styles.txAmount}>+{fcfa(tx.amount)} FCFA</Text>
                       {tx.sender && (
-                        <Text style={styles.txParty}>{tx.sender.fullName ?? tx.sender.phone}</Text>
+                        <Text style={styles.txParty} numberOfLines={1}>{tx.sender.fullName ?? tx.sender.phone}</Text>
                       )}
                       <Text style={styles.txDate}>
                         {new Date(tx.createdAt).toLocaleDateString('fr-FR', {
@@ -394,10 +410,13 @@ const styles = StyleSheet.create({
   headerTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
   loadingWrap: { alignItems: 'center', paddingTop: 80, gap: Spacing.md },
   loadingText: { color: Colors.textMuted, fontSize: Typography.base },
+  errorWrap: { margin: Spacing.lg, alignItems: 'center', gap: Spacing.sm },
   errorText: {
-    color: Colors.red, textAlign: 'center', margin: Spacing.lg,
+    color: Colors.red, textAlign: 'center', width: '100%',
     backgroundColor: Colors.errorBg, padding: Spacing.md, borderRadius: BorderRadius.sm,
   },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  retryText: { color: Colors.red, fontSize: Typography.sm, fontWeight: Typography.semibold },
   balanceCard: {
     margin: Spacing.lg, backgroundColor: Colors.card,
     borderWidth: 1, borderColor: Colors.primary + '30',
@@ -480,7 +499,7 @@ const styles = StyleSheet.create({
   },
   chartBars: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 80 },
   chartBarWrap: { flex: 1, alignItems: 'center', gap: 4, justifyContent: 'flex-end' },
-  chartBar: { width: '60%', borderRadius: 3, minHeight: 4 },
+  chartBar: { width: '60%', borderRadius: 3, height: BAR_MAX_H },
   chartDay: { color: Colors.textMuted, fontSize: Typography.xs },
   chartNote: { color: Colors.textMuted, fontSize: Typography.xs, textAlign: 'center' },
   shareQrBtn: {

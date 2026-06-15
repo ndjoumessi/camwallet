@@ -155,7 +155,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         fullName: form.fullName.trim() || undefined,
         email: form.email.trim() || undefined,
         city: form.city.trim() || undefined,
-        dateOfBirth: form.dateOfBirth.trim() ? dmyToIso(form.dateOfBirth.trim()) : undefined,
+        dateOfBirth: form.dateOfBirth.trim() && me?.kycStatus !== 'APPROVED' ? dmyToIso(form.dateOfBirth.trim()) : undefined,
       });
       setMe((prev) => (prev ? { ...prev, ...updated } : updated));
       setEditing(false);
@@ -443,28 +443,46 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 ['fullName', 'Nom complet', 'Jean Dupont'],
                 ['email', 'Email', 'jean@example.cm'],
                 ['city', 'Ville', 'Douala'],
-                ['dateOfBirth', 'Date de naissance', 'JJ/MM/AAAA'],
               ] as const).map(([key, label, ph]) => (
                 <View key={key} style={{ marginBottom: Spacing.md }}>
                   <Text style={styles.fieldLabel}>{label}</Text>
                   <TextInput
                     style={styles.input}
                     value={(form as any)[key]}
-                    onChangeText={(v) => {
-                      const val = key === 'dateOfBirth' ? formatDob(v) : v;
-                      setForm((f) => ({ ...f, [key]: val }));
-                    }}
+                    onChangeText={(v) => setForm((f) => ({ ...f, [key]: v }))}
                     placeholder={ph}
                     placeholderTextColor={Colors.textMuted}
-                    autoCapitalize={key === 'email' || key === 'dateOfBirth' ? 'none' : 'words'}
-                    keyboardType={
-                      key === 'email' ? 'email-address'
-                      : key === 'dateOfBirth' ? 'numeric'
-                      : 'default'
-                    }
+                    autoCapitalize={key === 'email' ? 'none' : 'words'}
+                    keyboardType={key === 'email' ? 'email-address' : 'default'}
                   />
                 </View>
               ))}
+
+              {/* Date de naissance — verrouillée si KYC approuvé */}
+              <View style={{ marginBottom: Spacing.md }}>
+                <Text style={styles.fieldLabel}>Date de naissance</Text>
+                {me?.kycStatus === 'APPROVED' ? (
+                  <>
+                    <View style={[styles.input, styles.readonlyInput, { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: 4 }]}>
+                      <Ionicons name="lock-closed-outline" size={14} color={Colors.textMuted} />
+                      <Text style={{ color: Colors.textMuted, fontSize: Typography.base, flex: 1 }}>
+                        {form.dateOfBirth || '—'}
+                      </Text>
+                    </View>
+                    <Text style={styles.readonlyNote}>Date de naissance non modifiable après vérification KYC</Text>
+                  </>
+                ) : (
+                  <TextInput
+                    style={styles.input}
+                    value={form.dateOfBirth}
+                    onChangeText={(v) => setForm((f) => ({ ...f, dateOfBirth: formatDob(v) }))}
+                    placeholder="JJ/MM/AAAA"
+                    placeholderTextColor={Colors.textMuted}
+                    autoCapitalize="none"
+                    keyboardType="numeric"
+                  />
+                )}
+              </View>
               <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
                 <TouchableOpacity style={[styles.formBtn, styles.cancelBtn]} onPress={() => setEditing(false)}>
                   <Text style={styles.cancelBtnText}>Annuler</Text>
