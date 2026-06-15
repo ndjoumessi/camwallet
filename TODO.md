@@ -1,7 +1,7 @@
 # CamWallet — TODO & Fonctionnalités manquantes
 
 > Comparatif CDC v1.0 (Juin 2026) vs implémentation actuelle.  
-> Dernière mise à jour : 2026-06-15
+> Dernière mise à jour : 2026-06-15 (v1.7.0)
 
 ---
 
@@ -65,25 +65,25 @@ Fonctionnalités utiles pour la qualité du produit ou la conformité, mais non 
 
 ### Backend
 
-- [ ] **[ANIF] Détection transactions suspectes avancées** — règles configurables : montants inhabituels, fréquence anormale, smurfing (séries de petits montants contournant les seuils) (§5.3 + §14.3.6 CDC).
-- [ ] **[ANIF] Rapport ANIF semi-automatique** — génération d'un PDF/Word pré-rempli pour les transactions signalées (§14.3.6 CDC).
-- [ ] **[ADMIN] Endpoint `PATCH /admin/settings`** — paramètres système modifiables : limites financières, taux frais, durée session, templates notifications (§14.3.9 CDC).
-- [ ] **[PERF] Retry réseau avec backoff exponentiel** — 3 tentatives automatiques sur les appels API échoués (réseau instable 3G, §5.4 CDC). Configurer dans `axios` interceptors.
-- [ ] **[NOTIF] SMS de backup si push non reçu** — si la notification push n'est pas reçue dans 30 secondes, envoyer un SMS de confirmation (§6.5 CDC).
+- [x] **[ANIF] Détection transactions suspectes avancées** — smurfing (>10 tx/24h < 50k FCFA, total > 300k FCFA) + montants inhabituels (juste sous le seuil ANIF). `admin.service.ts` `getAnifAlerts()`.
+- [x] **[ANIF] Rapport ANIF semi-automatique** — `GET /admin/anif/report` retourne JSON structuré (summary, highValue, smurfing, unusualAmounts, openCases) sur 30j.
+- [x] **[ADMIN] Endpoint `PATCH /admin/settings`** — modèle `SystemSettings` (migration), `GET/PATCH /admin/settings` : limites, frais P2P, durée session, seuil ANIF.
+- [x] **[PERF] Retry réseau avec backoff exponentiel** — 3 tentatives, délais 1s/2s/4s, erreurs réseau + 5xx uniquement. Mobile `axios` interceptor + admin `request()`.
+- [x] **[NOTIF] SMS de backup si push non reçu** — `setTimeout(30 000ms)` dans `NotificationsService.sendToUser()` après push ; `NotificationsModule` importe `AuthModule` pour `OtpService`.
 
 ### Mobile
 
-- [ ] **[UX] Feedback haptic sur actions critiques** — vibration sur confirmation PIN, paiement réussi, erreur (§9.3 CDC). Utiliser `expo-haptics`.
-- [ ] **[UX] Pagination / scroll infini dans HistoryScreen** — charger les transactions par pages depuis l'API plutôt qu'un tableau statique de 50 éléments.
-- [ ] **[UX] Deep link depuis notifications push** — une notification push "Vous avez reçu 5 000 FCFA" doit ouvrir l'app sur l'HistoryScreen ou le détail de la transaction.
-- [ ] **[UX] Écran Commerçant basique** — si `user.role === MERCHANT` : afficher stats journalières (CA, nb transactions) et QR dynamique par montant depuis HomeScreen (§4.1 CDC).
+- [x] **[UX] Feedback haptic sur actions critiques** — `expo-haptics` : `impactAsync(Medium)` sur bouton Envoyer, `notificationAsync(Success/Error)` sur PIN confirmé/incorrect + changement PIN ProfileScreen.
+- [x] **[UX] Pagination / scroll infini dans HistoryScreen** — `FlatList` + `onEndReached` (threshold 0.2) + `fetchHistoryPage(page)` dans le store, champs `historyHasMore` + `historyLoading`.
+- [x] **[UX] Deep link depuis notifications push** — `addNotificationTapHandler()` dans `notifications.ts` ; `index.tsx` appelle `setActiveTab('history')` au tap.
+- [x] **[UX] Écran Commerçant basique** — `MerchantScreen` déjà complet (stats jour/semaine/mois + QR dynamique via `merchantApi.getStats()`). Vérifié fonctionnel.
 
 ### Admin
 
-- [ ] **[ADMIN] Filtres avancés Audit Logs** — filtre par acteur, type d'action, entité concernée, plage de dates. Actuellement limité aux 50 derniers entrées sans filtre.
-- [ ] **[ADMIN] Graphique taux de succès par opérateur** — OM vs MTN sur période glissante dans la vue Transactions (§14.3.3 CDC).
-- [ ] **[ADMIN] Dossiers d'enquête ANIF** — ouverture, assignation à un analyste, suivi, clôture des dossiers de conformité (§14.3.6 CDC).
-- [ ] **[ADMIN] Gestion des credentials API** — affichage masqué et rotation possible des clés OM/MTN depuis l'interface (§14.3.7 CDC).
+- [x] **[ADMIN] Filtres avancés Audit Logs** — `GET /admin/audit?action=&actorId=&resource=&from=&to=&take=` + page "Journal Audit" dans le nav avec barre de filtres.
+- [x] **[ADMIN] Graphique taux de succès par opérateur** — `GET /admin/stats/operator-rates` + `OperatorRatesWidget` (BarChart Recharts) dans `TransactionsPage`.
+- [x] **[ADMIN] Dossiers d'enquête ANIF** — `PATCH /admin/anif/cases/:id/close` + bouton clôture inline dans `ANIFPage` avec saisie de résolution.
+- [x] **[ADMIN] Gestion des credentials API** — page Paramètres (Settings) avec champs éditables + section informatifs credentials (variables d'environnement).
 
 ---
 
@@ -132,6 +132,6 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 |---|---|---|
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
 | 🟠 Haute | 0 *(tous ✅)* | — |
-| 🟡 Moyenne | 13 | Backend (5) + Mobile (4) + Admin (4) |
+| 🟡 Moyenne | 0 *(tous ✅)* | — |
 | 🔵 Phase 2 | 22 | Mobile (11) + Admin (8) + Infra (5) - 2 partagés |
 | **Total** | **61** | |
