@@ -27,13 +27,13 @@
         "buildType": "apk",
         "env": {
           "EXPO_PUBLIC_ENV": "production",
-          "EXPO_PUBLIC_API_URL": "https://api.camwallet.cm"
+          "EXPO_PUBLIC_API_URL": "https://camwallet-production.up.railway.app"
         }
       },
       "ios": {
         "env": {
           "EXPO_PUBLIC_ENV": "production",
-          "EXPO_PUBLIC_API_URL": "https://api.camwallet.cm"
+          "EXPO_PUBLIC_API_URL": "https://camwallet-production.up.railway.app"
         }
       }
     },
