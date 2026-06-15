@@ -104,8 +104,14 @@ export class CamPayService {
       this.logger.log(`CamPay collect initié : ${amount} XAF (ref=${data.reference}, extRef=${externalRef})`);
       return data;
     } catch (err) {
+      const errorCode = err?.response?.data?.error_code;
       const msg = err?.response?.data?.message || err?.response?.data?.detail || err?.message || 'Erreur inconnue';
       this.logger.error(`Erreur CamPay collect : ${msg}`);
+      if (errorCode === 'ER201') {
+        throw new BadRequestException(
+          'Montant trop élevé pour le sandbox CamPay (max 25 XAF). Utilisez un montant ≤ 25 FCFA en mode test.',
+        );
+      }
       throw new BadRequestException('Initiation du paiement CamPay échouée : ' + msg);
     }
   }

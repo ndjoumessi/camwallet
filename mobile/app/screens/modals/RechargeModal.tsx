@@ -52,6 +52,9 @@ const METHODS = [
 
 const toCentimes = (fcfa: number) => Math.round(fcfa * 100);
 
+const IS_SANDBOX = process.env.EXPO_PUBLIC_ENV === 'development';
+const QUICK_AMOUNTS = IS_SANDBOX ? [5, 10, 15, 25] : [5000, 10000, 25000, 50000];
+
 export default function RechargeModal({ visible, onClose, onSuccess }: RechargeModalProps) {
   const { user, fetchBalance } = useStore();
   const [step, setStep] = useState<'method' | 'amount' | 'pending'>('method');
@@ -201,8 +204,15 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                 <Text style={styles.amountCurrency}>FCFA</Text>
               </View>
 
+              {IS_SANDBOX && (
+                <View style={styles.sandboxBanner}>
+                  <Ionicons name="flask-outline" size={14} color={Colors.yellow} />
+                  <Text style={styles.sandboxText}>Mode sandbox — max 25 XAF</Text>
+                </View>
+              )}
+
               <View style={styles.quickGrid}>
-                {[5000, 10000, 25000, 50000].map((q) => (
+                {QUICK_AMOUNTS.map((q) => (
                   <TouchableOpacity
                     key={q}
                     style={[styles.quickBtn, parseInt(amount) === q && { borderColor: method.color, backgroundColor: method.color + '12' }]}
@@ -212,14 +222,16 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                     accessibilityLabel={`${q.toLocaleString('fr-FR')} FCFA`}
                   >
                     <Text style={[styles.quickBtnText, parseInt(amount) === q && { color: method.color }]}>
-                      {(q / 1000).toLocaleString('fr-FR')}k
+                      {IS_SANDBOX ? q.toString() : `${(q / 1000).toLocaleString('fr-FR')}k`}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <View style={styles.limitNote}>
-                <Text style={styles.limitText}>Min: 500 FCFA · Max: 500 000 FCFA</Text>
+                <Text style={styles.limitText}>
+                  {IS_SANDBOX ? 'Min: 1 FCFA · Max: 25 FCFA (sandbox)' : 'Min: 500 FCFA · Max: 500 000 FCFA'}
+                </Text>
               </View>
 
               {error && <Text style={styles.errorText}>{error}</Text>}
@@ -230,7 +242,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                 <Button
                   label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
                   onPress={handleRecharge}
-                  disabled={amt < 500 || loading}
+                  disabled={IS_SANDBOX ? (amt < 1 || amt > 25) : (amt < 500)}
                   fullWidth
                 />
               )}
@@ -302,6 +314,12 @@ const styles = StyleSheet.create({
   quickBtnText: { color: Colors.textSoft, fontSize: Typography.sm, fontWeight: Typography.medium },
   limitNote: { alignItems: 'center' },
   limitText: { color: Colors.textMuted, fontSize: Typography.xs },
+  sandboxBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.yellow + '18', borderWidth: 1, borderColor: Colors.yellow + '50',
+    borderRadius: BorderRadius.sm, paddingVertical: 6, paddingHorizontal: Spacing.sm,
+  },
+  sandboxText: { color: Colors.yellow, fontSize: Typography.xs, fontWeight: Typography.medium },
   phoneRow: { marginBottom: Spacing.md },
   phoneLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginBottom: 6 },
   phoneInput: {

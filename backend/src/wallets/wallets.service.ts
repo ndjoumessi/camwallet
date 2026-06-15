@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CamPayService } from '../campay/campay.service';
 import {
@@ -25,6 +26,7 @@ export class WalletsService {
   constructor(
     private prisma: PrismaService,
     private campay: CamPayService,
+    private config: ConfigService,
   ) {}
 
   // ─── Solde ────────────────────────────────────────────────────────────────
@@ -55,6 +57,13 @@ export class WalletsService {
   ) {
     if (amount <= 0n) throw new BadRequestException('Montant invalide');
     if (!phone) throw new BadRequestException('Numéro mobile money requis pour la recharge');
+
+    const isSandbox = this.config.get<string>('NODE_ENV') !== 'production';
+    if (isSandbox && amount > 2500n) {
+      throw new BadRequestException(
+        'Mode sandbox CamPay — montant max 25 FCFA (2 500 centimes). Réduisez le montant pour les tests.',
+      );
+    }
 
     const operatorRef = `RCHG-${randomUUID()}`;
     const description = `Recharge CamWallet depuis ${phone}`;
