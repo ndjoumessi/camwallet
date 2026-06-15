@@ -92,6 +92,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'pin'>('idle');
   const [deletePin, setDeletePin] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [phoneTooltip, setPhoneTooltip] = useState(false);
 
   // Changement de PIN (flux par étapes : vérification ancien PIN → nouveau PIN)
   const [pinModalOpen, setPinModalOpen] = useState(false);
@@ -131,10 +132,23 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       city: me.city ?? '',
       dateOfBirth: me.dateOfBirth ? isoToDmy(me.dateOfBirth.slice(0, 10)) : '',
     });
+    setPhoneTooltip(false);
     setEditing(true);
   };
 
   const save = async () => {
+    if (form.fullName.trim() && form.fullName.trim().length < 2) {
+      Alert.alert('Validation', 'Le nom complet doit contenir au moins 2 caractères.');
+      return;
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      Alert.alert('Validation', "Format d'e-mail invalide.");
+      return;
+    }
+    if (form.dateOfBirth.trim() && !/^\d{2}\/\d{2}\/\d{4}$/.test(form.dateOfBirth.trim())) {
+      Alert.alert('Validation', 'Date de naissance : format JJ/MM/AAAA attendu.');
+      return;
+    }
     setSaving(true);
     try {
       const updated = await userApi.updateProfile({
@@ -388,6 +402,43 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           {/* Edit form (inline) */}
           {editing && (
             <View style={styles.editCard}>
+              {/* Téléphone — lecture seule */}
+              <View style={{ marginBottom: Spacing.md }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={styles.fieldLabel}>Téléphone</Text>
+                  <TouchableOpacity
+                    onPress={() => setPhoneTooltip((v) => !v)}
+                    accessibilityLabel="Pourquoi ce champ est verrouillé"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="lock-closed" size={13} color={Colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.input, styles.readonlyInput, { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }]}>
+                  <Ionicons name="lock-closed-outline" size={14} color={Colors.textMuted} />
+                  <Text style={{ color: Colors.textMuted, fontSize: Typography.base, flex: 1 }}>{phone}</Text>
+                </View>
+                {phoneTooltip && (
+                  <Text style={styles.readonlyNote}>Non modifiable pour des raisons de sécurité</Text>
+                )}
+                <Text style={styles.readonlyNote}>Pour modifier votre numéro, contactez le support</Text>
+              </View>
+
+              {/* Statut KYC — badge uniquement */}
+              <View style={{ marginBottom: Spacing.md, opacity: 0.5 }}>
+                <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>Statut KYC</Text>
+                <Badge label={kyc.label} icon={kyc.icon} color={kyc.color} bg={kyc.bg} />
+              </View>
+
+              {/* Devise — lecture seule */}
+              <View style={{ marginBottom: Spacing.xl }}>
+                <Text style={styles.fieldLabel}>Devise</Text>
+                <View style={[styles.input, styles.readonlyInput, { flexDirection: 'row', alignItems: 'center', marginTop: 4 }]}>
+                  <Text style={{ color: Colors.textMuted, fontSize: Typography.base }}>XAF — Franc CFA</Text>
+                </View>
+              </View>
+
+              {/* Champs modifiables */}
               {([
                 ['fullName', 'Nom complet', 'Jean Dupont'],
                 ['email', 'Email', 'jean@example.cm'],
@@ -848,6 +899,8 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg, padding: Spacing.lg,
   },
   fieldLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginBottom: 4 },
+  readonlyInput: { opacity: 0.5 },
+  readonlyNote: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 4 },
   input: {
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
     borderRadius: BorderRadius.sm, padding: Spacing.md, color: Colors.text, fontSize: Typography.base,
