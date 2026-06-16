@@ -18,7 +18,7 @@ import {
 import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
-  getStats, getUsers, getTransactions, getTimeseries, AdminTransaction,
+  getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase,
@@ -84,6 +84,13 @@ const TX_STATUS_BADGE: Record<string, string> = {
   COMPLETED: 'success', PENDING: 'pending', PROCESSING: 'pending',
   FAILED: 'failed', REFUNDED: 'flagged', CANCELLED: 'failed',
 }
+// Niveau de risque (dérivé du volume 30j) → couleur.
+const RISK_META: Record<string, { color: string; label: string }> = {
+  'Bas': { color: '#00C896', label: 'Bas' },
+  'Moyen': { color: '#FB923C', label: 'Moyen' },
+  'Élevé': { color: '#FF4D6D', label: 'Élevé' },
+}
+const USER_ROLE_LABEL: Record<string, string> = { USER: 'Utilisateur', MERCHANT: 'Marchand', ADMIN: 'Admin' }
 // enum backend → libellé court attendu par TxTypeBadge
 const TX_TYPE_LABEL: Record<string, string> = {
   P2P: 'P2P', QR_PAYMENT: 'QR', RECHARGE: 'RECHARGE', WITHDRAWAL: 'RETRAIT', REFUND: 'REFUND',
@@ -138,6 +145,16 @@ function OperatorBadge({ operator }: { operator: string | null }) {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, background: m.color + '22', color: m.color, fontSize: 9, fontWeight: 900, letterSpacing: '-0.02em' }}>{m.short}</span>
       <span style={{ color: C.textSoft, fontSize: 12, whiteSpace: 'nowrap' }}>{m.label}</span>
+    </span>
+  )
+}
+
+// Badge de niveau de risque (Bas / Moyen / Élevé) avec pastille colorée.
+function RiskBadge({ level }: { level?: string }) {
+  const m = (level && RISK_META[level]) || RISK_META['Bas']
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: m.color + '1F', color: m.color }}>
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: m.color }} />{m.label}
     </span>
   )
 }
@@ -421,8 +438,9 @@ function TxTypeBadge({ type }: { type: string }) {
 }
 
 // ── KPI Card ──────────────────────────────────────────────
-function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, sub }: {
-  label: string, value: string, delta?: string, deltaUp?: boolean, icon: LucideIcon, color?: string, sub?: string
+function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, sub, spark, badge }: {
+  label: string, value: string, delta?: string, deltaUp?: boolean, icon: LucideIcon, color?: string, sub?: string,
+  spark?: number[], badge?: number
 }) {
   const { t } = useTranslation()
   const TrendIcon = deltaUp ? ArrowUpRight : ArrowDownRight
@@ -437,9 +455,15 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{label}</span>
         <span style={{
+          position: 'relative',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34,
           borderRadius: 10, background: color + '1F', color, flexShrink: 0,
-        }}><Icon size={18} /></span>
+        }}>
+          <Icon size={18} />
+          {!!badge && badge > 0 && (
+            <span style={{ position: 'absolute', top: -6, right: -6, minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: C.yellow, color: '#1A1206', fontSize: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{badge}</span>
+          )}
+        </span>
       </div>
       <div style={{ fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: -0.5, marginBottom: 6 }}>{value}</div>
       {delta && (
@@ -449,6 +473,7 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
         </div>
       )}
       {sub && <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{sub}</div>}
+      {spark && spark.length > 1 && <div style={{ marginTop: 10 }}><Sparkline data={spark} color={color} /></div>}
     </div>
   )
 }
@@ -488,6 +513,15 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
   // Séries temporelles réelles (volume, frais, tx, users) selon la période.
   const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
   const { data: ts } = useFetch(() => getTimeseries(period), [period])
+  // Série 7 j fixe pour les sparklines des KPI (indépendante du sélecteur).
+  const { data: ts7 } = useFetch(() => getTimeseries('7d'), [])
+  const spark7 = ts7?.series ?? []
+  const sparkVolume = spark7.map((p) => toFcfa(p.volume))
+  const sparkBalance: number[] = [] // pas de série de solde historique
+  const sparkUsers = spark7.map((p) => p.users)
+  const sparkTx = spark7.map((p) => p.transactions)
+  // Transaction sélectionnée → modale détail (clic sur une ligne récente).
+  const [selectedTx, setSelectedTx] = useState<AdminTransaction | null>(null)
 
   // ── Flux SSE temps réel ────────────────────────────────
   const [liveCount, setLiveCount] = useState(0)
@@ -549,14 +583,14 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       {stats && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginBottom: 24 }}>
         <KPICard label={t('dashboard.kpi_volume')} value={formatFCFA(stats.volume.completedAmount)} icon={Wallet}
-          {...trendProps(stats.trends.volume)}
+          {...trendProps(stats.trends.volume)} spark={sparkVolume}
           sub={t('dashboard.kpi_fees_sub', { value: formatFCFA(stats.volume.collectedFees) })} />
-        <KPICard label={t('dashboard.kpi_balance')} value={formatFCFA(stats.totalBalance)} icon={Landmark} color={C.purple} />
+        <KPICard label={t('dashboard.kpi_balance')} value={formatFCFA(stats.totalBalance)} icon={Landmark} color={C.purple} spark={sparkBalance} />
         <KPICard label={t('dashboard.kpi_users')} value={stats.users.total.toLocaleString('fr-FR')} icon={UsersIcon} color={C.green}
-          {...trendProps(stats.trends.users)}
+          {...trendProps(stats.trends.users)} spark={sparkUsers}
           sub={stats.users.byRole.map((r) => `${r.count} ${r.role.toLowerCase()}`).join(' · ')} />
         <KPICard label={t('dashboard.kpi_transactions')} value={stats.transactions.total.toLocaleString('fr-FR')} icon={Zap} color={C.blue}
-          {...trendProps(stats.trends.transactions)}
+          {...trendProps(stats.trends.transactions)} spark={sparkTx} badge={stats.transactions.pending}
           sub={t('dashboard.kpi_pending_sub', { count: stats.transactions.pending })} />
       </div>
       )}
@@ -706,8 +740,8 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
           </thead>
           <tbody>
             {recent.map(tx => (
-              <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
-                <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
+              <tr key={tx.id} className="cw-row" onClick={() => setSelectedTx(tx)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference.slice(0, 10)}…</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '10px 12px', color: C.text }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -718,9 +752,9 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
                   </div>
                 </td>
                 <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, t('common.operator'))}</td>
-                <td style={{ padding: '10px 12px', color: C.text, fontWeight: 600 }}>{formatFCFA(tx.amount)}</td>
+                <td style={{ padding: '10px 12px', color: TX_TYPE_COLOR[tx.type] ?? C.text, fontWeight: 700 }}>{formatFCFA(tx.amount)}</td>
                 <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
-                <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
+                <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tx.createdAt)}>{relativeTime(tx.createdAt)}</td>
               </tr>
             ))}
           </tbody>
@@ -733,6 +767,10 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
       {/* Widget santé intégrations */}
       <HealthWidget />
+
+      {selectedTx && (
+        <TransactionDetailModal tx={selectedTx} onClose={() => setSelectedTx(null)} onRetried={() => { setSelectedTx(null); refetchRecent() }} />
+      )}
     </div>
   )
 }
@@ -895,6 +933,8 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
   const { data, loading, error, refetch } = useFetch(() => getUserDetail(userId), [userId])
   const [acting, setActing] = useState(false)
   const [confirmingPinReset, setConfirmingPinReset] = useState(false)
+  const [tab, setTab] = useState<'profil' | 'tx' | 'kyc' | 'audit'>('profil')
+  const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null)
   const toast = useToast()
   const u = data?.user
 
@@ -959,17 +999,25 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
     width: 'min(820px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 24,
   }
   const label = (t: string) => <div style={{ fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{t}</div>
-  const photo = (src: string, cap: string) => (
-    <a href={src} target="_blank" rel="noreferrer" style={{ flex: 1 }}>
-      <img src={src} alt={cap} style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
-      <div style={{ fontSize: 10, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
-    </a>
+  const photoTile = (src: string, cap: string) => (
+    <button onClick={() => setLightbox({ url: src, alt: cap })} style={{ flex: 1, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+      <img src={src} alt={cap} style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+      <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
+    </button>
   )
+  const sectionTitle = (t: string): CSSProperties => ({ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 })
+
+  const TABS: { key: 'profil' | 'tx' | 'kyc' | 'audit'; label: string }[] = [
+    { key: 'profil', label: 'Profil' },
+    { key: 'tx', label: 'Transactions' },
+    { key: 'kyc', label: 'KYC' },
+    { key: 'audit', label: 'Audit' },
+  ]
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={panel} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
           <h2 style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Détail utilisateur</h2>
           <button className="cw-iconbtn" onClick={onClose} aria-label="Fermer"
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 9, background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}>
@@ -981,47 +1029,29 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
 
         {u && data && (
           <>
-            {/* En-tête */}
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 20 }}>
-              <div style={{ width: 56, height: 56, borderRadius: 28, overflow: 'hidden', background: C.green + '20', border: `2px solid ${C.green}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: C.green, flexShrink: 0 }}>
+            {/* En-tête : grand avatar + nom + téléphone + badges statut/KYC/rôle */}
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ width: 64, height: 64, borderRadius: 32, overflow: 'hidden', background: C.green + '20', border: `2px solid ${C.green}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 800, color: C.green, flexShrink: 0 }}>
                 {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(u.fullName)}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ color: C.text, fontWeight: 700, fontSize: 16 }}>{u.fullName ?? 'Sans nom'}</div>
+                <div style={{ color: C.text, fontWeight: 700, fontSize: 17 }}>{u.fullName ?? 'Sans nom'}</div>
                 <div style={{ color: C.textSoft, fontFamily: 'monospace', fontSize: 13 }}>{u.phone}</div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
                   <StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} />
                   <StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: C.blueLight, color: C.blue }}>{USER_ROLE_LABEL[u.role] ?? u.role}</span>
                 </div>
               </div>
-            </div>
-
-            {/* Infos */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
-              <div>{label('Email')}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
-              <div>{label('Ville')}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
-              <div>{label('Naissance')}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
-              <div>{label('Solde')}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{formatFCFA(u.wallet?.balance ?? 0)}</span></div>
-              <div>{label('Dernière connexion')}<span style={{ color: C.text, fontSize: 13 }}>{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</span></div>
-              <div>{label('Inscrit le')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.createdAt)}</span></div>
-              <div>{label('Transactions')}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
-              <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalSent)}</span></div>
-              <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalReceived)}</span></div>
-              {data.stats.monthlyVolume !== undefined && (
-                <div>{label('Volume 30j')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.monthlyVolume)}</span></div>
-              )}
-              {data.stats.anifRisk && (
-                <div>{label('Score ANIF')}<span style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: data.stats.anifRisk === 'Élevé' ? C.red : data.stats.anifRisk === 'Moyen' ? C.yellow : C.green,
-                }}>{data.stats.anifRisk}</span></div>
-              )}
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: C.textMuted }}>Membre depuis</div>
+                <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{relativeTime(u.createdAt)}</div>
+              </div>
             </div>
 
             {/* Actions (masquées en lecture seule) */}
             {!isReadOnly() && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               {u.role !== 'ADMIN' && (u.status === 'LOCKED' ? (
                 <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'), 'Compte débloqué')}
                   style={{ fontSize: 12, color: C.green, background: C.greenLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
@@ -1031,15 +1061,15 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
               ))}
               {confirmingPinReset ? (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '4px 6px 4px 10px' }}>
-                  <span style={{ fontSize: 12, color: C.yellow, fontWeight: 600 }}>Confirmer la réinitialisation ?</span>
+                  <span style={{ fontSize: 12, color: '#B89000', fontWeight: 600 }}>Confirmer ?</span>
                   <button className="cw-btn" disabled={acting} onClick={() => { setConfirmingPinReset(false); run(() => resetUserPin(u.id), 'PIN réinitialisé') }}
-                    style={{ fontSize: 12, color: '#fff', background: C.yellow, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
+                    style={{ fontSize: 12, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
                   <button className="cw-btn" onClick={() => setConfirmingPinReset(false)}
                     style={{ fontSize: 12, color: C.textSoft, background: 'none', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
                 </div>
               ) : (
                 <button className="cw-btn" disabled={acting} onClick={() => setConfirmingPinReset(true)}
-                  style={{ fontSize: 12, color: C.yellow, background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
+                  style={{ fontSize: 12, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
               )}
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
@@ -1052,130 +1082,193 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
             </div>
             )}
 
-            {/* Document KYC */}
-            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Document KYC</h2>
-            {u.kycDocument ? (
-              <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-                {photo(u.kycDocument.idFrontUrl, 'CNI recto')}
-                {photo(u.kycDocument.idBackUrl, 'CNI verso')}
-                {photo(u.kycDocument.selfieUrl, 'Selfie')}
-              </div>
-            ) : (
-              <div style={{ color: C.textMuted, fontSize: 12, marginBottom: 20 }}>Aucun document soumis</div>
+            {/* Onglets */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: `1px solid ${C.border}` }}>
+              {TABS.map((tb) => (
+                <button key={tb.key} onClick={() => setTab(tb.key)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: '8px 16px',
+                  color: tab === tb.key ? C.green : C.textMuted,
+                  borderBottom: tab === tb.key ? `2px solid ${C.green}` : '2px solid transparent', marginBottom: -1,
+                }}>{tb.label}</button>
+              ))}
+            </div>
+
+            {/* Tab Profil */}
+            {tab === 'profil' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
+                  <div>{label('Email')}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
+                  <div>{label('Ville')}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
+                  <div>{label('Naissance')}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
+                  <div>{label('Solde')}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{formatFCFA(u.wallet?.balance ?? 0)}</span></div>
+                  <div>{label('Dernière connexion')}<span style={{ color: C.text, fontSize: 13 }}>{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</span></div>
+                  <div>{label('Membre depuis')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.createdAt)}</span></div>
+                  <div>{label('Transactions')}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
+                  <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalSent)}</span></div>
+                  <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalReceived)}</span></div>
+                  {data.stats.monthlyVolume !== undefined && (
+                    <div>{label('Volume 30j')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.monthlyVolume)}</span></div>
+                  )}
+                  {data.stats.anifRisk && (
+                    <div>{label('Score risque')}<RiskBadge level={data.stats.anifRisk} /></div>
+                  )}
+                </div>
+
+                {/* Notes internes */}
+                <h3 style={sectionTitle('Notes internes')}>Notes internes</h3>
+                <div style={{ marginBottom: 12 }}>
+                  {notesLoading && <div style={{ color: C.textMuted, fontSize: 12 }}>Chargement…</div>}
+                  {!notesLoading && (!notes || notes.length === 0) && (
+                    <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune note</div>
+                  )}
+                  {(notes ?? []).map((n: AdminNote) => (
+                    <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: C.text, marginBottom: 2 }}>{n.content}</div>
+                        <div style={{ color: C.textMuted, fontSize: 11 }}>{n.author.email ?? n.author.fullName ?? 'Admin'} · {fmtDate(n.createdAt)}</div>
+                      </div>
+                      {!isReadOnly() && <button onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }} aria-label="Supprimer"><X size={14} /></button>}
+                    </div>
+                  ))}
+                </div>
+                {!isReadOnly() && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" aria-label="Note interne" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
+                    <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>Ajouter</button>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Transactions */}
-            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Transactions récentes</h2>
-            <div style={{ marginBottom: 20 }}>
-              {data.transactions.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune transaction</div>}
-              {data.transactions.map((tx) => (
-                <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
-                    <span style={{ color: C.textSoft }}>{partyLabel(tx.sender, 'Opérateur')} → {partyLabel(tx.receiver, 'Opérateur')}</span>
+            {/* Tab Transactions */}
+            {tab === 'tx' && (
+              <div>
+                {data.transactions.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune transaction</div>}
+                {data.transactions.map((tx) => (
+                  <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
+                      <span style={{ color: C.textSoft }}>{partyLabel(tx.sender, 'Opérateur')} → {partyLabel(tx.receiver, 'Opérateur')}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} />
+                      <span style={{ color: TX_TYPE_COLOR[tx.type] ?? C.text, fontWeight: 700 }}>{formatFCFA(tx.amount)}</span>
+                      <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }} title={fmtDate(tx.createdAt)}>{relativeTime(tx.createdAt)}</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} />
-                    <span style={{ color: C.text, fontWeight: 600 }}>{formatFCFA(tx.amount)}</span>
-                    <span style={{ color: C.textMuted }}>{fmtDate(tx.createdAt)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
-            {/* Audit */}
-            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Journal d'audit</h2>
-            <div style={{ marginBottom: 24 }}>
-              {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune action enregistrée</div>}
-              {data.audit.map((a) => (
-                <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
-                  <span style={{ color: C.textSoft }}>{a.action}{a.metadata?.note ? ` — ${a.metadata.note}` : ''}</span>
-                  <span style={{ color: C.textMuted }}>{(a.user?.email ?? 'admin')} · {fmtDate(a.createdAt)}</span>
-                </div>
-              ))}
-            </div>
+            {/* Tab KYC */}
+            {tab === 'kyc' && (
+              <div>
+                {u.kycDocument ? (
+                  <>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+                      {photoTile(u.kycDocument.idFrontUrl, 'CNI recto')}
+                      {photoTile(u.kycDocument.idBackUrl, 'CNI verso')}
+                      {photoTile(u.kycDocument.selfieUrl, 'Selfie')}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                      <div>{label('Statut KYC')}<StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></div>
+                      <div>{label('Soumis le')}<span style={{ color: C.text, fontSize: 13 }}>{u.kycDocument.submittedAt ? fmtDate(u.kycDocument.submittedAt) : '—'}</span></div>
+                      {u.kycDocument.reviewedAt && <div>{label('Décision le')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.kycDocument.reviewedAt)}</span></div>}
+                    </div>
+                    {u.kycDocument.reviewNote && (
+                      <div style={{ marginTop: 12, padding: '10px 12px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                        {label('Note de révision')}<span style={{ color: C.textSoft, fontSize: 12 }}>{u.kycDocument.reviewNote}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ color: C.textMuted, fontSize: 12 }}>Aucun document KYC soumis</div>
+                )}
+              </div>
+            )}
 
-            {/* Notes internes */}
-            <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Notes internes</h2>
-            <div style={{ marginBottom: 12 }}>
-              {notesLoading && <div style={{ color: C.textMuted, fontSize: 12 }}>Chargement…</div>}
-              {!notesLoading && (!notes || notes.length === 0) && (
-                <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune note</div>
-              )}
-              {(notes ?? []).map((n: AdminNote) => (
-                <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: C.text, marginBottom: 2 }}>{n.content}</div>
-                    <div style={{ color: C.textMuted, fontSize: 11 }}>{n.author.email ?? n.author.fullName ?? 'Admin'} · {fmtDate(n.createdAt)}</div>
+            {/* Tab Audit */}
+            {tab === 'audit' && (
+              <div>
+                {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune action enregistrée</div>}
+                {data.audit.map((a) => (
+                  <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
+                    <span style={{ color: C.textSoft }}>{a.action}{a.metadata?.note ? ` — ${a.metadata.note}` : ''}</span>
+                    <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{(a.user?.email ?? 'admin')} · {relativeTime(a.createdAt)}</span>
                   </div>
-                  <button onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }} aria-label="Supprimer"><X size={14} /></button>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" aria-label="Note interne" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
-              <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>Ajouter</button>
-            </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
+      {lightbox && <KYCLightbox url={lightbox.url} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
     </div>
   )
 }
 
 function UsersPage() {
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [kycFilter, setKycFilter] = useState('')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [riskFilter, setRiskFilter] = useState('') // appliqué côté client (dérivé)
   const debouncedSearch = useDebounced(search.trim(), 350)
 
-  // Recherche + filtre statut côté serveur.
+  // Recherche + filtres statut/KYC/rôle côté serveur.
   const { data, loading, error, refetch } = useFetch(
-    () => getUsers({ limit: 50, search: debouncedSearch || undefined, status: USER_STATUS_FILTER[filter] }),
-    [debouncedSearch, filter],
+    () => getUsers({
+      limit: 50,
+      search: debouncedSearch || undefined,
+      status: statusFilter || undefined,
+      kycStatus: kycFilter || undefined,
+      role: roleFilter || undefined,
+    }),
+    [debouncedSearch, statusFilter, kycFilter, roleFilter],
   )
-  const users = data?.data ?? []
+  const { data: ustats } = useFetch(() => getUserStats(), [])
+  const allUsers = data?.data ?? []
+  // Filtre risque (dérivé) appliqué sur les lignes chargées.
+  const users = riskFilter ? allUsers.filter((u) => u.riskLevel === riskFilter) : allUsers
   const total = data?.meta.total ?? 0
 
   const [acting, setActing] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [blockConfirm, setBlockConfirm] = useState<string | null>(null)
+  const [pinConfirm, setPinConfirm] = useState<string | null>(null)
   const toast = useToast()
-  const [exporting, setExporting] = useState(false)
 
-  const handleExportUsers = async () => {
-    setExporting(true)
-    try {
-      await downloadUsersCSV()
-      toast('Export téléchargé', 'success')
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Export échoué', 'error')
-    } finally {
-      setExporting(false)
-    }
-  }
   // Tri client sur les lignes chargées.
   const [sort, setSort] = useState<{ key: 'balance' | 'createdAt'; dir: 1 | -1 } | null>(null)
   const sortedUsers = useMemo(() => {
     if (!sort) return users
-    const v = (u: typeof users[number]) =>
+    const v = (u: AdminUser) =>
       sort.key === 'balance' ? Number(u.wallet?.balance ?? 0) : new Date(u.createdAt).getTime()
     return [...users].sort((a, b) => (v(a) - v(b)) * sort.dir)
   }, [users, sort])
   const toggleSort = (key: 'balance' | 'createdAt') =>
     setSort((s) => (s?.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: -1 }))
 
-  // Export PDF des lignes actuellement chargées (recherche + filtre + tri appliqués).
-  const handleExportUsersPdf = () => {
+  // Export CSV filtré : exactement les lignes affichées (filtres + tri appliqués).
+  const handleExportCsv = () => {
+    downloadCsv(
+      'utilisateurs-camwallet.csv',
+      ['Nom', 'Téléphone', 'Email', 'Solde (FCFA)', 'Statut', 'KYC', 'Risque', 'Rôle', 'Inscrit'],
+      sortedUsers.map((u) => [
+        u.fullName ?? '—', u.phone, u.email ?? '—',
+        toFcfa(Number(u.wallet?.balance ?? 0)).toLocaleString('fr-FR'),
+        u.status, u.kycStatus, u.riskLevel ?? 'Bas', USER_ROLE_LABEL[u.role] ?? u.role, fmtDate(u.createdAt),
+      ]),
+    )
+    toast('Export CSV téléchargé', 'success')
+  }
+  const handleExportPdf = () => {
     const ok = exportPdfReport(
       'Utilisateurs CamWallet',
-      ['Nom', 'Téléphone', 'Solde (FCFA)', 'Statut', 'KYC', 'Inscrit'],
+      ['Nom', 'Téléphone', 'Solde (FCFA)', 'Statut', 'KYC', 'Risque', 'Inscrit'],
       sortedUsers.map((u) => [
-        u.fullName ?? '—',
-        u.phone,
-        toFcfa(Number(u.wallet?.balance ?? 0)).toLocaleString('fr-FR'),
-        u.status,
-        u.kycStatus,
-        fmtDate(u.createdAt),
+        u.fullName ?? '—', u.phone, toFcfa(Number(u.wallet?.balance ?? 0)).toLocaleString('fr-FR'),
+        u.status, u.kycStatus, u.riskLevel ?? 'Bas', fmtDate(u.createdAt),
       ]),
     )
     toast(ok ? 'Rapport PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
@@ -1194,78 +1287,107 @@ function UsersPage() {
       setActing(null)
     }
   }
+  const doResetPin = async (id: string) => {
+    setActing(id)
+    try {
+      await resetUserPin(id)
+      toast('PIN réinitialisé', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
+    } finally {
+      setActing(null); setPinConfirm(null)
+    }
+  }
 
-  const FILTERS: { key: string; label: string }[] = [
-    { key: 'all', label: 'Tous' },
-    { key: 'verified', label: 'Actifs' },
-    { key: 'suspended', label: 'Suspendus' },
-    { key: 'blocked', label: 'Bloqués' },
-  ]
+  // Couleur du solde selon le montant (centimes).
+  const balanceColor = (c: number) => (c <= 0 ? C.textMuted : toFcfa(c) >= 100_000 ? C.green : C.text)
+
+  const stats = ustats
+  const statCards: { label: string; value: string; sub: string; icon: LucideIcon; color: string; trend?: number | null }[] = stats ? [
+    { label: 'Total utilisateurs', value: stats.total.toLocaleString('fr-FR'), sub: `${stats.newToday} nouveau(x) aujourd'hui`, icon: UsersIcon, color: C.blue, trend: stats.trends.total },
+    { label: "Actifs aujourd'hui", value: stats.activeToday.toLocaleString('fr-FR'), sub: 'connectés aujourd’hui', icon: Activity, color: C.green },
+    { label: 'KYC approuvés', value: stats.kycApproved.toLocaleString('fr-FR'), sub: 'comptes vérifiés', icon: ClipboardCheck, color: C.purple, trend: stats.trends.kycApproved },
+    { label: 'Marchands', value: stats.merchants.toLocaleString('fr-FR'), sub: 'comptes commerçants', icon: Landmark, color: C.yellow, trend: stats.trends.merchants },
+  ] : []
+
+  const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Utilisateurs</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} utilisateur{total > 1 ? 's' : ''} enregistré{total > 1 ? 's' : ''}</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} utilisateur{total > 1 ? 's' : ''} · {sortedUsers.length} affiché(s)</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="cw-btn"
-            onClick={handleExportUsers}
-            disabled={exporting}
-            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
-          >
-            ⬇ Export CSV
-          </button>
-          <button
-            className="cw-btn"
-            onClick={handleExportUsersPdf}
-            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}
-          >
-            ⬇ Export PDF
-          </button>
+          <button className="cw-btn" onClick={handleExportCsv}
+            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>⬇ Exporter CSV</button>
+          <button className="cw-btn" onClick={handleExportPdf}
+            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>⬇ Export PDF</button>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Cartes de synthèse */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; const TrendIcon = (s.trend ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.sub}</span>
+              {s.trend != null && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 700, color: s.trend >= 0 ? C.green : C.red }}>
+                  <TrendIcon size={12} />{Math.abs(s.trend)} %
+                </span>
+              )}
+            </div>
+          </div>
+        )})}
+      </div>
+
+      {/* Filtres avancés */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', flex: 1, minWidth: 200 }}>
-          <Search size={16} color={C.textMuted} style={{ flexShrink: 0 }} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher (nom ou téléphone)…"
-            aria-label="Rechercher un utilisateur"
-            style={{ background: 'none', border: 'none', color: C.text, fontSize: 13, flex: 1 }}
-          />
+        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+          <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nom, téléphone ou email…"
+            aria-label="Rechercher un utilisateur" style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
-        {FILTERS.map(f => (
-          <button
-            key={f.key}
-            className="cw-chip"
-            onClick={() => setFilter(f.key)}
-            aria-pressed={filter === f.key}
-            style={{
-              fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: filter === f.key ? 700 : 500,
-              background: filter === f.key ? C.green : C.card,
-              border: `1px solid ${filter === f.key ? C.green : C.border}`,
-              color: filter === f.key ? '#fff' : C.textSoft,
-            }}
-          >
-            {f.label}
-          </button>
-        ))}
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous statuts</option>
+          <option value="ACTIVE">Actif</option>
+          <option value="SUSPENDED">Suspendu</option>
+          <option value="LOCKED">Bloqué</option>
+        </select>
+        <select value={kycFilter} onChange={e => setKycFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous KYC</option>
+          <option value="APPROVED">Approuvé</option>
+          <option value="SUBMITTED">En attente</option>
+          <option value="REJECTED">Rejeté</option>
+        </select>
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous rôles</option>
+          <option value="USER">Utilisateur</option>
+          <option value="MERCHANT">Marchand</option>
+        </select>
+        <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous risques</option>
+          <option value="Bas">Risque bas</option>
+          <option value="Moyen">Risque moyen</option>
+          <option value="Élevé">Risque élevé</option>
+        </select>
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
-        <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
               {([
-                { h: 'Utilisateur' }, { h: 'Téléphone' }, { h: 'Solde', sk: 'balance' as const },
-                { h: 'Statut' }, { h: 'KYC' }, { h: 'Inscrit', sk: 'createdAt' as const }, { h: 'Actions' },
+                { h: 'Utilisateur' }, { h: 'Email' }, { h: 'Solde', sk: 'balance' as const },
+                { h: 'KYC' }, { h: 'Risque' }, { h: 'Inscription', sk: 'createdAt' as const }, { h: 'Statut' }, { h: 'Actions' },
               ]).map(({ h, sk }) => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>
                   {sk ? (
@@ -1289,43 +1411,57 @@ function UsersPage() {
                     </div>
                     <div>
                       <div style={{ color: C.text, fontWeight: 600 }}>{u.fullName ?? 'Sans nom'}</div>
-                      <div style={{ color: C.textMuted, fontSize: 11 }}>{u.email ?? `ID: ${u.id.slice(0, 8)}`}</div>
+                      <div style={{ color: C.textMuted, fontSize: 11, fontFamily: 'monospace' }}>{u.phone}</div>
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '12px 14px', color: C.textSoft, fontFamily: 'monospace' }}>{u.phone}</td>
-                <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{toFcfa(u.wallet?.balance ?? 0).toLocaleString('fr-FR')}</td>
+                <td style={{ padding: '12px 14px', color: C.textSoft, fontSize: 12 }}>{u.email ?? '—'}</td>
+                <td style={{ padding: '12px 14px', color: balanceColor(u.wallet?.balance ?? 0), fontWeight: 700 }}>{formatFCFA(u.wallet?.balance ?? 0)}</td>
+                <td style={{ padding: '12px 14px' }}>
+                  <StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} />
+                  {u.kycStatus === 'APPROVED' && u.kycReviewedAt && (
+                    <div style={{ fontSize: 10, color: C.textMuted, marginTop: 3 }}>{fmtDate(u.kycReviewedAt)}</div>
+                  )}
+                </td>
+                <td style={{ padding: '12px 14px' }}><RiskBadge level={u.riskLevel} /></td>
+                <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(u.createdAt)}>{relativeTime(u.createdAt)}</td>
                 <td style={{ padding: '12px 14px' }}><StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} /></td>
-                <td style={{ padding: '12px 14px' }}><StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></td>
-                <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(u.createdAt)}</td>
                 <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <button className="cw-btn" onClick={() => setSelected(u.id)}
                       style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
-                      Détails
+                      Voir détail
                     </button>
-                    {!isReadOnly() && (u.role === 'ADMIN' ? null : acting === u.id ? (
+                    {!isReadOnly() && u.role !== 'ADMIN' && (acting === u.id ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.textMuted, padding: '4px 10px' }}>
-                        <Loader2 size={12} className="cw-spin" /> En cours…
+                        <Loader2 size={12} className="cw-spin" /> …
                       </span>
-                    ) : u.status === 'LOCKED' ? (
-                      <button className="cw-btn" onClick={() => toggleBlock(u)}
-                        style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
-                        Débloquer
-                      </button>
-                    ) : blockConfirm === u.id ? (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.redLight, border: `1px solid ${C.red}50`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
-                        <span style={{ fontSize: 11, color: C.red, fontWeight: 600, whiteSpace: 'nowrap' }}>Confirmer ?</span>
-                        <button className="cw-btn" disabled={acting === u.id} onClick={() => { setBlockConfirm(null); toggleBlock(u) }}
-                          style={{ fontSize: 11, color: '#fff', background: C.red, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
-                        <button className="cw-btn" onClick={() => setBlockConfirm(null)} aria-label="Annuler le blocage"
-                          style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>✕</button>
-                      </div>
                     ) : (
-                      <button className="cw-btn" onClick={() => setBlockConfirm(u.id)}
-                        style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
-                        Bloquer
-                      </button>
+                      <>
+                        {u.status === 'LOCKED' ? (
+                          <button className="cw-btn" onClick={() => toggleBlock(u)}
+                            style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
+                        ) : blockConfirm === u.id ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.redLight, border: `1px solid ${C.red}50`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
+                            <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>Bloquer ?</span>
+                            <button className="cw-btn" onClick={() => { setBlockConfirm(null); toggleBlock(u) }} style={{ fontSize: 11, color: '#fff', background: C.red, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
+                            <button className="cw-btn" onClick={() => setBlockConfirm(null)} aria-label="Annuler" style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
+                          </span>
+                        ) : (
+                          <button className="cw-btn" onClick={() => setBlockConfirm(u.id)}
+                            style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
+                        )}
+                        {pinConfirm === u.id ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
+                            <span style={{ fontSize: 11, color: '#B89000', fontWeight: 600 }}>Reset ?</span>
+                            <button className="cw-btn" onClick={() => doResetPin(u.id)} style={{ fontSize: 11, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
+                            <button className="cw-btn" onClick={() => setPinConfirm(null)} aria-label="Annuler" style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
+                          </span>
+                        ) : (
+                          <button className="cw-btn" onClick={() => setPinConfirm(u.id)}
+                            style={{ fontSize: 11, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Reset PIN</button>
+                        )}
+                      </>
                     ))}
                   </div>
                 </td>
@@ -1334,7 +1470,7 @@ function UsersPage() {
           </tbody>
         </table>
         </div>
-        {!loading && !error && users.length === 0 && (
+        {!loading && !error && sortedUsers.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun utilisateur trouvé</div>
         )}
         <StateRow loading={loading} error={error} />
