@@ -11,7 +11,7 @@ import {
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
-  Settings, Shield, Loader2, Plus,
+  Settings, Shield, Loader2, Plus, Pencil,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -2530,6 +2530,57 @@ function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreat
   )
 }
 
+function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMember; onClose: () => void; onSaved: () => void }) {
+  const [role, setRole] = useState(member.adminRole ?? 'SUPPORT_OPERATOR')
+  const [saving, setSaving] = useState(false)
+  const toast = useToast()
+
+  const handleSave = async () => {
+    setSaving(true)
+    try { await setAdminRole(member.id, role); toast('Rôle mis à jour', 'success'); onSaved(); onClose() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Modifier l'opérateur</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex' }}><X size={18} /></button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: C.surface, borderRadius: 10, marginBottom: 20 }}>
+          <span style={{ width: 34, height: 34, borderRadius: 17, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, background: (ROLE_COLORS[role] ?? C.green) + '22', color: ROLE_COLORS[role] ?? C.green }}>{initials(member.fullName ?? member.email)}</span>
+          <div>
+            <div style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>{member.fullName ?? '—'}</div>
+            <div style={{ fontSize: 12, color: C.textMuted }}>{member.email}</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.textSoft, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Rôle</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+          {ROLE_ORDER.map((r) => {
+            const sel = role === r
+            return (
+              <button key={r} type="button" onClick={() => setRole(r)} aria-pressed={sel}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', width: '100%', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', background: sel ? ROLE_COLORS[r] + '14' : C.surface, border: `1px solid ${sel ? ROLE_COLORS[r] : C.border}` }}>
+                <span style={{ width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0, background: ROLE_COLORS[r] }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: sel ? ROLE_COLORS[r] : C.text }}>{ROLE_LABELS[r]}</div>
+                  <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '9px 16px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .6 : 1 }}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TeamPage() {
   const { t } = useTranslation()
   const { data: members, loading, error, refetch } = useFetch(getAdminTeam, [])
@@ -2538,21 +2589,14 @@ function TeamPage() {
   const isSuper = (() => { const r = getAdminRole(); return !r || r === 'SUPER_ADMIN' })()
   const [showAdd, setShowAdd] = useState(false)
   const [showPerms, setShowPerms] = useState(false)
+  const [editTarget, setEditTarget] = useState<AdminTeamMember | null>(null)
   const list = members ?? []
-  const [localRoles, setLocalRoles] = useState<Record<string, string>>({})
-  const effectiveRole = (m: AdminTeamMember) => localRoles[m.id] ?? m.adminRole ?? ''
-  const effectiveColor = (m: AdminTeamMember) => ROLE_COLORS[effectiveRole(m)] ?? C.textMuted
 
   const todayStr = new Date().toDateString()
   const connectedToday = list.filter((m) => m.lastLoginAt && new Date(m.lastLoginAt).toDateString() === todayStr).length
   const activeRoles = new Set(list.map((m) => m.adminRole).filter(Boolean)).size
   const lastActivity = list.map((m) => m.lastLoginAt).filter(Boolean).sort().slice(-1)[0] as string | undefined
 
-  const handleRoleChange = async (userId: string, role: string) => {
-    setLocalRoles((prev) => ({ ...prev, [userId]: role }))
-    try { await setAdminRole(userId, role || null); toast('Rôle mis à jour', 'success'); refetch() }
-    catch (e) { setLocalRoles((prev) => { const n = { ...prev }; delete n[userId]; return n }); toast(e instanceof Error ? e.message : 'Erreur', 'error') }
-  }
   const handleSetPassword = async (m: AdminTeamMember) => {
     const pwd = window.prompt(`Nouveau mot de passe pour ${m.email ?? 'cet admin'} (min. 8) :`, genTempPassword())
     if (pwd == null) return
@@ -2622,7 +2666,7 @@ function TeamPage() {
             </thead>
             <tbody>
               {list.map((m) => {
-                const color = effectiveColor(m)
+                const color = ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted
                 const active = m.status === 'ACTIVE'
                 const isSelf = m.id === myId
                 return (
@@ -2635,21 +2679,10 @@ function TeamPage() {
                     </td>
                     <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
                     <td style={{ padding: '12px 14px' }}>
-                      {isSuper ? (
-                        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
-                          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: color, pointerEvents: 'none', zIndex: 1 }} />
-                          <select value={effectiveRole(m)} onChange={(e) => handleRoleChange(m.id, e.target.value)} title="Modifier le rôle"
-                            style={{ appearance: 'none' as any, background: color + '12', border: `1px solid ${color}50`, color, borderRadius: 8, padding: '5px 26px 5px 26px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
-                            {ROLE_ORDER.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                          </select>
-                          <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color, fontSize: 9 }}>▾</span>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                          <span style={{ fontSize: 12, fontWeight: 700, color }}>{m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : '—'}</span>
-                        </div>
-                      )}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: color + '20', color }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 3, background: color, flexShrink: 0 }} />
+                        {m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : '—'}
+                      </span>
                     </td>
                     <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{m.lastLoginAt ? fmtDate(m.lastLoginAt) : 'Jamais'}</td>
                     <td style={{ padding: '12px 14px' }}>
@@ -2659,6 +2692,9 @@ function TeamPage() {
                     </td>
                     <td style={{ padding: '12px 14px' }}>
                       <div style={{ display: 'flex', gap: 6 }}>
+                        {isSuper && !isSelf && (
+                          <button onClick={() => setEditTarget(m)} title="Modifier le rôle" style={iconBtn(C.blue)}><Pencil size={14} /></button>
+                        )}
                         <button onClick={() => handleSetPassword(m)} title="Définir / réinitialiser le mot de passe" style={iconBtn(C.textSoft)}><Lock size={14} /></button>
                         {isSuper && !isSelf && (
                           <button onClick={() => handleToggleStatus(m)} title={active ? 'Désactiver' : 'Réactiver'} style={iconBtn(active ? C.yellow : C.green)}>{active ? <WifiOff size={14} /> : <Wifi size={14} />}</button>
@@ -2714,6 +2750,7 @@ function TeamPage() {
       </div>
 
       {showAdd && <AddOperatorModal onClose={() => setShowAdd(false)} onCreated={refetch} />}
+      {editTarget && <EditOperatorModal member={editTarget} onClose={() => setEditTarget(null)} onSaved={refetch} />}
     </div>
   )
 }
