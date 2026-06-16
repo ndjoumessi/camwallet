@@ -19,7 +19,7 @@ import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
-  getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
+  getKyc, getAlerts, getAudit, getAuditStats, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase,
   getOperations, retryOperation, WebhookEvent, AdminOperation, resolveTransaction,
@@ -2920,114 +2920,161 @@ function ANIFPage() {
 }
 
 // Couleur sémantique d'une action d'audit (BLOCKED=rouge, APPROVED=vert, …).
-const auditActionColor = (action: string): string => {
+// Catégorie sémantique d'une action d'audit → couleur (Sécurité/KYC/Finance/Admin).
+const AUDIT_CYAN = '#22D3EE'
+const auditCategory = (action: string): { key: string; label: string; color: string } => {
   const a = (action || '').toUpperCase()
-  if (/BLOCK|REJECT|LOCK|DELETE|FAIL|SUSPEND|DISABLE/.test(a)) return C.red
-  if (/APPROV|UNBLOCK|UNLOCK|ACTIVAT|SUCCESS|CREATE|ENABLE/.test(a)) return C.green
-  if (/ROLE|UPDATE|CHANGE|RESET|EDIT/.test(a)) return C.purple
-  if (/KYC|REVIEW|PENDING|WARN/.test(a)) return C.yellow
-  return C.blue
+  if (/KYC/.test(a)) return { key: 'kyc', label: 'KYC', color: C.purple }
+  if (/TRANSACTION|WITHDRAWAL|OPERATION|RECHARGE|DISPUTE|ANIF/.test(a)) return { key: 'finance', label: 'Finance', color: AUDIT_CYAN }
+  if (/LOGIN|BLOCK|LOCK|PIN_RESET|STATUS|SUSPEND/.test(a)) return { key: 'security', label: 'Sécurité', color: C.red }
+  if (/ADMIN|ROLE|PASSWORD|SETTINGS|CREATE|DELETE/.test(a)) return { key: 'admin', label: 'Admin', color: C.blue }
+  return { key: 'other', label: 'Autre', color: C.textMuted }
 }
+const auditActionColor = (action: string): string => auditCategory(action).color
+const AUDIT_CATEGORIES = [
+  { key: 'security', label: 'Sécurité', color: C.red },
+  { key: 'kyc', label: 'KYC', color: C.purple },
+  { key: 'finance', label: 'Finance', color: AUDIT_CYAN },
+  { key: 'admin', label: 'Admin', color: C.blue },
+]
 
 function AuditPage() {
-  // Filtres pré-remplis sur la journée en cours.
   const today = new Date().toISOString().slice(0, 10)
-  const [action, setAction] = useState('')
-  const [actorId, setActorId] = useState('')
+  const ago = (d: number) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10)
+  const [preset, setPreset] = useState<'today' | '7d' | '30d' | 'custom'>('7d')
+  const [actorSearch, setActorSearch] = useState('')
   const [resource, setResource] = useState('')
-  const [from, setFrom] = useState(today)
-  const [to, setTo] = useState(today)
-  const [filterParams, setFilterParams] = useState<{ action?: string; actorId?: string; resource?: string; from?: string; to?: string }>({ from: today, to: today })
+  const [customFrom, setCustomFrom] = useState(today)
+  const [customTo, setCustomTo] = useState(today)
+  const [category, setCategory] = useState('') // filtre catégorie (client)
+  const debResource = useDebounced(resource.trim(), 350)
+  const debActor = useDebounced(actorSearch.trim().toLowerCase(), 300)
 
-  const { data, loading, error } = useFetch(() => getAudit(filterParams), [filterParams])
-  const entries = data ?? []
+  const range = useMemo(() => {
+    if (preset === 'today') return { from: today, to: today }
+    if (preset === '7d') return { from: ago(7), to: today }
+    if (preset === '30d') return { from: ago(30), to: today }
+    return { from: customFrom, to: customTo }
+  }, [preset, customFrom, customTo, today])
 
-  const applyFilters = () => {
-    setFilterParams({
-      action: action.trim() || undefined,
-      actorId: actorId.trim() || undefined,
-      resource: resource.trim() || undefined,
-      from: from || undefined,
-      to: to || undefined,
-    })
-  }
+  const { data, loading, error } = useFetch(
+    () => getAudit({ resource: debResource || undefined, from: range.from, to: range.to, take: 200 }),
+    [debResource, range.from, range.to],
+  )
+  const { data: stats } = useFetch(() => getAuditStats(), [])
+  const all = data ?? []
+  // Filtres client : catégorie + recherche acteur par email.
+  const entries = all.filter((e) => {
+    if (category && auditCategory(e.action).key !== category) return false
+    if (debActor) {
+      const hay = `${e.user?.email ?? ''} ${e.user?.fullName ?? ''}`.toLowerCase()
+      if (!hay.includes(debActor)) return false
+    }
+    return true
+  })
 
-  const inputStyle: CSSProperties = {
-    background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: '7px 10px', fontSize: 13,
-  }
+  const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
+  const statCards = stats ? [
+    { label: 'Actions (30j)', value: stats.total30d.toLocaleString('fr-FR'), icon: FileText, color: C.blue },
+    { label: 'Actions critiques', value: stats.criticalActions.toLocaleString('fr-FR'), icon: ShieldAlert, color: C.red },
+    { label: 'Acteurs uniques', value: stats.uniqueActors.toLocaleString('fr-FR'), icon: UsersIcon, color: C.green },
+    { label: 'Dernière action', value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action, icon: Clock, color: C.purple },
+  ] : []
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Journal d'audit</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) — traçabilité des actions admin</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) affichée(s) — traçabilité ANIF</p>
         </div>
         <button className="cw-btn" disabled={!entries.length}
-          onClick={() => downloadCsv('audit-camwallet.csv', ['Date', 'Acteur', 'Action', 'Ressource', 'Détails'],
-            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? 'Système', e.action, e.resource ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.surface, color: C.textSoft }}>
+          onClick={() => downloadCsv('audit-camwallet.csv', ['Date', 'Acteur', 'Rôle', 'Action', 'Catégorie', 'Ressource', 'IP', 'Détails'],
+            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? 'Système', e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
           <FileText size={14} /> Export CSV
         </button>
       </div>
 
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+            {(s as any).sub && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, fontFamily: 'monospace' }}>{(s as any).sub}</div>}
+          </div>
+        )})}
+      </div>
+
       {/* Filtres */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Action</label>
-            <input value={action} onChange={e => setAction(e.target.value)} placeholder="ex: USER_BLOCKED" style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>ID Acteur</label>
-            <input value={actorId} onChange={e => setActorId(e.target.value)} placeholder="UUID acteur" style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Ressource</label>
-            <input value={resource} onChange={e => setResource(e.target.value)} placeholder="ex: User" style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Du</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Au</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={inputStyle} />
-          </div>
-          <button
-            onClick={applyFilters}
-            style={{ padding: '7px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-          >
-            Filtrer
-          </button>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Catégories colorées */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button onClick={() => setCategory('')} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === '' ? 700 : 500, background: category === '' ? C.green : C.card, border: `1px solid ${category === '' ? C.green : C.border}`, color: category === '' ? '#fff' : C.textSoft }}>Toutes</button>
+          {AUDIT_CATEGORIES.map((c) => (
+            <button key={c.key} onClick={() => setCategory(category === c.key ? '' : c.key)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === c.key ? 700 : 500, background: category === c.key ? c.color : c.color + '18', border: `1px solid ${category === c.key ? c.color : c.color + '40'}`, color: category === c.key ? '#fff' : c.color }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: category === c.key ? '#fff' : c.color }} />{c.label}
+            </button>
+          ))}
         </div>
+        <input value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Acteur (email)…" style={{ ...inputStyle, minWidth: 160 }} />
+        <input value={resource} onChange={(e) => setResource(e.target.value)} placeholder="Ressource (ID ou type)…" style={{ ...inputStyle, minWidth: 160 }} />
+        <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
+          {([['today', "Aujourd'hui"], ['7d', '7j'], ['30d', '30j']] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setPreset(k)} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === k ? C.green : 'transparent', color: preset === k ? '#fff' : C.textSoft }}>{l}</button>
+          ))}
+          <button onClick={() => setPreset('custom')} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === 'custom' ? C.green : 'transparent', color: preset === 'custom' ? '#fff' : C.textSoft }}>Perso.</button>
+        </div>
+        {preset === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} style={inputStyle} />
+            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={inputStyle} />
+          </>
+        )}
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
-          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Date', 'Acteur', 'Action', 'Ressource', 'Détails'].map(h => (
+                {['Acteur', 'Action', 'Ressource', 'IP / Agent', 'Date'].map(h => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {entries.map(e => (
+              {entries.map(e => {
+                const cat = auditCategory(e.action)
+                const actorName = e.user?.fullName ?? e.user?.email ?? 'Système'
+                return (
                 <tr key={e.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(e.createdAt)}</td>
-                  <td style={{ padding: '10px 14px', color: C.text, fontSize: 12 }}>{e.user?.email ?? e.user?.fullName ?? 'Système'}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: auditActionColor(e.action) + '20', color: auditActionColor(e.action), padding: '2px 8px', borderRadius: 6 }}>{e.action}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 28, height: 28, borderRadius: 14, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: (e.user ? C.green : C.textMuted) + '22', color: e.user ? C.green : C.textMuted }}>{e.user ? initials(actorName) : 'SYS'}</span>
+                      <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.25 }}>
+                        <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600 }}>{e.user?.email ?? 'Système'}</span>
+                        {e.user?.adminRole && <span style={{ color: C.textMuted, fontSize: 11 }}>{ROLE_LABELS[e.user.adminRole] ?? e.user.adminRole}</span>}
+                      </span>
+                    </div>
                   </td>
-                  <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12 }}>{e.resource ?? '—'}</td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: cat.color + '20', color: cat.color, padding: '3px 9px', borderRadius: 6 }}>
+                      <span style={{ width: 5, height: 5, borderRadius: 3, background: cat.color }} />{e.action}
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12, fontFamily: 'monospace' }}>{e.resource ?? '—'}</td>
                   <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 11 }}>
-                    {e.metadata ? JSON.stringify(e.metadata).slice(0, 80) : '—'}
+                    <div>{e.ipAddress ?? '—'}</div>
+                    {e.userAgent && <div title={e.userAgent} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.userAgent}</div>}
                   </td>
+                  <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(e.createdAt)}>{relativeTime(e.createdAt)}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
