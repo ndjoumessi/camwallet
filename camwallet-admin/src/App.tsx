@@ -2539,6 +2539,9 @@ function TeamPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [showPerms, setShowPerms] = useState(false)
   const list = members ?? []
+  const [localRoles, setLocalRoles] = useState<Record<string, string>>({})
+  const effectiveRole = (m: AdminTeamMember) => localRoles[m.id] ?? m.adminRole ?? ''
+  const effectiveColor = (m: AdminTeamMember) => ROLE_COLORS[effectiveRole(m)] ?? C.textMuted
 
   const todayStr = new Date().toDateString()
   const connectedToday = list.filter((m) => m.lastLoginAt && new Date(m.lastLoginAt).toDateString() === todayStr).length
@@ -2546,8 +2549,9 @@ function TeamPage() {
   const lastActivity = list.map((m) => m.lastLoginAt).filter(Boolean).sort().slice(-1)[0] as string | undefined
 
   const handleRoleChange = async (userId: string, role: string) => {
+    setLocalRoles((prev) => ({ ...prev, [userId]: role }))
     try { await setAdminRole(userId, role || null); toast('Rôle mis à jour', 'success'); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+    catch (e) { setLocalRoles((prev) => { const n = { ...prev }; delete n[userId]; return n }); toast(e instanceof Error ? e.message : 'Erreur', 'error') }
   }
   const handleSetPassword = async (m: AdminTeamMember) => {
     const pwd = window.prompt(`Nouveau mot de passe pour ${m.email ?? 'cet admin'} (min. 8) :`, genTempPassword())
@@ -2618,7 +2622,7 @@ function TeamPage() {
             </thead>
             <tbody>
               {list.map((m) => {
-                const color = ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted
+                const color = effectiveColor(m)
                 const active = m.status === 'ACTIVE'
                 const isSelf = m.id === myId
                 return (
@@ -2631,15 +2635,21 @@ function TeamPage() {
                     </td>
                     <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: color + '20', color }}>{m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : 'Aucun'}</span>
-                        {isSuper && (
-                          <select value={m.adminRole ?? ''} onChange={(e) => handleRoleChange(m.id, e.target.value)} title="Modifier le rôle" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>
-                            <option value="">Aucun</option>
+                      {isSuper ? (
+                        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', width: 8, height: 8, borderRadius: '50%', background: color, pointerEvents: 'none', zIndex: 1 }} />
+                          <select value={effectiveRole(m)} onChange={(e) => handleRoleChange(m.id, e.target.value)} title="Modifier le rôle"
+                            style={{ appearance: 'none' as any, background: color + '12', border: `1px solid ${color}50`, color, borderRadius: 8, padding: '5px 26px 5px 26px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
                             {ROLE_ORDER.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                           </select>
-                        )}
-                      </div>
+                          <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color, fontSize: 9 }}>▾</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                          <span style={{ fontSize: 12, fontWeight: 700, color }}>{m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : '—'}</span>
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{m.lastLoginAt ? fmtDate(m.lastLoginAt) : 'Jamais'}</td>
                     <td style={{ padding: '12px 14px' }}>
