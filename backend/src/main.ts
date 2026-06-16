@@ -81,6 +81,18 @@ async function bootstrap() {
   }
 
   await app.listen(port);
+
+  // ── Anti-502 « keep-alive race » derrière le proxy edge (Railway) ──────────
+  // Node ferme par défaut ses connexions keep-alive inactives au bout de 5 s
+  // (server.keepAliveTimeout). Le proxy edge garde la connexion en pool plus
+  // longtemps : quand il réutilise une socket que Node vient de fermer, le
+  // client reçoit un 502 instantané (la requête n'atteint jamais l'app).
+  // On garde donc les connexions plus longtemps que le proxy, et headersTimeout
+  // doit rester strictement supérieur à keepAliveTimeout.
+  const server = app.getHttpServer();
+  server.keepAliveTimeout = 90_000; // 90 s > timeout d'inactivité du proxy
+  server.headersTimeout = 95_000;   // doit être > keepAliveTimeout
+
   logger.log(`🚀 CamWallet API démarrée sur http://localhost:${port}/api/v1`);
 }
 
