@@ -9,6 +9,7 @@ import {
   KycStatus,
 } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
+import { ADMIN_ROLES } from './dto/set-admin-role.dto';
 
 const ANIF_RISK_HIGH = 50_000_000n;  // 500 000 FCFA en centimes
 const ANIF_RISK_MED  = 5_000_000n;   //  50 000 FCFA en centimes
@@ -1178,7 +1179,7 @@ export class AdminService {
   }
 
   async setAdminRole(actorId: string, userId: string, adminRole: string | null) {
-    const ALLOWED_ROLES = new Set(['SUPER_ADMIN', 'ANALYST', 'SUPPORT', null]);
+    const ALLOWED_ROLES = new Set<string | null>([...ADMIN_ROLES, null]);
 
     if (!ALLOWED_ROLES.has(adminRole)) {
       throw new BadRequestException(`Rôle invalide : ${adminRole}`);

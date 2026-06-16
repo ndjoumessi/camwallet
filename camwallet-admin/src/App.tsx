@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell,
+  ResponsiveContainer, PieChart, Pie, Cell, LabelList,
 } from 'recharts'
 import {
   LayoutGrid, AlertTriangle, Users as UsersIcon, ClipboardCheck, Zap, Wallet,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import LoginPage from './LoginPage'
 import {
-  hasSession, logout, toFcfa, SessionExpiredError,
+  hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getTransactions, getTimeseries, AdminTransaction,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
@@ -44,8 +44,18 @@ const C = {
 }
 
 // ── Formatters ────────────────────────────────────────────
-const fmt = (n: number) => n.toLocaleString('fr-FR') + ' FCFA'
+// Sépare les milliers par une VRAIE espace. toLocaleString('fr-FR') utilise une
+// espace fine insécable (U+202F/U+00A0) qu'on normalise pour respecter le format
+// demandé : « 1 250 000 FCFA » (espace simple, jamais de virgule).
+const groupFr = (n: number) => Math.round(n).toLocaleString('fr-FR').replace(/[  ]/g, ' ')
+// Montant déjà en FCFA entiers → « 1 250 000 FCFA ».
+const fmt = (n: number) => groupFr(n) + ' FCFA'
+// Helper principal : montant en CENTIMES → « 1 250 000 FCFA ».
+const formatFCFA = (centimes: number) => formatFCFA(centimes)
+// Forme courte pour axes/labels compacts.
 const fmtM = (n: number) => (n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : (n / 1000).toFixed(0) + 'k') + ' FCFA'
+// Couleur sémantique d'un montant signé (négatif = rouge, positif = vert).
+const amountColor = (n: number) => (n < 0 ? C.red : n > 0 ? C.green : C.text)
 
 // Convertit une variation backend (%) en props delta/deltaUp du KPICard (#8).
 const trendProps = (t: number | null | undefined) =>
@@ -130,6 +140,38 @@ function exportPdfReport(title: string, columns: string[], rows: (string | numbe
   // Libère l'URL après ouverture (laisse le temps au navigateur de charger).
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
   return true
+}
+
+// Export CSV généré côté client (séparateur « ; » pour Excel FR, BOM UTF-8).
+function downloadCsv(filename: string, columns: string[], rows: (string | number)[][]): void {
+  const esc = (s: any) => `"${String(s).replace(/"/g, '""')}"`
+  const csv = [columns, ...rows].map((r) => r.map(esc).join(';')).join('\r\n')
+  const url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
+
+// Mini sparkline (area) pour les KPI — sans axes ni grille.
+function Sparkline({ data, color = C.green }: { data: number[]; color?: string }) {
+  if (!data.length) return null
+  const chartData = data.map((v, i) => ({ i, v }))
+  const id = `spark-${color.replace('#', '')}`
+  return (
+    <ResponsiveContainer width="100%" height={34}>
+      <AreaChart data={chartData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#${id})`} dot={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  )
 }
 
 // Petit bandeau d'état (chargement / erreur / vide) partagé par les pages.
@@ -324,14 +366,21 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
 }
 
 // ── Chart tooltip ─────────────────────────────────────────
+// Les séries monétaires (volume/fees/amount) sont formatées en FCFA ; les
+// comptages (tx/users/count) restent des entiers groupés.
+const MONEY_KEYS = new Set(['volume', 'fees', 'amount', 'revenue'])
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>
-      <div style={{ color: C.textMuted, marginBottom: 6, fontWeight: 600 }}>{label}</div>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, boxShadow: '0 10px 30px -12px rgba(0,0,0,.6)' }}>
+      {label != null && <div style={{ color: C.textMuted, marginBottom: 6, fontWeight: 600 }}>{label}</div>}
       {payload.map((p: any, i: number) => (
-        <div key={i} style={{ color: p.color, marginBottom: 2 }}>
-          {p.name}: <strong>{typeof p.value === 'number' && p.value > 1000 ? fmtM(p.value) : p.value}</strong>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color ?? p.payload?.color, flexShrink: 0 }} />
+          <span style={{ color: C.textSoft }}>{p.name}</span>
+          <strong style={{ marginLeft: 'auto', color: C.text }}>
+            {MONEY_KEYS.has(p.dataKey) ? fmt(p.value) : groupFr(p.value)}
+          </strong>
         </div>
       ))}
     </div>
@@ -384,6 +433,13 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
     value: tp.count,
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
   }))
+  const donutTotal = donut.reduce((s, d) => s + d.value, 0)
+  // Volume par type (centimes → FCFA) pour le BarChart coloré.
+  const volByType = (stats?.transactions.byType ?? []).map((tp) => ({
+    name: TX_TYPE_LABEL[tp.type] ?? tp.type,
+    volume: toFcfa(tp.volume),
+    color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
+  }))
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
@@ -404,10 +460,10 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       {/* KPIs */}
       {stats && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginBottom: 24 }}>
-        <KPICard label={t('dashboard.kpi_volume')} value={fmt(toFcfa(stats.volume.completedAmount))} icon={Wallet}
+        <KPICard label={t('dashboard.kpi_volume')} value={formatFCFA(stats.volume.completedAmount)} icon={Wallet}
           {...trendProps(stats.trends.volume)}
-          sub={t('dashboard.kpi_fees_sub', { value: fmt(toFcfa(stats.volume.collectedFees)) })} />
-        <KPICard label={t('dashboard.kpi_balance')} value={fmt(toFcfa(stats.totalBalance))} icon={Landmark} color={C.purple} />
+          sub={t('dashboard.kpi_fees_sub', { value: formatFCFA(stats.volume.collectedFees) })} />
+        <KPICard label={t('dashboard.kpi_balance')} value={formatFCFA(stats.totalBalance)} icon={Landmark} color={C.purple} />
         <KPICard label={t('dashboard.kpi_users')} value={stats.users.total.toLocaleString('fr-FR')} icon={UsersIcon} color={C.green}
           {...trendProps(stats.trends.users)}
           sub={stats.users.byRole.map((r) => `${r.count} ${r.role.toLowerCase()}`).join(' · ')} />
@@ -419,97 +475,126 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
       {/* Charts row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
-        {/* Volume area chart */}
+        {/* Volume par type — barres colorées */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.chart_volume')}</h2>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {PERIODS.map((p) => (
-                <button
-                  key={p.key}
-                  className="cw-chip"
-                  onClick={() => setPeriod(p.key)}
-                  aria-pressed={period === p.key}
-                  style={{
-                    fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: period === p.key ? 700 : 500,
-                    background: period === p.key ? C.green : C.surface,
-                    border: `1px solid ${period === p.key ? C.green : C.border}`,
-                    color: period === p.key ? '#fff' : C.textMuted,
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chart}>
-              <defs>
-                <linearGradient id="gradVol" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={C.green} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={C.green} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" stroke={C.textMuted} fontSize={11} />
-              <YAxis stroke={C.textMuted} fontSize={11} tickFormatter={v => (v / 1000000).toFixed(0) + 'M'} />
-              <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="volume" stroke={C.green} strokeWidth={2} fill="url(#gradVol)" name={t('dashboard.chart_series_volume')} />
-            </AreaChart>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_volume')}</h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={volByType} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="name" stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={{ stroke: C.border }} />
+              <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={42}
+                tickFormatter={v => v >= 1_000_000 ? (v / 1_000_000).toFixed(0) + 'M' : (v / 1000).toFixed(0) + 'k'} />
+              <Tooltip cursor={{ fill: C.greenLight }} content={<ChartTooltip />} />
+              <Bar dataKey="volume" name={t('dashboard.chart_series_volume')} radius={[6, 6, 0, 0]} maxBarSize={56}>
+                {volByType.map((d, i) => <Cell key={i} fill={d.color} />)}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
+          {volByType.length === 0 && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 8 }}>{t('dashboard.chart_no_tx')}</div>}
         </div>
 
-        {/* Donut */}
+        {/* Donut répartition par type — total au centre + légende inline avec % */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_donut')}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <PieChart width={130} height={130}>
-              <Pie data={donut} cx={60} cy={60} innerRadius={40} outerRadius={60} dataKey="value" paddingAngle={2}>
-                {donut.map((d, i) => <Cell key={i} fill={d.color} />)}
-              </Pie>
-            </PieChart>
+            <div style={{ position: 'relative', width: 144, height: 144, flexShrink: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={donut} cx="50%" cy="50%" innerRadius={48} outerRadius={70} dataKey="value"
+                    paddingAngle={donut.length > 1 ? 3 : 0} stroke="none">
+                    {donut.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 22, fontWeight: 900, color: C.text, lineHeight: 1 }}>{groupFr(donutTotal)}</span>
+                <span style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>{t('dashboard.chart_donut_total')}</span>
+              </div>
+            </div>
             <div style={{ flex: 1 }}>
               {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>{t('dashboard.chart_no_tx')}</span>}
-              {donut.map((d, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 12, color: C.textSoft }}>{d.name}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.value}</span>
-                </div>
-              ))}
+              {donut.map((d, i) => {
+                const pct = donutTotal ? Math.round((d.value / donutTotal) * 100) : 0
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 12, color: C.textSoft }}>{d.name}</span>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>{d.value}</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: C.text, width: 38, textAlign: 'right' }}>{pct}%</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Revenue & Users row */}
+      {/* Évolution temporelle — sélecteur de période */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 4 }}>
+        <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.evolution')}</h2>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              className="cw-chip"
+              onClick={() => setPeriod(p.key)}
+              aria-pressed={period === p.key}
+              style={{
+                fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: period === p.key ? 700 : 500,
+                background: period === p.key ? C.green : C.surface,
+                border: `1px solid ${period === p.key ? C.green : C.border}`,
+                color: period === p.key ? '#fff' : C.textMuted,
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
-        {/* Revenue bar */}
+        {/* Revenus par jour — ligne fine + points + gradient sous la courbe */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_revenue')}</h2>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={chart} barSize={10}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} />
-              <YAxis stroke={C.textMuted} fontSize={10} tickFormatter={v => (v / 1000).toFixed(0) + 'k'} />
+          <ResponsiveContainer width="100%" height={170}>
+            <AreaChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.green} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={C.green} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={{ stroke: C.border }} />
+              <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={38}
+                tickFormatter={v => v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k'} />
               <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="fees" fill={C.green} radius={[3, 3, 0, 0]} name={t('dashboard.chart_series_fees')} />
-            </BarChart>
+              <Area type="monotone" dataKey="fees" name={t('dashboard.chart_series_fees')} stroke={C.green} strokeWidth={1.5}
+                fill="url(#gradRev)" dot={{ fill: C.green, r: 2.5, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
 
-        {/* User growth */}
+        {/* Activité utilisateurs — area gradient émeraude */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_activity')}</h2>
-          <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={chart}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} />
-              <YAxis stroke={C.textMuted} fontSize={10} />
+          <ResponsiveContainer width="100%" height={170}>
+            <AreaChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradAct" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.green} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={C.green} stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={{ stroke: C.border }} />
+              <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
               <Tooltip content={<ChartTooltip />} />
-              <Line type="monotone" dataKey="users" stroke={C.purple} strokeWidth={2} dot={{ fill: C.purple, r: 3 }} name={t('dashboard.chart_series_users')} />
-              <Line type="monotone" dataKey="tx" stroke={C.blue} strokeWidth={2} strokeDasharray="4 2" dot={{ fill: C.blue, r: 3 }} name={t('dashboard.chart_series_tx')} />
-            </LineChart>
+              <Area type="monotone" dataKey="users" name={t('dashboard.chart_series_users')} stroke={C.green} strokeWidth={2}
+                fill="url(#gradAct)" dot={{ fill: C.green, r: 2.5, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+              <Area type="monotone" dataKey="tx" name={t('dashboard.chart_series_tx')} stroke={C.blue} strokeWidth={1.5}
+                fill="none" strokeDasharray="4 2" dot={false} />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -536,9 +621,16 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, t('common.operator'))}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 26, height: 26, borderRadius: 13, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: (TX_TYPE_COLOR[tx.type] ?? C.textMuted) + '22', color: TX_TYPE_COLOR[tx.type] ?? C.textMuted }}>
+                      {initials(tx.sender?.fullName ?? tx.sender?.phone)}
+                    </span>
+                    {partyLabel(tx.sender, t('common.operator'))}
+                  </div>
+                </td>
                 <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, t('common.operator'))}</td>
-                <td style={{ padding: '10px 12px', color: C.text, fontWeight: 600 }}>{fmt(toFcfa(tx.amount))}</td>
+                <td style={{ padding: '10px 12px', color: C.text, fontWeight: 600 }}>{formatFCFA(tx.amount)}</td>
                 <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
                 <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
               </tr>
@@ -660,7 +752,7 @@ function AlertsPage() {
               <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
-                <td style={{ padding: '10px 12px', color: C.yellow, fontWeight: 700 }}>{fmt(toFcfa(tx.amount))}</td>
+                <td style={{ padding: '10px 12px', color: C.yellow, fontWeight: 700 }}>{formatFCFA(tx.amount)}</td>
                 <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
                 <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
                 <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
@@ -789,14 +881,14 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
               <div>{label('Email')}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
               <div>{label('Ville')}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
               <div>{label('Naissance')}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
-              <div>{label('Solde')}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{fmt(toFcfa(u.wallet?.balance ?? 0))}</span></div>
+              <div>{label('Solde')}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{formatFCFA(u.wallet?.balance ?? 0)}</span></div>
               <div>{label('Dernière connexion')}<span style={{ color: C.text, fontSize: 13 }}>{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</span></div>
               <div>{label('Inscrit le')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.createdAt)}</span></div>
               <div>{label('Transactions')}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
-              <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.totalSent))}</span></div>
-              <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.totalReceived))}</span></div>
+              <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalSent)}</span></div>
+              <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalReceived)}</span></div>
               {data.stats.monthlyVolume !== undefined && (
-                <div>{label('Volume 30j')}<span style={{ color: C.text, fontSize: 13 }}>{fmt(toFcfa(data.stats.monthlyVolume))}</span></div>
+                <div>{label('Volume 30j')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.monthlyVolume)}</span></div>
               )}
               {data.stats.anifRisk && (
                 <div>{label('Score ANIF')}<span style={{
@@ -862,7 +954,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} />
-                    <span style={{ color: C.text, fontWeight: 600 }}>{fmt(toFcfa(tx.amount))}</span>
+                    <span style={{ color: C.text, fontWeight: 600 }}>{formatFCFA(tx.amount)}</span>
                     <span style={{ color: C.textMuted }}>{fmtDate(tx.createdAt)}</span>
                   </div>
                 </div>
@@ -1371,8 +1463,8 @@ function TransactionsPage() {
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
-                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 700 }}>{fmt(toFcfa(tx.amount))}</td>
-                <td style={{ padding: '11px 14px', color: C.textMuted }}>{fmt(toFcfa(tx.fee))}</td>
+                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 700 }}>{formatFCFA(tx.amount)}</td>
+                <td style={{ padding: '11px 14px', color: C.textMuted }}>{formatFCFA(tx.fee)}</td>
                 <td style={{ padding: '11px 14px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
                 <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
               </tr>
@@ -1435,8 +1527,8 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
     ['Type', TX_TYPE_LABEL[tx.type] ?? tx.type],
     ['Émetteur', partyLabel(tx.sender, 'Opérateur')],
     ['Destinataire', partyLabel(tx.receiver, 'Opérateur')],
-    ['Montant', fmt(toFcfa(tx.amount))],
-    ['Frais', fmt(toFcfa(tx.fee))],
+    ['Montant', formatFCFA(tx.amount)],
+    ['Frais', formatFCFA(tx.fee)],
     ['Date', fmtDate(tx.createdAt)],
   ]
 
@@ -1504,6 +1596,12 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
 
 function FinancePage() {
   const { data: stats, loading, error } = useFetch(() => getStats(), [])
+  // Séries 30 j pour les sparklines des KPI.
+  const { data: ts } = useFetch(() => getTimeseries('30d'), [])
+  const series = ts?.series ?? []
+  const sparkFees = series.map((p) => toFcfa(p.fees))
+  const sparkVol = series.map((p) => toFcfa(p.volume))
+  const sparkTx = series.map((p) => p.transactions)
 
   const byType = (stats?.transactions.byType ?? []).map((t) => ({
     name: TX_TYPE_LABEL[t.type] ?? t.type,
@@ -1512,45 +1610,77 @@ function FinancePage() {
     color: TX_TYPE_COLOR[t.type] ?? C.textMuted,
   }))
 
-  const kpis: { label: string; value: string; icon: LucideIcon; color: string; trend?: number | null }[] = stats
+  const kpis: { label: string; value: string; icon: LucideIcon; color: string; trend?: number | null; spark: number[] }[] = stats
     ? [
-        { label: 'Frais perçus', value: fmt(toFcfa(stats.volume.collectedFees)), icon: Wallet, color: C.green },
-        { label: 'Volume complété', value: fmt(toFcfa(stats.volume.completedAmount)), icon: TrendingUp, color: C.blue, trend: stats.trends.volume },
-        { label: 'Solde plateforme', value: fmt(toFcfa(stats.totalBalance)), icon: Landmark, color: C.purple },
-        { label: 'Transactions', value: stats.transactions.total.toLocaleString('fr-FR'), icon: Zap, color: C.yellow, trend: stats.trends.transactions },
+        { label: 'Frais perçus', value: formatFCFA(stats.volume.collectedFees), icon: Wallet, color: C.green, spark: sparkFees },
+        { label: 'Volume complété', value: formatFCFA(stats.volume.completedAmount), icon: TrendingUp, color: C.blue, trend: stats.trends.volume, spark: sparkVol },
+        { label: 'Solde plateforme', value: formatFCFA(stats.totalBalance), icon: Landmark, color: C.purple, spark: [] },
+        { label: 'Transactions', value: stats.transactions.total.toLocaleString('fr-FR'), icon: Zap, color: C.yellow, trend: stats.trends.transactions, spark: sparkTx },
       ]
     : []
 
+  const exportBtn: CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.surface, color: C.textSoft }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Finances & Revenus</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Finances & Revenus</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="cw-btn" style={exportBtn} disabled={!byType.length}
+            onClick={() => downloadCsv('finances-camwallet.csv', ['Type', 'Transactions', 'Volume (FCFA)'], byType.map((d) => [d.name, d.count, d.volume]))}>
+            <FileText size={14} /> Export CSV
+          </button>
+          <button className="cw-btn" style={exportBtn} disabled={!byType.length}
+            onClick={() => exportPdfReport('Finances — Volume par type', ['Type', 'Transactions', 'Volume'], byType.map((d) => [d.name, d.count, fmt(d.volume)]))}>
+            <FileText size={14} /> Export PDF
+          </button>
+        </div>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
 
-      {/* KPIs financiers (réels) */}
+      {/* KPIs financiers avec sparklines */}
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 24 }}>
-          {kpis.map((s) => (
-            <KPICard key={s.label} label={s.label} value={s.value} icon={s.icon} color={s.color} {...trendProps(s.trend)} />
-          ))}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 24 }}>
+          {kpis.map((s) => {
+            const Icon = s.icon
+            const TrendIcon = (s.trend ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight
+            return (
+              <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{s.label}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 9, background: s.color + '1F', color: s.color }}><Icon size={16} /></span>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+                {s.trend != null && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: s.trend >= 0 ? C.green : C.red, fontWeight: 600, marginTop: 4 }}>
+                    <TrendIcon size={13} /> {Math.abs(s.trend)} %
+                  </div>
+                )}
+                {s.spark.length > 1 && <div style={{ marginTop: 10 }}><Sparkline data={s.spark} color={s.color} /></div>}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Volume par type de transaction (réel) */}
+      {/* Volume par type — barres horizontales avec valeurs en bout de barre */}
       {stats && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Volume par type de transaction</h2>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={byType}>
-              <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
-              <XAxis dataKey="name" stroke={C.textMuted} fontSize={11} />
-              <YAxis stroke={C.textMuted} fontSize={11} tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k')} />
-              <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="volume" name="Volume" radius={[4, 4, 0, 0]}>
+          <ResponsiveContainer width="100%" height={Math.max(180, byType.length * 56)}>
+            <BarChart data={byType} layout="vertical" margin={{ top: 4, right: 96, left: 8, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+              <XAxis type="number" stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false}
+                tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k')} />
+              <YAxis type="category" dataKey="name" stroke={C.textMuted} fontSize={12} width={88} tickLine={false} axisLine={false} />
+              <Tooltip cursor={{ fill: C.greenLight }} content={<ChartTooltip />} />
+              <Bar dataKey="volume" name="Volume" radius={[0, 6, 6, 0]} maxBarSize={34}>
                 {byType.map((d, i) => <Cell key={i} fill={d.color} />)}
+                <LabelList dataKey="volume" position="right" formatter={(v: number) => fmt(v)} style={{ fill: C.text, fontSize: 11, fontWeight: 700 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -1613,6 +1743,7 @@ function WebhookPayloadCell({ wh }: { wh: WebhookEvent }) {
 function OperationsPage() {
   const [page, setPage] = useState(1)
   const [operator, setOperator] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [activeTab, setActiveTab] = useState<'ops' | 'webhooks'>('ops')
   const showToast = useContext(ToastContext)
   const { data, loading, error, refetch } = useFetch(
@@ -1630,9 +1761,14 @@ function OperationsPage() {
     }
   }
 
-  const ops = data?.data ?? []
+  const allOps = data?.data ?? []
+  // Filtre de statut appliqué côté client sur la page courante.
+  const ops = statusFilter ? allOps.filter((o) => o.status === statusFilter) : allOps
   const webhooks = data?.webhookEvents ?? []
   const stats = data?.stats
+  // L'« utilisateur » d'une opération : le bénéficiaire pour une recharge,
+  // l'émetteur pour un retrait (l'autre partie étant l'opérateur mobile).
+  const opUser = (op: AdminOperation) => (op.type === 'RECHARGE' ? op.receiver : op.sender)
 
   const txStatusColor = (s: string) =>
     s === 'COMPLETED' ? C.green : s === 'PENDING' || s === 'PROCESSING' ? C.yellow : C.red
@@ -1644,8 +1780,8 @@ function OperationsPage() {
       {/* KPI cards */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
-          { label: 'Recharges 7j', value: fmt(toFcfa(stats?.rechargeTotal ?? 0)), sub: `${stats?.rechargeCount ?? 0} op.`, color: C.green },
-          { label: 'Retraits 7j', value: fmt(toFcfa(stats?.withdrawalTotal ?? 0)), sub: `${stats?.withdrawalCount ?? 0} op.`, color: C.purple },
+          { label: 'Recharges 7j', value: formatFCFA(stats?.rechargeTotal ?? 0), sub: `${stats?.rechargeCount ?? 0} op.`, color: C.green },
+          { label: 'Retraits 7j', value: formatFCFA(stats?.withdrawalTotal ?? 0), sub: `${stats?.withdrawalCount ?? 0} op.`, color: C.purple },
           { label: 'Webhooks en attente', value: String(stats?.pendingWebhooks ?? 0), sub: 'non traités', color: (stats?.pendingWebhooks ?? 0) > 0 ? C.red : C.green },
         ].map(k => (
           <div key={k.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 20px', minWidth: 160 }}>
@@ -1663,6 +1799,17 @@ function OperationsPage() {
           <option value="">Tous les opérateurs</option>
           <option value="ORANGE_MONEY">Orange Money</option>
           <option value="MTN_MOMO">MTN MoMo</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+          style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, alignSelf: 'flex-start' }}
+        >
+          <option value="">Tous les statuts</option>
+          <option value="COMPLETED">Complété</option>
+          <option value="PENDING">En attente</option>
+          <option value="PROCESSING">En cours</option>
+          <option value="FAILED">Échoué</option>
         </select>
       </div>
 
@@ -1710,8 +1857,8 @@ function OperationsPage() {
                           {op.type === 'RECHARGE' ? 'Recharge' : 'Retrait'}
                         </span>
                       </td>
-                      <td style={{ padding: '9px 10px', color: C.text }}>{partyLabel(op.sender, '—')}</td>
-                      <td style={{ padding: '9px 10px', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>{fmt(toFcfa(op.amount))}</td>
+                      <td style={{ padding: '9px 10px', color: C.text }}>{partyLabel(opUser(op), '—')}</td>
+                      <td style={{ padding: '9px 10px', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>{formatFCFA(op.amount)}</td>
                       <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11 }}>{opLabel(op.operator ?? '')}</td>
                       <td style={{ padding: '9px 10px' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: txStatusColor(op.status) }}>{op.status}</span>
@@ -1789,6 +1936,8 @@ function ANIFPage() {
   const [caseReason, setCaseReason] = useState('')
   const [closingId, setClosingId] = useState<string | null>(null)
   const [resolutionText, setResolutionText] = useState('')
+  // Seuil de déclaration configurable directement sur la page (filtrage client).
+  const [thresholdFcfa, setThresholdFcfa] = useState(500_000)
 
   const handleOpenCase = async (txId: string) => {
     if (!caseReason.trim()) {
@@ -1822,20 +1971,28 @@ function ANIFPage() {
     }
   }
 
-  const highValue = data?.highValue ?? []
   const frequent = data?.frequentSenders ?? []
   const cases = data?.cases ?? []
-
-  const THRESHOLD_FCFA = 500_000
+  // Liste filtrée selon le seuil configuré sur la page.
+  const highValue = (data?.highValue ?? []).filter((tx) => toFcfa(tx.amount) >= thresholdFcfa)
 
   return (
     <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
-      {/* En-tête */}
-      <div style={{ background: C.red + '10', border: `1px solid ${C.red}30`, borderRadius: 12, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* En-tête avec seuil configurable */}
+      <div style={{ background: C.red + '10', border: `1px solid ${C.red}30`, borderRadius: 12, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <ShieldAlert size={20} color={C.red} />
-        <div>
+        <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Conformité ANIF — Lutte anti-blanchiment</div>
-          <div style={{ color: C.textMuted, fontSize: 12 }}>Seuil de déclaration : {THRESHOLD_FCFA.toLocaleString('fr-FR')} FCFA · Données des 30 derniers jours</div>
+          <div style={{ color: C.textMuted, fontSize: 12 }}>Données des 30 derniers jours</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600 }}>Seuil de déclaration</label>
+          <input
+            type="number" min={0} step={50_000} value={thresholdFcfa}
+            onChange={(e) => setThresholdFcfa(Math.max(0, Number(e.target.value) || 0))}
+            style={{ width: 130, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right' }}
+          />
+          <span style={{ fontSize: 12, color: C.textMuted }}>FCFA</span>
         </div>
       </div>
 
@@ -1844,7 +2001,7 @@ function ANIFPage() {
       {/* Transactions à montant élevé */}
       <div style={{ marginBottom: 28 }}>
         <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Transactions &gt; {THRESHOLD_FCFA.toLocaleString('fr-FR')} FCFA ({highValue.length})
+          Transactions &gt; {groupFr(thresholdFcfa)} FCFA ({highValue.length})
         </div>
         {highValue.length === 0 && !loading ? (
           <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction au-dessus du seuil.</div>
@@ -1863,7 +2020,7 @@ function ANIFPage() {
                   <td style={{ padding: '8px 10px', color: C.textMuted }}>{fmtDate(tx.createdAt)}</td>
                   <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.sender, '—')}</td>
                   <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.receiver, '—')}</td>
-                  <td style={{ padding: '8px 10px', fontWeight: 800, color: C.red }}>{fmt(toFcfa(tx.amount))}</td>
+                  <td style={{ padding: '8px 10px', fontWeight: 800, color: C.red }}>{formatFCFA(tx.amount)}</td>
                   <td style={{ padding: '8px 10px', color: C.textMuted }}>{tx.type}</td>
                   <td style={{ padding: '8px 10px' }}>
                     <span style={{ color: tx.status === 'COMPLETED' ? C.green : C.yellow, fontWeight: 600, fontSize: 11 }}>{tx.status}</span>
@@ -1884,9 +2041,9 @@ function ANIFPage() {
                     ) : (
                       <button
                         onClick={() => setOpeningCase(tx.id)}
-                        style={{ fontSize: 11, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
+                        style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                       >
-                        Ouvrir dossier
+                        Ouvrir un dossier d'enquête
                       </button>
                     )}
                   </td>
@@ -1915,7 +2072,7 @@ function ANIFPage() {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ color: C.yellow, fontWeight: 800 }}>{s.count} transactions / 24h</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>Total : {fmt(toFcfa(s.totalAmount))}</div>
+                  <div style={{ color: C.textMuted, fontSize: 12 }}>Total : {formatFCFA(s.totalAmount)}</div>
                 </div>
               </div>
             ))}
@@ -1931,9 +2088,12 @@ function ANIFPage() {
         {cases.length === 0 && !loading ? (
           <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier ouvert.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', paddingLeft: 22 }}>
+            {/* Rail vertical de la timeline */}
+            <div style={{ position: 'absolute', left: 6, top: 8, bottom: 8, width: 2, background: C.border }} />
             {cases.map(c => (
-              <div key={c.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+              <div key={c.id} style={{ position: 'relative', background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                <span style={{ position: 'absolute', left: -22, top: 16, width: 13, height: 13, borderRadius: 7, background: C.red, border: `3px solid ${C.bg}` }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{c.action}</div>
@@ -1973,13 +2133,25 @@ function ANIFPage() {
   )
 }
 
+// Couleur sémantique d'une action d'audit (BLOCKED=rouge, APPROVED=vert, …).
+const auditActionColor = (action: string): string => {
+  const a = (action || '').toUpperCase()
+  if (/BLOCK|REJECT|LOCK|DELETE|FAIL|SUSPEND|DISABLE/.test(a)) return C.red
+  if (/APPROV|UNBLOCK|UNLOCK|ACTIVAT|SUCCESS|CREATE|ENABLE/.test(a)) return C.green
+  if (/ROLE|UPDATE|CHANGE|RESET|EDIT/.test(a)) return C.purple
+  if (/KYC|REVIEW|PENDING|WARN/.test(a)) return C.yellow
+  return C.blue
+}
+
 function AuditPage() {
+  // Filtres pré-remplis sur la journée en cours.
+  const today = new Date().toISOString().slice(0, 10)
   const [action, setAction] = useState('')
   const [actorId, setActorId] = useState('')
   const [resource, setResource] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [filterParams, setFilterParams] = useState<{ action?: string; actorId?: string; resource?: string; from?: string; to?: string }>({})
+  const [from, setFrom] = useState(today)
+  const [to, setTo] = useState(today)
+  const [filterParams, setFilterParams] = useState<{ action?: string; actorId?: string; resource?: string; from?: string; to?: string }>({ from: today, to: today })
 
   const { data, loading, error } = useFetch(() => getAudit(filterParams), [filterParams])
   const entries = data ?? []
@@ -2001,9 +2173,17 @@ function AuditPage() {
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Journal d'audit</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) — traçabilité des actions admin</p>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Journal d'audit</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) — traçabilité des actions admin</p>
+        </div>
+        <button className="cw-btn" disabled={!entries.length}
+          onClick={() => downloadCsv('audit-camwallet.csv', ['Date', 'Acteur', 'Action', 'Ressource', 'Détails'],
+            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? 'Système', e.action, e.resource ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.surface, color: C.textSoft }}>
+          <FileText size={14} /> Export CSV
+        </button>
       </div>
 
       {/* Filtres */}
@@ -2054,7 +2234,7 @@ function AuditPage() {
                   <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(e.createdAt)}</td>
                   <td style={{ padding: '10px 14px', color: C.text, fontSize: 12 }}>{e.user?.email ?? e.user?.fullName ?? 'Système'}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: C.blue + '20', color: C.blue, padding: '2px 8px', borderRadius: 6 }}>{e.action}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, background: auditActionColor(e.action) + '20', color: auditActionColor(e.action), padding: '2px 8px', borderRadius: 6 }}>{e.action}</span>
                   </td>
                   <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12 }}>{e.resource ?? '—'}</td>
                   <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 11 }}>
@@ -2249,13 +2429,14 @@ function SettingsPage() {
 }
 
 function TeamPage() {
-  const { data: members, loading, error } = useFetch(getAdminTeam, [])
+  const { data: members, loading, error, refetch } = useFetch(getAdminTeam, [])
   const toast = useToast()
 
   const handleRoleChange = async (userId: string, role: string) => {
     try {
       await setAdminRole(userId, role || null)
-      toast('Role mis a jour', 'success')
+      toast('Rôle mis à jour', 'success')
+      refetch()
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Erreur', 'error')
     }
@@ -2284,16 +2465,22 @@ function TeamPage() {
                   <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}</td>
                   <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
                   <td style={{ padding: '12px 14px' }}>
-                    <select
-                      value={m.adminRole ?? ''}
-                      onChange={e => handleRoleChange(m.id, e.target.value)}
-                      style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
-                    >
-                      <option value="">Aucun</option>
-                      <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                      <option value="ANALYST">ANALYST</option>
-                      <option value="SUPPORT">SUPPORT</option>
-                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: (ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted) + '20', color: ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted }}>
+                        {m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : 'Aucun'}
+                      </span>
+                      <select
+                        value={m.adminRole ?? ''}
+                        onChange={e => handleRoleChange(m.id, e.target.value)}
+                        title="Modifier le rôle"
+                        style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
+                      >
+                        <option value="">Aucun</option>
+                        {Object.keys(ROLE_LABELS).map((r) => (
+                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
                   <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(m.createdAt)}</td>
                 </tr>
@@ -2327,6 +2514,31 @@ const NAV: { id: string; icon: LucideIcon; group: string; badge?: string }[] = [
 ]
 
 const GROUPS = ['overview', 'users', 'finances', 'compliance']
+
+// ── RBAC : pages visibles selon le sous-rôle admin (claim JWT adminRole) ──
+// '*' = toutes les pages. Un rôle inconnu/absent retombe sur l'accès complet
+// (le compte admin configuré est SUPER_ADMIN ; le backend garde l'autorité).
+const ROLE_PAGES: Record<string, string[] | '*'> = {
+  SUPER_ADMIN: '*',
+  ADMIN: ['dashboard', 'alerts', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
+  COMPLIANCE_OFFICER: ['anif', 'audit'],
+  SUPPORT_OPERATOR: ['users', 'transactions'],
+  FINANCE_OFFICER: ['finance', 'operations'],
+}
+const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  ADMIN: 'Admin',
+  COMPLIANCE_OFFICER: 'Conformité',
+  SUPPORT_OPERATOR: 'Support',
+  FINANCE_OFFICER: 'Finance',
+}
+const ROLE_COLORS: Record<string, string> = {
+  SUPER_ADMIN: C.green, ADMIN: C.blue, COMPLIANCE_OFFICER: C.red, SUPPORT_OPERATOR: C.yellow, FINANCE_OFFICER: C.purple,
+}
+function canAccess(role: string | null, page: string): boolean {
+  const allowed = ROLE_PAGES[role ?? ''] ?? '*'
+  return allowed === '*' || allowed.includes(page)
+}
 
 // Sélecteur de langue FR | EN (header). Persiste le choix dans localStorage
 // (clé « lang », lue au démarrage par src/i18n.ts) et bascule i18next à chaud.
@@ -2366,7 +2578,14 @@ function LangToggle() {
 export default function App() {
   const { t } = useTranslation()
   const [authed, setAuthed] = useState(hasSession())
-  const [activePage, setActivePage] = useState('dashboard')
+  // Sous-rôle admin (RBAC) lu depuis le token ; recalculé à chaque (dé)connexion.
+  const adminRole = useMemo(() => getAdminRole(), [authed])
+  const visibleNav = useMemo(() => NAV.filter((n) => canAccess(adminRole, n.id)), [adminRole])
+  // Page par défaut = première page autorisée pour le rôle.
+  const [activePage, setActivePage] = useState(() => {
+    const role = getAdminRole()
+    return NAV.find((n) => canAccess(role, n.id))?.id ?? 'dashboard'
+  })
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -2440,12 +2659,12 @@ export default function App() {
 
         {/* Nav */}
         <nav style={{ padding: '12px 8px', flex: 1, overflowY: 'auto' }}>
-          {GROUPS.map(group => (
+          {GROUPS.filter(group => visibleNav.some(n => n.group === group)).map(group => (
             <div key={group}>
               <div className="cw-compact-hide" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', padding: '8px 8px 4px' }}>
                 {t(`nav.group_${group}`)}
               </div>
-              {NAV.filter(n => n.group === group).map(item => {
+              {visibleNav.filter(n => n.group === group).map(item => {
                 const Icon = item.icon
                 const active = activePage === item.id
                 return (
@@ -2512,8 +2731,18 @@ export default function App() {
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
               <LogOut size={14} /> <span className="cw-topbar-label">{t('topbar.logout')}</span>
             </button>
-            <div style={{ width: 34, height: 34, borderRadius: 17, background: C.green + '20', border: `2px solid ${C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: C.green, flexShrink: 0 }}>
-              A
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="cw-compact-hide" style={{ textAlign: 'right', lineHeight: 1.25 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Admin</div>
+                {adminRole && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[adminRole] ?? C.textMuted }}>
+                    {ROLE_LABELS[adminRole] ?? adminRole}
+                  </div>
+                )}
+              </div>
+              <div style={{ width: 34, height: 34, borderRadius: 17, background: (ROLE_COLORS[adminRole ?? ''] ?? C.green) + '20', border: `2px solid ${ROLE_COLORS[adminRole ?? ''] ?? C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: ROLE_COLORS[adminRole ?? ''] ?? C.green, flexShrink: 0 }}>
+                A
+              </div>
             </div>
           </div>
         </div>

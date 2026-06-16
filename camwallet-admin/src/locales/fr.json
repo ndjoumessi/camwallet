@@ -97,7 +97,9 @@
     "chart_series_volume": "Volume",
     "chart_series_fees": "Frais",
     "chart_series_users": "Utilisateurs",
-    "chart_series_tx": "Transactions"
+    "chart_series_tx": "Transactions",
+    "evolution": "Évolution",
+    "chart_donut_total": "Transactions"
   },
   "health": {
     "title": "Santé des intégrations",

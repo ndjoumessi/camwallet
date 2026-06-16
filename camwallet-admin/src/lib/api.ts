@@ -24,6 +24,19 @@ export function hasSession(): boolean {
 const getAccess = () => localStorage.getItem(ACCESS_KEY)
 const getRefresh = () => localStorage.getItem(REFRESH_KEY)
 
+// Décode le sous-rôle admin (claim `adminRole`) du token d'accès, pour le RBAC
+// du dashboard (affichage/masquage des pages). Renvoie null si absent/illisible.
+export function getAdminRole(): string | null {
+  const token = getAccess()
+  if (!token) return null
+  try {
+    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(decodeURIComponent(escape(atob(part)))).adminRole ?? null
+  } catch {
+    return null
+  }
+}
+
 // Erreur levée quand la session n'est plus valide → l'app redirige vers le login.
 export class SessionExpiredError extends Error {
   constructor() {
@@ -388,6 +401,7 @@ export interface AdminOperation {
   operator: string | null
   createdAt: string
   sender: { fullName: string | null; phone: string } | null
+  receiver: { fullName: string | null; phone: string } | null
   retryCount: number
 }
 
