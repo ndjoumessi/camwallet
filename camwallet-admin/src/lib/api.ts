@@ -474,15 +474,18 @@ export const retryOperation = (id: string) =>
 
 export interface IntegrationStatus {
   name: string
-  status: 'UP' | 'DOWN' | 'UNKNOWN' | 'SIMULATED'
-  txCount24h: number
+  status: 'UP' | 'DOWN' | 'DEGRADED' | 'UNKNOWN' | 'SIMULATED'
+  latency: number | null // ms (ping réel passerelle), null si non mesuré
+  txCount24h: number | null // transactions via l'opérateur sur 24h
+  lastSuccess: string | null // timestamp dernière transaction réussie
+  uptime: number | null // % de succès sur 24h
   pendingWebhooks?: number
-  stalePending?: number
   note?: string
 }
 
 export interface HealthIntegrationsResponse {
   integrations: IntegrationStatus[]
+  stalePendingTx?: number
   checkedAt: string
 }
 
