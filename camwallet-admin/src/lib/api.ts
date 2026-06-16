@@ -199,8 +199,10 @@ export interface AdminAuditEntry {
   action: string
   resource: string | null
   metadata: Record<string, any> | null
+  ipAddress?: string | null
+  userAgent?: string | null
   createdAt: string
-  user: { fullName: string | null; email: string | null } | null
+  user: { fullName: string | null; email: string | null; adminRole?: string | null; role?: string | null } | null
 }
 
 export interface AdminUser {
@@ -245,6 +247,10 @@ export interface AdminTransaction {
   operatorRef?: string | null
   operatorStatus?: string | null
   failureReason?: string | null
+  senderBalanceBefore?: number | null // centimes
+  senderBalanceAfter?: number | null // centimes
+  resolved?: boolean
+  resolvedAt?: string | null
   sender: { phone: string; fullName: string | null } | null
   receiver: { phone: string; fullName: string | null } | null
 }
@@ -311,10 +317,13 @@ export function getUsers(
 export const getUserStats = () => request<AdminUserStats>('/admin/users/stats')
 
 export function getTransactions(
-  params: { page?: number; limit?: number; type?: string; status?: string; search?: string; from?: string; to?: string } = {},
+  params: { page?: number; limit?: number; type?: string; status?: string; search?: string; from?: string; to?: string; amountMin?: string; amountMax?: string } = {},
 ) {
   return request<Paginated<AdminTransaction>>(`/admin/transactions${buildQuery(params)}`)
 }
+
+export const resolveTransaction = (id: string) =>
+  request<{ ok: boolean }>(`/admin/transactions/${id}/resolve`, { method: 'PATCH' })
 
 export const getKyc = () => request<AdminKyc>('/admin/kyc')
 
@@ -393,14 +402,18 @@ export interface AnifFrequentSender {
 export interface AnifCase {
   id: string
   action: string
-  details: string | null
+  resource?: string | null
+  details?: string | null
+  metadata?: Record<string, any> | null
   createdAt: string
-  user: { fullName: string | null; phone: string } | null
+  user: { fullName: string | null; email?: string | null; phone?: string } | null
 }
 
 export interface AnifAlertsResponse {
   highValue: AnifHighValueTx[]
   frequentSenders: AnifFrequentSender[]
+  smurfing?: AnifFrequentSender[]
+  unusualAmounts?: AnifHighValueTx[]
   cases: AnifCase[]
 }
 
@@ -413,12 +426,34 @@ export const openAnifCase = (transactionId: string, reason: string) =>
     body: JSON.stringify({ transactionId, reason }),
   })
 
-export function closeAnifCase(caseId: string, resolution: string) {
+export function closeAnifCase(caseId: string, resolution: string, report?: string) {
   return request(`/admin/anif/cases/${caseId}/close`, {
     method: 'PATCH',
-    body: JSON.stringify({ resolution }),
+    body: JSON.stringify({ resolution, report }),
   })
 }
+
+export const assignAnifCase = (caseId: string, analystId: string) =>
+  request<{ ok: boolean; analyst: { id: string; fullName: string | null; email: string | null } }>(
+    `/admin/anif/cases/${caseId}/assign`, { method: 'POST', body: JSON.stringify({ analystId }) })
+
+export interface AnifStats { activeAlerts: number; openCases: number; overThreshold30d: number; resolutionRate: number | null }
+export const getAnifStats = () => request<AnifStats>('/admin/anif/stats')
+
+// (exporté pour le hook useFetch côté UI)
+export interface AlertsTimelinePoint { hour: string; label: string; failed: number; highValue: number; total: number }
+export const getAlertsTimeline = () => request<{ series: AlertsTimelinePoint[] }>('/admin/stats/alerts-timeline')
+
+export interface AuditStats { total30d: number; criticalActions: number; uniqueActors: number; lastAction: { action: string; at: string } | null }
+export const getAuditStats = () => request<AuditStats>('/admin/audit/stats')
+
+export interface MemberActivity {
+  recent: { id: string; action: string; resource: string | null; createdAt: string }[]
+  stats: { actions30d: number; kycHandled: number }
+  lastLoginAt: string | null
+  lastLoginIp: string | null
+}
+export const getMemberActivity = (userId: string) => request<MemberActivity>(`/admin/team/${userId}/activity`)
 
 // ── Opérations OM/MoMo ────────────────────────────────────
 

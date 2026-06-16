@@ -40,6 +40,10 @@ export class TransactionsService {
         throw new BadRequestException('Solde insuffisant');
       }
 
+      // Instantanés de solde émetteur (avant/après débit).
+      const balanceBefore = senderWallet.balance;
+      const balanceAfter = balanceBefore - amount;
+
       // Débit expéditeur
       await tx.wallet.update({
         where: { userId: senderId },
@@ -61,6 +65,8 @@ export class TransactionsService {
           senderId,
           receiverId: receiver.id,
           description,
+          senderBalanceBefore: balanceBefore,
+          senderBalanceAfter: balanceAfter,
           processedAt: new Date(),
         },
       });
@@ -132,6 +138,10 @@ export class TransactionsService {
       // Calculer la commission marchand (0.5%)
       const fee = (amount! * 5n) / 1000n;
 
+      // Instantanés de solde du payeur (avant/après débit).
+      const payerBalanceBefore = payerWallet.balance;
+      const payerBalanceAfter = payerBalanceBefore - amount!;
+
       await tx.wallet.update({
         where: { userId: payerId },
         data: { balance: { decrement: amount } },
@@ -159,6 +169,8 @@ export class TransactionsService {
           senderId: payerId,
           receiverId: qrCode.userId,
           qrCodeId: qrCode.id,
+          senderBalanceBefore: payerBalanceBefore,
+          senderBalanceAfter: payerBalanceAfter,
           processedAt: new Date(),
         },
       });

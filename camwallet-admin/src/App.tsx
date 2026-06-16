@@ -19,16 +19,16 @@ import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
-  getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
+  getKyc, getAlerts, getAlertsTimeline, getAudit, getAuditStats, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
-  getAnifAlerts, openAnifCase, closeAnifCase,
-  getOperations, retryOperation, WebhookEvent, AdminOperation,
+  getAnifAlerts, openAnifCase, closeAnifCase, assignAnifCase, getAnifStats,
+  getOperations, retryOperation, WebhookEvent, AdminOperation, resolveTransaction,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
   downloadUsersCSV, downloadTransactionsCSV,
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
-  AdminTeamMember, getAdminTeam, setAdminRole, setAdminPassword,
+  AdminTeamMember, getAdminTeam, getMemberActivity, setAdminRole, setAdminPassword,
   createAdminOperator, deleteAdmin, setAdminStatus, getAdminId,
   getSseTicket, API_ORIGIN,
 } from './lib/api'
@@ -856,36 +856,108 @@ function HealthWidget() {
   )
 }
 
+// Niveau d'alerte → libellé + couleur (error=Critique, warn=Avertissement, info=Info).
+const ALERT_LEVEL: Record<string, { label: string; color: string; bg: string; icon: LucideIcon }> = {
+  error: { label: 'Critique', color: C.red, bg: C.redLight, icon: Siren },
+  warn: { label: 'Avertissement', color: '#FB923C', bg: '#FB923C18', icon: AlertTriangle },
+  info: { label: 'Info', color: C.blue, bg: C.blueLight, icon: Info },
+}
+
 function AlertsPage() {
-  const { data, loading, error } = useFetch(() => getAlerts(), [])
+  const { data, loading, error, refetch } = useFetch(() => getAlerts(), [])
+  const { data: timeline, refetch: refetchTl } = useFetch(() => getAlertsTimeline(), [])
   const alerts = data?.alerts ?? []
   const flagged = data?.flagged ?? []
+  const toast = useToast()
+  const [levelFilter, setLevelFilter] = useState('')
+  // État « lu » persisté localement (par id d'alerte).
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('cw_alerts_read') || '[]')) } catch { return new Set() }
+  })
+  const persistRead = (s: Set<string>) => { setReadIds(s); localStorage.setItem('cw_alerts_read', JSON.stringify([...s])) }
+
+  // Rafraîchissement temps réel via SSE.
+  useLiveEvents(useCallback((ev: { type: string }) => { if (ev.type !== 'ping') { refetch(); refetchTl() } }, [refetch, refetchTl]))
+
+  const filtered = levelFilter ? alerts.filter((a) => a.type === levelFilter) : alerts
+  const unread = alerts.filter((a) => !readIds.has(a.id)).length
+  const counts = { error: alerts.filter(a => a.type === 'error').length, warn: alerts.filter(a => a.type === 'warn').length, info: alerts.filter(a => a.type === 'info').length }
+  const tlData = (timeline?.series ?? []).map((p) => ({ label: p.label, failed: p.failed, highValue: p.highValue }))
+
+  const markAllRead = () => { persistRead(new Set(alerts.map((a) => a.id))); toast('Toutes les alertes marquées comme lues', 'success') }
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Alertes & Surveillance</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{alerts.length} alerte(s) active(s) — données en temps réel</p>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
+            Alertes & Surveillance
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 20, padding: '3px 10px' }}>
+              <span className="cw-live-dot" style={{ width: 7, height: 7, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} /> Temps réel
+            </span>
+          </h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{unread} non lue(s) sur {alerts.length} alerte(s)</p>
+        </div>
+        <button className="cw-btn" disabled={!unread} onClick={markAllRead}
+          style={{ fontSize: 13, color: unread ? C.green : C.textMuted, background: unread ? C.greenLight : C.surface, border: `1px solid ${unread ? C.green + '40' : C.border}`, borderRadius: 8, padding: '8px 16px', cursor: unread ? 'pointer' : 'default', fontWeight: 600 }}>
+          ✓ Tout marquer comme lu
+        </button>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
 
-      {/* Alert cards */}
+      {/* Graphe : alertes par heure sur 24h */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Alertes par heure · 24h</h2>
+          <div style={{ display: 'flex', gap: 14 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red }} />Échecs</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#FB923C' }} />Gros montants</span>
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={tlData} margin={{ top: 6, right: 8, left: 4, bottom: 0 }} barGap={2}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="label" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} interval={2} />
+            <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
+            <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
+            <Bar dataKey="failed" name="Échecs" stackId="a" fill={C.red} radius={[0, 0, 0, 0]} maxBarSize={18} />
+            <Bar dataKey="highValue" name="Gros montants" stackId="a" fill="#FB923C" radius={[3, 3, 0, 0]} maxBarSize={18} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Filtre par niveau */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button onClick={() => setLevelFilter('')} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === '' ? 700 : 500, background: levelFilter === '' ? C.green : C.card, border: `1px solid ${levelFilter === '' ? C.green : C.border}`, color: levelFilter === '' ? '#fff' : C.textSoft }}>Toutes ({alerts.length})</button>
+        {(['error', 'warn', 'info'] as const).map((lvl) => { const m = ALERT_LEVEL[lvl]; return (
+          <button key={lvl} onClick={() => setLevelFilter(levelFilter === lvl ? '' : lvl)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === lvl ? 700 : 500, background: levelFilter === lvl ? m.color : m.bg, border: `1px solid ${levelFilter === lvl ? m.color : m.color + '40'}`, color: levelFilter === lvl ? '#fff' : m.color }}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: levelFilter === lvl ? '#fff' : m.color }} />{m.label} ({counts[lvl]})
+          </button>
+        )})}
+      </div>
+
+      {/* Alert cards (3 niveaux) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-        {alerts.map(a => {
-          const cfg = {
-            error: { bg: C.redLight, border: C.red, icon: Siren },
-            warn: { bg: C.yellowLight, border: C.yellow, icon: AlertTriangle },
-            info: { bg: C.blueLight, border: C.blue, icon: Info },
-          }[a.type] ?? { bg: '#333', border: '#888', icon: Info }
-          const AlertIcon = cfg.icon
+        {filtered.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 24, color: C.textMuted, fontSize: 13 }}>Aucune alerte active</div>}
+        {filtered.map(a => {
+          const m = ALERT_LEVEL[a.type] ?? ALERT_LEVEL.info
+          const AlertIcon = m.icon
+          const isRead = readIds.has(a.id)
           return (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: cfg.bg, border: `1px solid ${cfg.border}40`, borderRadius: 12, padding: '14px 16px' }}>
-              <AlertIcon size={18} color={cfg.border} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: m.bg, border: `1px solid ${m.color}40`, borderRadius: 12, padding: '14px 16px', opacity: isRead ? 0.6 : 1 }}>
+              <AlertIcon size={18} color={m.color} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1 }}>
-                <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{a.title}</div>
-                <div style={{ color: C.textSoft, fontSize: 12 }}>{a.desc}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: m.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</span>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{a.title}</span>
+                </div>
+                <div style={{ color: C.textSoft, fontSize: 12, marginTop: 2 }}>{a.desc}</div>
               </div>
+              {!isRead && (
+                <button onClick={() => persistRead(new Set([...readIds, a.id]))} title="Marquer comme lu"
+                  style={{ flexShrink: 0, background: 'none', border: 'none', color: m.color, cursor: 'pointer', padding: 4, borderRadius: 6 }}><Check size={16} /></button>
+              )}
             </div>
           )
         })}
@@ -1845,9 +1917,16 @@ function TransactionsPage() {
   const [customTo, setCustomTo] = useState('')
   const [searchRaw, setSearchRaw] = useState('')
   const search = useDebounced(searchRaw.trim(), 350)
+  const [amountMinRaw, setAmountMinRaw] = useState('')
+  const [amountMaxRaw, setAmountMaxRaw] = useState('')
+  const amountMin = useDebounced(amountMinRaw.trim(), 400)
+  const amountMax = useDebounced(amountMaxRaw.trim(), 400)
   const toast = useToast()
   const [exporting, setExporting] = useState(false)
   const [selectedTx, setSelectedTx] = useState<AdminTransaction | null>(null)
+  // Sélection en masse (export de la sélection).
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const togglePick = (id: string) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   // Bornes de dates dérivées de la période (ou personnalisées).
   const range = useMemo(() => {
@@ -1869,8 +1948,10 @@ function TransactionsPage() {
       search: search || undefined,
       from: range.from,
       to: range.to,
+      amountMin: amountMin || undefined,
+      amountMax: amountMax || undefined,
     }),
-    [txFilter, statusFilter, search, range.from, range.to],
+    [txFilter, statusFilter, search, range.from, range.to, amountMin, amountMax],
   )
   const txs = data?.data ?? []
   const total = data?.meta.total ?? 0
@@ -2004,18 +2085,35 @@ function TransactionsPage() {
             <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={inputStyle} />
           </>
         )}
-        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+        <input type="number" inputMode="numeric" value={amountMinRaw} onChange={(e) => setAmountMinRaw(e.target.value)} placeholder="Montant min" style={{ ...inputStyle, width: 120 }} />
+        <input type="number" inputMode="numeric" value={amountMaxRaw} onChange={(e) => setAmountMaxRaw(e.target.value)} placeholder="Montant max" style={{ ...inputStyle, width: 120 }} />
+        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
           <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Référence, émetteur, destinataire…"
             style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
       </div>
 
+      {/* Barre de sélection en masse */}
+      {picked.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '10px 14px', background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 10 }}>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{picked.size} sélectionnée(s)</span>
+          <button onClick={() => {
+            const rows = txs.filter((t) => picked.has(t.id))
+            downloadCsv('transactions-selection.csv', ['Réf.', 'Type', 'De', 'À', 'Montant (FCFA)', 'Frais (FCFA)', 'Statut', 'Date'],
+              rows.map((tx) => [tx.reference, TX_TYPE_LABEL[tx.type] ?? tx.type, partyLabel(tx.sender, 'Opérateur'), partyLabel(tx.receiver, 'Opérateur'), toFcfa(tx.amount).toLocaleString('fr-FR'), toFcfa(tx.fee).toLocaleString('fr-FR'), tx.status, fmtDate(tx.createdAt)]))
+            toast('Sélection exportée', 'success')
+          }} style={{ fontSize: 12, color: C.blue, background: C.card, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>⬇ Exporter la sélection (CSV)</button>
+          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Effacer</button>
+        </div>
+      )}
+
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
         <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
+              <th style={{ width: 36, padding: '12px 0 12px 14px' }}></th>
               {['Réf.', 'Type', 'Émetteur', 'Destinataire', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
@@ -2026,7 +2124,15 @@ function TransactionsPage() {
               const tColor = TX_TYPE_COLOR[tx.type] ?? C.text
               return (
               <tr key={tx.id} className="cw-row" onClick={() => setSelectedTx(tx)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}><CopyableRef value={tx.reference} truncate={10} /></td>
+                <td style={{ padding: '11px 0 11px 14px' }} onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={picked.has(tx.id)} onChange={() => togglePick(tx.id)} aria-label="Sélectionner" style={{ cursor: 'pointer', accentColor: C.green }} />
+                </td>
+                <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CopyableRef value={tx.reference} truncate={10} />
+                    {tx.resolved && <CheckCircle2 size={13} color={C.green} aria-label="Résolu" />}
+                  </div>
+                </td>
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '11px 14px' }}><UserCell party={tx.sender} /></td>
                 <td style={{ padding: '11px 14px' }}><UserCell party={tx.receiver} /></td>
@@ -2060,6 +2166,20 @@ function TransactionsPage() {
 function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransaction; onClose: () => void; onRetried: () => void }) {
   const toast = useToast()
   const [retrying, setRetrying] = useState(false)
+  const [resolving, setResolving] = useState(false)
+
+  const handleResolve = async () => {
+    setResolving(true)
+    try {
+      await resolveTransaction(tx.id)
+      toast('Transaction marquée résolue', 'success')
+      onRetried()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Échec', 'error')
+    } finally {
+      setResolving(false)
+    }
+  }
 
   const phase = TX_STATUS_BADGE[tx.status] ?? tx.status
   const failed = phase === 'failed'
@@ -2180,6 +2300,24 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
             ))}
           </div>
 
+          {/* Soldes émetteur avant / après (capturés dans la transaction ACID) */}
+          {tx.senderBalanceBefore != null && tx.senderBalanceAfter != null && (
+            <div>
+              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Solde émetteur</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>Avant</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: C.textSoft }}>{formatFCFA(tx.senderBalanceBefore)}</div>
+                </div>
+                <ArrowRight size={16} color={C.textMuted} />
+                <div style={{ flex: 1, textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>Après</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: tx.senderBalanceAfter < tx.senderBalanceBefore ? C.red : C.green }}>{formatFCFA(tx.senderBalanceAfter)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Section opérateur (recharge/retrait OM/MoMo) */}
           {isOperatorTx && (
             <div>
@@ -2213,7 +2351,7 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           </details>
 
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button className="cw-btn" onClick={handleReceipt}
               style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
               ⬇ Reçu PDF
@@ -2224,6 +2362,14 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
                 {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
               </button>
             )}
+            {!isReadOnly() && (tx.resolved ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.green, fontWeight: 600 }}><CheckCircle2 size={14} /> Résolu</span>
+            ) : (
+              <button className="cw-btn" onClick={handleResolve} disabled={resolving}
+                style={{ fontSize: 13, color: '#B89000', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 8, padding: '9px 16px', cursor: resolving ? 'wait' : 'pointer', fontWeight: 600 }}>
+                {resolving ? '…' : '✓ Marquer résolu'}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -2400,8 +2546,14 @@ function OperationsPage() {
     [page, operator, statusFilter, typeFilter, search, period],
   )
 
+  // Sélection en masse + détail au clic.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [bulkRetrying, setBulkRetrying] = useState(false)
+  const [detailOp, setDetailOp] = useState<AdminOperation | null>(null)
+  const togglePick = (id: string) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
   // Tout changement de filtre ramène à la première page.
-  useEffect(() => { setPage(1) }, [operator, statusFilter, typeFilter, search, period])
+  useEffect(() => { setPage(1); setPicked(new Set()) }, [operator, statusFilter, typeFilter, search, period])
 
   const handleRetry = async (id: string) => {
     try {
@@ -2411,6 +2563,17 @@ function OperationsPage() {
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Échec de la relance', 'error')
     }
+  }
+
+  const handleBulkRetry = async () => {
+    setBulkRetrying(true)
+    const ids = [...picked]
+    let ok = 0, ko = 0
+    for (const id of ids) {
+      try { await retryOperation(id); ok++ } catch { ko++ }
+    }
+    setBulkRetrying(false); setPicked(new Set()); refetch()
+    showToast(`${ok} relancée(s)${ko ? `, ${ko} échec(s)` : ''}`, ko ? 'error' : 'success')
   }
 
   const ops = data?.data ?? []
@@ -2517,6 +2680,27 @@ function OperationsPage() {
         </div>
       </div>
 
+      {/* Alerte seuil d'échec (> 10 %) */}
+      {successRate != null && (100 - successRate) > 10 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '12px 16px', background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 10 }}>
+          <Siren size={18} color={C.red} />
+          <span style={{ fontSize: 13, color: C.text }}><strong style={{ color: C.red }}>Taux d'échec élevé : {100 - successRate} %</strong> sur les 7 derniers jours (seuil d'alerte : 10 %). Vérifiez l'intégration opérateur.</span>
+        </div>
+      )}
+
+      {/* Barre de relance en masse */}
+      {picked.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 14px', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 10 }}>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{picked.size} opération(s) sélectionnée(s)</span>
+          {!isReadOnly() && (
+            <button onClick={handleBulkRetry} disabled={bulkRetrying} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#B89000', background: C.card, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '6px 12px', cursor: bulkRetrying ? 'wait' : 'pointer', fontWeight: 600 }}>
+              <RotateCcw size={13} /> {bulkRetrying ? 'Relance…' : 'Relancer les sélectionnés'}
+            </button>
+          )}
+          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Effacer</button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${C.border}` }}>
         {(['ops', 'webhooks'] as const).map(t => (
@@ -2552,14 +2736,18 @@ function OperationsPage() {
               <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead style={{ background: C.surface }}>
                   <tr>
+                    <th style={{ width: 34, padding: '12px 0 12px 12px' }}></th>
                     {['Date', 'Type', 'Utilisateur', 'Opérateur', 'Montant', 'Statut', 'Réf. opérateur', 'Tent.', 'Action'].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '12px 12px', color: C.textMuted, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ops.map(op => (
-                    <tr key={op.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  {ops.map(op => { const retriable = op.status === 'PENDING' || op.status === 'FAILED'; return (
+                    <tr key={op.id} className="cw-row" onClick={() => setDetailOp(op)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                      <td style={{ padding: '10px 0 10px 12px' }} onClick={(e) => e.stopPropagation()}>
+                        {retriable && <input type="checkbox" checked={picked.has(op.id)} onChange={() => togglePick(op.id)} aria-label="Sélectionner" style={{ cursor: 'pointer', accentColor: C.yellow }} />}
+                      </td>
                       <td style={{ padding: '10px 12px', color: C.textMuted, whiteSpace: 'nowrap', fontSize: 12 }} title={fmtDate(op.createdAt)}>{relativeTime(op.createdAt)}</td>
                       <td style={{ padding: '10px 12px' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, background: opTypeColor(op.type) + '20', color: opTypeColor(op.type), padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap' }}>
@@ -2570,14 +2758,14 @@ function OperationsPage() {
                       <td style={{ padding: '10px 12px' }}><OperatorBadge operator={op.operator ?? null} /></td>
                       <td style={{ padding: '10px 12px', fontWeight: 700, color: opTypeColor(op.type), whiteSpace: 'nowrap' }}>{formatFCFA(op.amount)}</td>
                       <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[op.status] ?? op.status} /></td>
-                      <td style={{ padding: '10px 12px' }}>{op.operatorRef ? <CopyableRef value={op.operatorRef} truncate={14} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: '10px 12px' }} onClick={(e) => e.stopPropagation()}>{op.operatorRef ? <CopyableRef value={op.operatorRef} truncate={14} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
                       <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                         {op.retryCount > 0
                           ? <span style={{ fontSize: 11, fontWeight: 800, background: C.redLight, color: C.red, borderRadius: 10, padding: '2px 8px' }}>{op.retryCount}</span>
                           : <span style={{ color: C.textMuted }}>0</span>}
                       </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        {!isReadOnly() && (op.status === 'PENDING' || op.status === 'FAILED') && (
+                      <td style={{ padding: '10px 12px' }} onClick={(e) => e.stopPropagation()}>
+                        {!isReadOnly() && retriable && (
                           <button
                             onClick={() => handleRetry(op.id)}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: C.yellow + '20', color: '#B89000', border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
@@ -2587,7 +2775,7 @@ function OperationsPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -2636,208 +2824,345 @@ function OperationsPage() {
           )}
         </>
       )}
+
+      {detailOp && (
+        <TransactionDetailModal
+          tx={{ ...detailOp, reference: detailOp.operatorRef ?? detailOp.id } as unknown as AdminTransaction}
+          onClose={() => setDetailOp(null)}
+          onRetried={() => { setDetailOp(null); refetch() }}
+        />
+      )}
     </div>
   )
 }
 
 // ── Page : Conformité ANIF ────────────────────────────────
+// Score de risque (0-100) d'une transaction suspecte selon le type d'alerte.
+function anifRiskScore(kind: 'highvalue' | 'unusual' | 'smurfing' | 'frequency', amountFcfa: number, thresholdFcfa: number): number {
+  if (kind === 'smurfing') return 88
+  if (kind === 'frequency') return 64
+  if (kind === 'unusual') return 74 // juste sous le seuil = évasion probable
+  // highvalue : croît avec le multiple du seuil
+  const ratio = thresholdFcfa > 0 ? amountFcfa / thresholdFcfa : 1
+  return Math.min(100, Math.round(45 + ratio * 18))
+}
+const riskBand = (s: number) => (s >= 80 ? { key: 'critique', label: 'Critique', color: C.red } : s >= 50 ? { key: 'eleve', label: 'Élevé', color: '#FB923C' } : { key: 'moyen', label: 'Moyen', color: C.yellow })
+
 function ANIFPage() {
   const { data, loading, error, refetch } = useFetch(getAnifAlerts, [])
-  const showToast = useContext(ToastContext)
-  const [openingCase, setOpeningCase] = useState<string | null>(null)
-  const [caseReason, setCaseReason] = useState('')
-  const [closingId, setClosingId] = useState<string | null>(null)
-  const [resolutionText, setResolutionText] = useState('')
-  // Seuil de déclaration configurable directement sur la page (filtrage client).
-  const [thresholdFcfa, setThresholdFcfa] = useState(500_000)
+  const { data: anifStats } = useFetch(getAnifStats, [])
+  const { data: settings, refetch: refetchSettings } = useFetch(getSettings, [])
+  const { data: team } = useFetch(getAdminTeam, [])
+  const toast = useToast()
+  const [riskFilter, setRiskFilter] = useState('')
+  const [period, setPeriod] = useState<'7d' | '30d'>('30d')
+  const [caseStatusFilter, setCaseStatusFilter] = useState('')
+  const [caseInput, setCaseInput] = useState<{ txId: string; reason: string } | null>(null)
+  const [closing, setClosing] = useState<{ id: string; resolution: string; report: string } | null>(null)
 
-  const handleOpenCase = async (txId: string) => {
-    if (!caseReason.trim()) {
-      showToast('Saisissez un motif', 'error')
-      return
-    }
-    try {
-      await openAnifCase(txId, caseReason)
-      showToast('Dossier ANIF ouvert')
-      setOpeningCase(null)
-      setCaseReason('')
-      refetch()
-    } catch {
-      showToast('Échec ouverture dossier', 'error')
-    }
-  }
+  const thresholdFcfa = Number(settings?.anif_threshold_fcfa ?? 500000)
+  const freqMax = Number(settings?.anif_frequency_max ?? 10)
 
-  const handleCloseCase = async (caseId: string) => {
-    if (!resolutionText.trim()) {
-      showToast('Saisissez une résolution', 'error')
-      return
-    }
-    try {
-      await closeAnifCase(caseId, resolutionText)
-      showToast('Dossier clôturé')
-      setClosingId(null)
-      setResolutionText('')
-      refetch()
-    } catch {
-      showToast('Échec clôture dossier', 'error')
-    }
-  }
+  // Liste unifiée des transactions suspectes (montant élevé + sous-seuil) avec score.
+  const periodCut = Date.now() - (period === '7d' ? 7 : 30) * 86400000
+  const suspects = useMemo(() => {
+    const hv = (data?.highValue ?? []).map((tx) => ({ tx, kind: 'highvalue' as const }))
+    const un = (data?.unusualAmounts ?? []).map((tx) => ({ tx, kind: 'unusual' as const }))
+    return [...hv, ...un]
+      .filter((s) => new Date(s.tx.createdAt).getTime() >= periodCut)
+      .map((s) => ({ ...s, score: anifRiskScore(s.kind, toFcfa(s.tx.amount), thresholdFcfa) }))
+      .sort((a, b) => b.score - a.score)
+  }, [data, period, thresholdFcfa, periodCut])
+  const filteredSuspects = riskFilter ? suspects.filter((s) => riskBand(s.score).key === riskFilter) : suspects
 
   const frequent = data?.frequentSenders ?? []
-  const cases = data?.cases ?? []
-  // Liste filtrée selon le seuil configuré sur la page.
-  const highValue = (data?.highValue ?? []).filter((tx) => toFcfa(tx.amount) >= thresholdFcfa)
+  const smurfing = data?.smurfing ?? []
+  const allCases = data?.cases ?? []
+  // Dossiers : on présente les ouvertures, statut dérivé des clôtures.
+  const closedRefs = new Set(allCases.filter((c) => c.action === 'ANIF_CASE_CLOSE').map((c) => c.resource).filter(Boolean))
+  const openCases = allCases.filter((c) => c.action === 'ANIF_CASE_OPEN').map((c) => ({
+    ...c,
+    status: closedRefs.has(`AuditLog:${c.id}`) ? 'Clôturé' : 'Ouvert',
+  }))
+  const visibleCases = caseStatusFilter ? openCases.filter((c) => c.status === caseStatusFilter) : openCases
+
+  // Donut : répartition par type d'alerte.
+  const donut = [
+    { name: 'Montant élevé', value: data?.highValue?.length ?? 0, color: C.red },
+    { name: 'Fractionnement', value: smurfing.length, color: '#FB923C' },
+    { name: 'Fréquence', value: frequent.length, color: C.yellow },
+    { name: 'Sous-seuil', value: data?.unusualAmounts?.length ?? 0, color: C.purple },
+  ].filter((d) => d.value > 0)
+  const donutTotal = donut.reduce((s, d) => s + d.value, 0)
+
+  // BarChart : alertes (suspects) par jour sur 30j.
+  const byDay = useMemo(() => {
+    const m = new Map<string, number>()
+    suspects.forEach((s) => { const k = s.tx.createdAt.slice(0, 10); m.set(k, (m.get(k) ?? 0) + 1) })
+    const out = []
+    const days = period === '7d' ? 7 : 30
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+      out.push({ date: d.slice(5), alerts: m.get(d) ?? 0 })
+    }
+    return out
+  }, [suspects, period])
+
+  const handleOpenCase = async () => {
+    if (!caseInput?.reason.trim()) { toast('Saisissez un motif', 'error'); return }
+    try { await openAnifCase(caseInput.txId, caseInput.reason); toast('Dossier ANIF ouvert', 'success'); setCaseInput(null); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const handleClose = async () => {
+    if (!closing?.resolution.trim()) { toast('Saisissez une résolution', 'error'); return }
+    try { await closeAnifCase(closing.id, closing.resolution, closing.report || undefined); toast('Dossier clôturé', 'success'); setClosing(null); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const handleAssign = async (caseId: string, analystId: string) => {
+    if (!analystId) return
+    try { await assignAnifCase(caseId, analystId); toast('Dossier assigné', 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const handleReport = (c: any) => {
+    const meta = c.metadata ?? {}
+    const ok = exportPdfReport(`Rapport ANIF — ${meta.caseRef ?? c.id.slice(0, 8)}`, ['Champ', 'Valeur'], [
+      ['Référence dossier', meta.caseRef ?? '—'], ['Transaction', meta.reference ?? '—'],
+      ['Montant', meta.amount ? formatFCFA(Number(meta.amount)) : '—'], ['Motif', meta.reason ?? '—'],
+      ['Ouvert le', fmtDate(c.createdAt)], ['Statut', c.status],
+    ])
+    toast(ok ? 'Rapport PDF généré' : 'Fenêtre bloquée', ok ? 'success' : 'error')
+  }
+  const toggleRule = async (key: string, on: boolean) => {
+    try { await updateSettings({ [key]: on ? 'on' : 'off' }); refetchSettings(); toast('Règle mise à jour', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const saveThreshold = async (val: string) => {
+    try { await updateSettings({ anif_threshold_fcfa: val }); refetchSettings(); toast('Seuil mis à jour', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+
+  const statCards = anifStats ? [
+    { label: 'Alertes actives', value: anifStats.activeAlerts.toLocaleString('fr-FR'), icon: Siren, color: C.red },
+    { label: 'Dossiers ouverts', value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: '#FB923C' },
+    { label: 'Tx > seuil (30j)', value: anifStats.overThreshold30d.toLocaleString('fr-FR'), icon: TrendingUp, color: C.purple },
+    { label: 'Taux de résolution', value: anifStats.resolutionRate == null ? '—' : anifStats.resolutionRate + ' %', icon: CheckCircle2, color: C.green },
+  ] : []
+
+  const RULES = [
+    { key: 'anif_rule_highvalue', label: 'Transaction au-dessus du seuil', desc: `Alerte si montant > ${groupFr(thresholdFcfa)} FCFA`, editable: 'threshold' as const },
+    { key: 'anif_rule_smurfing', label: 'Fractionnement (smurfing)', desc: '> 10 tx < 50k FCFA, total > 300k / 24h' },
+    { key: 'anif_rule_frequency', label: 'Fréquence anormale', desc: `> ${freqMax} transactions / 24h`, editable: 'freq' as const },
+  ]
+  const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
 
   return (
-    <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
-      {/* En-tête avec seuil configurable */}
-      <div style={{ background: C.red + '10', border: `1px solid ${C.red}30`, borderRadius: 12, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <ShieldAlert size={20} color={C.red} />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Conformité ANIF — Lutte anti-blanchiment</div>
-          <div style={{ color: C.textMuted, fontSize: 12 }}>Données des 30 derniers jours</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600 }}>Seuil de déclaration</label>
-          <input
-            type="number" min={0} step={50_000} value={thresholdFcfa}
-            onChange={(e) => setThresholdFcfa(Math.max(0, Number(e.target.value) || 0))}
-            style={{ width: 130, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right' }}
-          />
-          <span style={{ fontSize: 12, color: C.textMuted }}>FCFA</span>
-        </div>
+    <div className="cw-page" style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
+          <ShieldAlert size={22} color={C.red} /> Conformité ANIF
+        </h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Lutte anti-blanchiment — surveillance & dossiers d'enquête</p>
       </div>
 
       <StateRow loading={loading} error={error} />
 
-      {/* Transactions à montant élevé */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Transactions &gt; {groupFr(thresholdFcfa)} FCFA ({highValue.length})
-        </div>
-        {highValue.length === 0 && !loading ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction au-dessus du seuil.</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {['Date', 'Expéditeur', 'Bénéficiaire', 'Montant', 'Type', 'Statut', 'Action'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '7px 10px', color: C.textMuted, fontWeight: 600 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {highValue.map(tx => (
-                <tr key={tx.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
-                  <td style={{ padding: '8px 10px', color: C.textMuted }}>{fmtDate(tx.createdAt)}</td>
-                  <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.sender, '—')}</td>
-                  <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.receiver, '—')}</td>
-                  <td style={{ padding: '8px 10px', fontWeight: 800, color: C.red }}>{formatFCFA(tx.amount)}</td>
-                  <td style={{ padding: '8px 10px', color: C.textMuted }}>{tx.type}</td>
-                  <td style={{ padding: '8px 10px' }}>
-                    <span style={{ color: tx.status === 'COMPLETED' ? C.green : C.yellow, fontWeight: 600, fontSize: 11 }}>{tx.status}</span>
-                  </td>
-                  <td style={{ padding: '8px 10px' }}>
-                    {openingCase === tx.id ? (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <input
-                          autoFocus
-                          value={caseReason}
-                          onChange={e => setCaseReason(e.target.value)}
-                          placeholder="Motif..."
-                          style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12 }}
-                        />
-                        <button onClick={() => handleOpenCase(tx.id)} style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>OK</button>
-                        <button onClick={() => setOpeningCase(null)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setOpeningCase(tx.id)}
-                        style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        Ouvrir un dossier d'enquête
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+          </div>
+        )})}
       </div>
 
-      {/* Émetteurs fréquents */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Émetteurs fréquents (&gt; 10 tx / 24h) ({frequent.length})
+      {/* Graphes : alertes/jour + répartition par type */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Alertes par jour</h2>
+            <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
+              {(['7d', '30d'] as const).map((p) => (
+                <button key={p} onClick={() => setPeriod(p)} style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: period === p ? C.green : 'transparent', color: period === p ? '#fff' : C.textSoft }}>{p === '7d' ? '7j' : '30j'}</button>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={byDay} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} minTickGap={20} />
+              <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={26} allowDecimals={false} />
+              <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
+              <Bar dataKey="alerts" name="Alertes" fill={C.red} radius={[3, 3, 0, 0]} maxBarSize={24} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-        {frequent.length === 0 && !loading ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun comportement anormal détecté.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {frequent.map(s => (
-              <div key={s.senderId} style={{ background: C.card, border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <AlertTriangle size={18} color={C.yellow} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: C.text, fontWeight: 700 }}>{s.fullName ?? s.phone}</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>{s.phone}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: C.yellow, fontWeight: 800 }}>{s.count} transactions / 24h</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>Total : {formatFCFA(s.totalAmount)}</div>
-                </div>
+
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Répartition par type d'alerte</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ position: 'relative', width: 140, height: 140, flexShrink: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={donut.length ? donut : [{ name: '—', value: 1, color: C.border }]} cx="50%" cy="50%" innerRadius={46} outerRadius={68} dataKey="value" paddingAngle={donut.length > 1 ? 3 : 0} stroke="none">
+                    {(donut.length ? donut : [{ color: C.border }]).map((d, i) => <Cell key={i} fill={d.color} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 22, fontWeight: 900, color: C.text }}>{donutTotal}</span>
+                <span style={{ fontSize: 10, color: C.textMuted }}>alertes</span>
               </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>Aucune alerte</span>}
+              {donut.map((d, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12, color: C.textSoft }}>{d.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{d.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tableau de bord alertes (transactions suspectes scorées) */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 16px', flexWrap: 'wrap' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions suspectes ({filteredSuspects.length})</h2>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setRiskFilter('')} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === '' ? 700 : 500, background: riskFilter === '' ? C.green : C.surface, border: `1px solid ${riskFilter === '' ? C.green : C.border}`, color: riskFilter === '' ? '#fff' : C.textSoft }}>Tous</button>
+            {[{ k: 'critique', l: 'Critique', c: C.red }, { k: 'eleve', l: 'Élevé', c: '#FB923C' }, { k: 'moyen', l: 'Moyen', c: C.yellow }].map((b) => (
+              <button key={b.k} onClick={() => setRiskFilter(riskFilter === b.k ? '' : b.k)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === b.k ? 700 : 500, background: riskFilter === b.k ? b.c : b.c + '18', border: `1px solid ${b.c}40`, color: riskFilter === b.k ? '#fff' : b.c }}>{b.l}</button>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Dossiers ouverts */}
-      <div>
-        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Dossiers d'enquête ouverts ({cases.length})
         </div>
-        {cases.length === 0 && !loading ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier ouvert.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', paddingLeft: 22 }}>
-            {/* Rail vertical de la timeline */}
-            <div style={{ position: 'absolute', left: 6, top: 8, bottom: 8, width: 2, background: C.border }} />
-            {cases.map(c => (
-              <div key={c.id} style={{ position: 'relative', background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
-                <span style={{ position: 'absolute', left: -22, top: 16, width: 13, height: 13, borderRadius: 7, background: C.red, border: `3px solid ${C.bg}` }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{c.action}</div>
-                    <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{c.details}</div>
-                    {c.user && <div style={{ color: C.textSoft, fontSize: 11, marginTop: 4 }}>{c.user.fullName ?? c.user.phone}</div>}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                    <div style={{ color: C.textMuted, fontSize: 11 }}>{fmtDate(c.createdAt)}</div>
-                    {closingId === c.id ? (
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <input
-                          autoFocus
-                          value={resolutionText}
-                          onChange={e => setResolutionText(e.target.value)}
-                          placeholder="Résolution..."
-                          style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12, width: 180 }}
-                        />
-                        <button onClick={() => handleCloseCase(c.id)} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>Confirmer</button>
-                        <button onClick={() => { setClosingId(null); setResolutionText('') }} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
+        <div className="cw-tablewrap">
+          <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: C.surface }}>
+              <tr>{['Score', 'Émetteur', 'Bénéficiaire', 'Montant', 'Type', 'Date', 'Action'].map(h => (
+                <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {filteredSuspects.map(({ tx, score, kind }) => { const band = riskBand(score); return (
+                <tr key={tx.id + kind} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ padding: '11px 14px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ minWidth: 34, textAlign: 'center', fontSize: 12, fontWeight: 800, color: band.color, background: band.color + '20', borderRadius: 6, padding: '2px 6px' }}>{score}</span>
+                      <span style={{ fontSize: 11, color: band.color, fontWeight: 600 }}>{band.label}</span>
+                    </span>
+                  </td>
+                  <td style={{ padding: '11px 14px' }}><UserCell party={tx.sender} /></td>
+                  <td style={{ padding: '11px 14px' }}><UserCell party={tx.receiver} /></td>
+                  <td style={{ padding: '11px 14px', fontWeight: 800, color: C.red, whiteSpace: 'nowrap' }}>{formatFCFA(tx.amount)}</td>
+                  <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
+                  <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tx.createdAt)}>{relativeTime(tx.createdAt)}</td>
+                  <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}>
+                    {!isReadOnly() && (caseInput?.txId === tx.id ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input autoFocus value={caseInput.reason} onChange={(e) => setCaseInput({ txId: tx.id, reason: e.target.value })} placeholder="Motif…" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, width: 140 }} />
+                        <button onClick={handleOpenCase} style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontSize: 12 }}>OK</button>
+                        <button onClick={() => setCaseInput(null)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => { setClosingId(c.id); setResolutionText('') }}
-                        style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
-                      >
-                        Clôturer
-                      </button>
+                      <button onClick={() => setCaseInput({ txId: tx.id, reason: '' })} style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Ouvrir un dossier</button>
+                    ))}
+                  </td>
+                </tr>
+              )})}
+            </tbody>
+          </table>
+        </div>
+        {filteredSuspects.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 30, color: C.textMuted, fontSize: 13 }}>Aucune transaction suspecte sur la période</div>}
+      </div>
+
+      {/* Règles de détection configurables */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
+        <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Règles de détection</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {RULES.map((r) => { const on = (settings?.[r.key] ?? 'on') === 'on'; return (
+            <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 14, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{r.label}</div>
+                <div style={{ color: C.textMuted, fontSize: 12 }}>{r.desc}</div>
+              </div>
+              {r.editable === 'threshold' && (
+                <input type="number" defaultValue={thresholdFcfa} onBlur={(e) => { if (Number(e.target.value) !== thresholdFcfa) saveThreshold(String(Math.max(0, Number(e.target.value) || 0))) }} style={{ ...inputStyle, width: 110, textAlign: 'right' }} disabled={isReadOnly()} />
+              )}
+              {r.editable === 'freq' && (
+                <input type="number" defaultValue={freqMax} onBlur={(e) => { if (Number(e.target.value) !== freqMax) updateSettings({ anif_frequency_max: String(Math.max(1, Number(e.target.value) || 10)) }).then(() => refetchSettings()) }} style={{ ...inputStyle, width: 80, textAlign: 'right' }} disabled={isReadOnly()} />
+              )}
+              <button disabled={isReadOnly()} onClick={() => toggleRule(r.key, !on)} aria-label="Activer/désactiver" style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: isReadOnly() ? 'default' : 'pointer', background: on ? C.green : C.border, transition: 'background .2s', flexShrink: 0 }}>
+                <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: 9, background: '#fff', transition: 'left .2s' }} />
+              </button>
+            </div>
+          )})}
+        </div>
+      </div>
+
+      {/* Dossiers d'enquête */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Dossiers d'enquête ({visibleCases.length})</h2>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['', 'Ouvert', 'Clôturé'].map((st) => (
+              <button key={st || 'all'} onClick={() => setCaseStatusFilter(st)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: caseStatusFilter === st ? 700 : 500, background: caseStatusFilter === st ? C.green : C.surface, border: `1px solid ${caseStatusFilter === st ? C.green : C.border}`, color: caseStatusFilter === st ? '#fff' : C.textSoft }}>{st || 'Tous'}</button>
+            ))}
+          </div>
+        </div>
+        {visibleCases.length === 0 ? (
+          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', paddingLeft: 22 }}>
+            <div style={{ position: 'absolute', left: 6, top: 8, bottom: 8, width: 2, background: C.border }} />
+            {visibleCases.map((c: any) => {
+              const meta = c.metadata ?? {}
+              const isClosed = c.status === 'Clôturé'
+              return (
+              <div key={c.id} style={{ position: 'relative', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                <span style={{ position: 'absolute', left: -22, top: 16, width: 13, height: 13, borderRadius: 7, background: isClosed ? C.green : C.red, border: `3px solid ${C.bg}` }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{meta.caseRef ?? 'Dossier'}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: isClosed ? C.green : C.red, background: (isClosed ? C.green : C.red) + '20', borderRadius: 10, padding: '2px 8px' }}>{c.status}</span>
+                    </div>
+                    <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{meta.reason ?? c.details ?? '—'}{meta.amount ? ` · ${formatFCFA(Number(meta.amount))}` : ''}</div>
+                    <div style={{ color: C.textSoft, fontSize: 11, marginTop: 3 }}>Ouvert {relativeTime(c.createdAt)}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    {!isReadOnly() && !isClosed && (
+                      <select defaultValue="" onChange={(e) => handleAssign(c.id, e.target.value)} style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }}>
+                        <option value="">Assigner à…</option>
+                        {(team ?? []).map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
+                      </select>
                     )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => handleReport(c)} style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>⬇ Rapport PDF</button>
+                      {!isReadOnly() && !isClosed && (closing?.id === c.id ? null : (
+                        <button onClick={() => setClosing({ id: c.id, resolution: '', report: '' })} style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+                {closing?.id === c.id && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input autoFocus value={closing.resolution} onChange={(e) => setClosing({ ...closing, resolution: e.target.value })} placeholder="Résolution (obligatoire)…" style={{ ...inputStyle, fontSize: 12 }} />
+                    <textarea value={closing.report} onChange={(e) => setClosing({ ...closing, report: e.target.value })} placeholder="Rapport ANIF (optionnel)…" rows={2} style={{ ...inputStyle, fontSize: 12, resize: 'vertical' }} />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={handleClose} style={{ fontSize: 12, background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontWeight: 700 }}>Confirmer la clôture</button>
+                      <button onClick={() => setClosing(null)} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>Annuler</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>
@@ -2846,114 +3171,161 @@ function ANIFPage() {
 }
 
 // Couleur sémantique d'une action d'audit (BLOCKED=rouge, APPROVED=vert, …).
-const auditActionColor = (action: string): string => {
+// Catégorie sémantique d'une action d'audit → couleur (Sécurité/KYC/Finance/Admin).
+const AUDIT_CYAN = '#22D3EE'
+const auditCategory = (action: string): { key: string; label: string; color: string } => {
   const a = (action || '').toUpperCase()
-  if (/BLOCK|REJECT|LOCK|DELETE|FAIL|SUSPEND|DISABLE/.test(a)) return C.red
-  if (/APPROV|UNBLOCK|UNLOCK|ACTIVAT|SUCCESS|CREATE|ENABLE/.test(a)) return C.green
-  if (/ROLE|UPDATE|CHANGE|RESET|EDIT/.test(a)) return C.purple
-  if (/KYC|REVIEW|PENDING|WARN/.test(a)) return C.yellow
-  return C.blue
+  if (/KYC/.test(a)) return { key: 'kyc', label: 'KYC', color: C.purple }
+  if (/TRANSACTION|WITHDRAWAL|OPERATION|RECHARGE|DISPUTE|ANIF/.test(a)) return { key: 'finance', label: 'Finance', color: AUDIT_CYAN }
+  if (/LOGIN|BLOCK|LOCK|PIN_RESET|STATUS|SUSPEND/.test(a)) return { key: 'security', label: 'Sécurité', color: C.red }
+  if (/ADMIN|ROLE|PASSWORD|SETTINGS|CREATE|DELETE/.test(a)) return { key: 'admin', label: 'Admin', color: C.blue }
+  return { key: 'other', label: 'Autre', color: C.textMuted }
 }
+const auditActionColor = (action: string): string => auditCategory(action).color
+const AUDIT_CATEGORIES = [
+  { key: 'security', label: 'Sécurité', color: C.red },
+  { key: 'kyc', label: 'KYC', color: C.purple },
+  { key: 'finance', label: 'Finance', color: AUDIT_CYAN },
+  { key: 'admin', label: 'Admin', color: C.blue },
+]
 
 function AuditPage() {
-  // Filtres pré-remplis sur la journée en cours.
   const today = new Date().toISOString().slice(0, 10)
-  const [action, setAction] = useState('')
-  const [actorId, setActorId] = useState('')
+  const ago = (d: number) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10)
+  const [preset, setPreset] = useState<'today' | '7d' | '30d' | 'custom'>('7d')
+  const [actorSearch, setActorSearch] = useState('')
   const [resource, setResource] = useState('')
-  const [from, setFrom] = useState(today)
-  const [to, setTo] = useState(today)
-  const [filterParams, setFilterParams] = useState<{ action?: string; actorId?: string; resource?: string; from?: string; to?: string }>({ from: today, to: today })
+  const [customFrom, setCustomFrom] = useState(today)
+  const [customTo, setCustomTo] = useState(today)
+  const [category, setCategory] = useState('') // filtre catégorie (client)
+  const debResource = useDebounced(resource.trim(), 350)
+  const debActor = useDebounced(actorSearch.trim().toLowerCase(), 300)
 
-  const { data, loading, error } = useFetch(() => getAudit(filterParams), [filterParams])
-  const entries = data ?? []
+  const range = useMemo(() => {
+    if (preset === 'today') return { from: today, to: today }
+    if (preset === '7d') return { from: ago(7), to: today }
+    if (preset === '30d') return { from: ago(30), to: today }
+    return { from: customFrom, to: customTo }
+  }, [preset, customFrom, customTo, today])
 
-  const applyFilters = () => {
-    setFilterParams({
-      action: action.trim() || undefined,
-      actorId: actorId.trim() || undefined,
-      resource: resource.trim() || undefined,
-      from: from || undefined,
-      to: to || undefined,
-    })
-  }
+  const { data, loading, error } = useFetch(
+    () => getAudit({ resource: debResource || undefined, from: range.from, to: range.to, take: 200 }),
+    [debResource, range.from, range.to],
+  )
+  const { data: stats } = useFetch(() => getAuditStats(), [])
+  const all = data ?? []
+  // Filtres client : catégorie + recherche acteur par email.
+  const entries = all.filter((e) => {
+    if (category && auditCategory(e.action).key !== category) return false
+    if (debActor) {
+      const hay = `${e.user?.email ?? ''} ${e.user?.fullName ?? ''}`.toLowerCase()
+      if (!hay.includes(debActor)) return false
+    }
+    return true
+  })
 
-  const inputStyle: CSSProperties = {
-    background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: '7px 10px', fontSize: 13,
-  }
+  const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
+  const statCards = stats ? [
+    { label: 'Actions (30j)', value: stats.total30d.toLocaleString('fr-FR'), icon: FileText, color: C.blue },
+    { label: 'Actions critiques', value: stats.criticalActions.toLocaleString('fr-FR'), icon: ShieldAlert, color: C.red },
+    { label: 'Acteurs uniques', value: stats.uniqueActors.toLocaleString('fr-FR'), icon: UsersIcon, color: C.green },
+    { label: 'Dernière action', value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action, icon: Clock, color: C.purple },
+  ] : []
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Journal d'audit</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) — traçabilité des actions admin</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) affichée(s) — traçabilité ANIF</p>
         </div>
         <button className="cw-btn" disabled={!entries.length}
-          onClick={() => downloadCsv('audit-camwallet.csv', ['Date', 'Acteur', 'Action', 'Ressource', 'Détails'],
-            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? 'Système', e.action, e.resource ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', background: C.surface, color: C.textSoft }}>
+          onClick={() => downloadCsv('audit-camwallet.csv', ['Date', 'Acteur', 'Rôle', 'Action', 'Catégorie', 'Ressource', 'IP', 'Détails'],
+            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? 'Système', e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
           <FileText size={14} /> Export CSV
         </button>
       </div>
 
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+            {(s as any).sub && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, fontFamily: 'monospace' }}>{(s as any).sub}</div>}
+          </div>
+        )})}
+      </div>
+
       {/* Filtres */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Action</label>
-            <input value={action} onChange={e => setAction(e.target.value)} placeholder="ex: USER_BLOCKED" style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>ID Acteur</label>
-            <input value={actorId} onChange={e => setActorId(e.target.value)} placeholder="UUID acteur" style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Ressource</label>
-            <input value={resource} onChange={e => setResource(e.target.value)} placeholder="ex: User" style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Du</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' }}>Au</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={inputStyle} />
-          </div>
-          <button
-            onClick={applyFilters}
-            style={{ padding: '7px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-          >
-            Filtrer
-          </button>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Catégories colorées */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button onClick={() => setCategory('')} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === '' ? 700 : 500, background: category === '' ? C.green : C.card, border: `1px solid ${category === '' ? C.green : C.border}`, color: category === '' ? '#fff' : C.textSoft }}>Toutes</button>
+          {AUDIT_CATEGORIES.map((c) => (
+            <button key={c.key} onClick={() => setCategory(category === c.key ? '' : c.key)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === c.key ? 700 : 500, background: category === c.key ? c.color : c.color + '18', border: `1px solid ${category === c.key ? c.color : c.color + '40'}`, color: category === c.key ? '#fff' : c.color }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: category === c.key ? '#fff' : c.color }} />{c.label}
+            </button>
+          ))}
         </div>
+        <input value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Acteur (email)…" style={{ ...inputStyle, minWidth: 160 }} />
+        <input value={resource} onChange={(e) => setResource(e.target.value)} placeholder="Ressource (ID ou type)…" style={{ ...inputStyle, minWidth: 160 }} />
+        <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
+          {([['today', "Aujourd'hui"], ['7d', '7j'], ['30d', '30j']] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setPreset(k)} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === k ? C.green : 'transparent', color: preset === k ? '#fff' : C.textSoft }}>{l}</button>
+          ))}
+          <button onClick={() => setPreset('custom')} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === 'custom' ? C.green : 'transparent', color: preset === 'custom' ? '#fff' : C.textSoft }}>Perso.</button>
+        </div>
+        {preset === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} style={inputStyle} />
+            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={inputStyle} />
+          </>
+        )}
       </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
-          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Date', 'Acteur', 'Action', 'Ressource', 'Détails'].map(h => (
+                {['Acteur', 'Action', 'Ressource', 'IP / Agent', 'Date'].map(h => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {entries.map(e => (
+              {entries.map(e => {
+                const cat = auditCategory(e.action)
+                const actorName = e.user?.fullName ?? e.user?.email ?? 'Système'
+                return (
                 <tr key={e.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(e.createdAt)}</td>
-                  <td style={{ padding: '10px 14px', color: C.text, fontSize: 12 }}>{e.user?.email ?? e.user?.fullName ?? 'Système'}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: auditActionColor(e.action) + '20', color: auditActionColor(e.action), padding: '2px 8px', borderRadius: 6 }}>{e.action}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 28, height: 28, borderRadius: 14, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: (e.user ? C.green : C.textMuted) + '22', color: e.user ? C.green : C.textMuted }}>{e.user ? initials(actorName) : 'SYS'}</span>
+                      <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.25 }}>
+                        <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600 }}>{e.user?.email ?? 'Système'}</span>
+                        {e.user?.adminRole && <span style={{ color: C.textMuted, fontSize: 11 }}>{ROLE_LABELS[e.user.adminRole] ?? e.user.adminRole}</span>}
+                      </span>
+                    </div>
                   </td>
-                  <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12 }}>{e.resource ?? '—'}</td>
+                  <td style={{ padding: '10px 14px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: cat.color + '20', color: cat.color, padding: '3px 9px', borderRadius: 6 }}>
+                      <span style={{ width: 5, height: 5, borderRadius: 3, background: cat.color }} />{e.action}
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12, fontFamily: 'monospace' }}>{e.resource ?? '—'}</td>
                   <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 11 }}>
-                    {e.metadata ? JSON.stringify(e.metadata).slice(0, 80) : '—'}
+                    <div>{e.ipAddress ?? '—'}</div>
+                    {e.userAgent && <div title={e.userAgent} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.userAgent}</div>}
                   </td>
+                  <td style={{ padding: '10px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(e.createdAt)}>{relativeTime(e.createdAt)}</td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
@@ -3019,37 +3391,62 @@ function SettingsPage() {
     }
   }
 
+  // Intégrations (test de connexion) + impact ANIF + historique modifs.
+  const { data: health, refetch: refetchHealth, loading: healthLoading } = useFetch(getHealthIntegrations, [])
+  const { data: anifImpact } = useFetch(getAnifStats, [])
+  const { data: history, refetch: refetchHistory } = useFetch(() => getAudit({ action: 'SETTINGS_UPDATE', take: 10 }), [])
+
   // Initialise le formulaire dès que les données arrivent
   useEffect(() => {
     if (data) setForm(data)
   }, [data])
 
-  const fields: { key: string; label: string }[] = [
-    { key: 'daily_limit_fcfa', label: 'Limite journalière (FCFA)' },
-    { key: 'monthly_limit_fcfa', label: 'Limite mensuelle (FCFA)' },
-    { key: 'p2p_fee_rate', label: 'Taux frais P2P (%)' },
-    { key: 'session_duration_minutes', label: 'Durée session (minutes)' },
-    { key: 'anif_threshold_fcfa', label: 'Seuil déclaration ANIF (FCFA)' },
-  ]
+  const num = (k: string, def = 0) => Number(form[k] ?? def)
+  const setVal = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: String(v) }))
+  const dirtyKeys = data ? Object.keys(form).filter((k) => form[k] !== data[k]) : []
+  const dirty = dirtyKeys.length > 0
 
   const handleSave = async () => {
     try {
       await updateSettings(form)
       setSaved(true)
       showToast('Paramètres sauvegardés', 'success')
+      refetchHistory()
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde', 'error')
     }
   }
 
-  const inputStyle: CSSProperties = {
-    background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: '9px 12px', fontSize: 14, width: '100%',
-  }
+  const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: '100%' }
+  const card: CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }
+  const h2: CSSProperties = { color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }
+
+  // Ligne slider : libellé + valeur + range.
+  const SliderRow = ({ k, label, min, max, step, fmt }: { k: string; label: string; min: number; max: number; step: number; fmt?: (n: number) => string }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <label style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{label}</label>
+        <span style={{ fontSize: 13, color: C.green, fontWeight: 800 }}>{fmt ? fmt(num(k)) : num(k)}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={num(k)} disabled={isReadOnly()} onChange={(e) => setVal(k, e.target.value)} style={{ width: '100%', accentColor: C.green, cursor: isReadOnly() ? 'default' : 'pointer' }} />
+    </div>
+  )
+  // Ligne toggle on/off.
+  const ToggleRow = ({ k, label, desc }: { k: string; label: string; desc: string }) => { const on = (form[k] ?? 'off') === 'on'; return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: `1px solid ${C.border}` }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{label}</div>
+        <div style={{ color: C.textMuted, fontSize: 12 }}>{desc}</div>
+      </div>
+      <button disabled={isReadOnly()} onClick={() => setVal(k, on ? 'off' : 'on')} aria-label={label} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: isReadOnly() ? 'default' : 'pointer', background: on ? C.green : C.border, flexShrink: 0 }}>
+        <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: 9, background: '#fff', transition: 'left .15s' }} />
+      </button>
+    </div>
+  )}
 
   return (
-    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, paddingBottom: dirty ? 90 : 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Paramètres système</h1>
         <p style={{ color: C.textMuted, fontSize: 13 }}>Configuration globale de la plateforme CamWallet</p>
@@ -3059,32 +3456,83 @@ function SettingsPage() {
 
       {!loading && (
         <>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Limites & Frais</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-              {fields.map(f => (
-                <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label htmlFor={`setting-${f.key}`} style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{f.label}</label>
-                  <input
-                    id={`setting-${f.key}`}
-                    value={form[f.key] ?? ''}
-                    onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    style={inputStyle}
-                    placeholder="Non défini"
-                  />
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <button
-                onClick={handleSave}
-                style={{ padding: '9px 22px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-              >
-                Sauvegarder
-              </button>
-              {saved && <span style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Paramètres sauvegardés</span>}
+          {/* Limites & Frais — sliders */}
+          <div style={card}>
+            <h2 style={h2}>Limites & Frais</h2>
+            {SliderRow({ k: "daily_limit_fcfa", label: "Limite journalière", min: 0, max: 2_000_000, step: 50_000, fmt: fmt })}
+            {SliderRow({ k: "monthly_limit_fcfa", label: "Limite mensuelle", min: 0, max: 20_000_000, step: 500_000, fmt: fmt })}
+            {SliderRow({ k: 'p2p_fee_rate', label: 'Taux de frais P2P', min: 0, max: 5, step: 0.1, fmt: (n: number) => n + ' %' })}
+          </div>
+
+          {/* Seuils ANIF — avec aperçu d'impact */}
+          <div style={card}>
+            <h2 style={h2}>Seuils ANIF</h2>
+            {SliderRow({ k: "anif_threshold_fcfa", label: "Seuil de déclaration ANIF", min: 100_000, max: 5_000_000, step: 50_000, fmt: fmt })}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+              <Info size={16} color={C.blue} />
+              <span style={{ fontSize: 12, color: C.textSoft }}>
+                Impact : <strong style={{ color: C.text }}>{anifImpact?.overThreshold30d ?? '—'}</strong> transaction(s) ont dépassé le seuil actuel sur les 30 derniers jours.
+              </span>
             </div>
           </div>
+
+          {/* Sécurité */}
+          <div style={card}>
+            <h2 style={h2}>Sécurité</h2>
+            {SliderRow({ k: 'session_duration_minutes', label: 'Durée de session (minutes)', min: 5, max: 120, step: 5, fmt: (n: number) => n + ' min' })}
+            {ToggleRow({ k: "require_2fa", label: "2FA obligatoire pour les administrateurs", desc: "Impose l'authentification à deux facteurs à tous les opérateurs." })}
+          </div>
+
+          {/* Notifications */}
+          <div style={card}>
+            <h2 style={h2}>Notifications (alertes email / SMS)</h2>
+            {ToggleRow({ k: "notify_kyc_submitted", label: "KYC soumis", desc: "Notifier l'équipe conformité à chaque nouveau dossier KYC." })}
+            {ToggleRow({ k: "notify_high_value", label: "Transaction à montant élevé", desc: "Alerter à chaque transaction au-dessus du seuil ANIF." })}
+            {ToggleRow({ k: "notify_failed_payment", label: "Paiement échoué", desc: "Alerter en cas d'échec de recharge/retrait opérateur." })}
+          </div>
+
+          {/* Intégrations — statut + test de connexion */}
+          <div style={card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ ...h2, marginBottom: 0 }}>Intégrations</h2>
+              <button onClick={() => refetchHealth()} disabled={healthLoading} style={{ fontSize: 12, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>
+                {healthLoading ? 'Test…' : '↻ Tester les connexions'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+              {(health?.integrations ?? []).map((i) => { const col = HEALTH_COLOR[i.status] ?? C.textMuted; return (
+                <div key={i.name} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 5, background: col, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 13, color: C.text, fontWeight: 600 }}>{i.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: col }}>{HEALTH_LABEL[i.status] ?? i.status}{i.latency != null ? ` · ${i.latency}ms` : ''}</span>
+                </div>
+              )})}
+            </div>
+          </div>
+
+          {/* Historique des modifications */}
+          <div style={card}>
+            <h2 style={h2}>Historique des modifications</h2>
+            {(history ?? []).length === 0 && <div style={{ fontSize: 13, color: C.textMuted }}>Aucune modification enregistrée.</div>}
+            {(history ?? []).map((e) => (
+              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+                <span style={{ width: 24, height: 24, borderRadius: 12, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.purple + '22', color: C.purple }}>{initials(e.user?.email ?? 'SYS')}</span>
+                <span style={{ color: C.textSoft, flex: 1 }}>{e.user?.email ?? 'Système'} — {e.metadata ? Object.keys((e.metadata as any).updates ?? e.metadata).join(', ') : 'paramètres'}</span>
+                <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }} title={fmtDate(e.createdAt)}>{relativeTime(e.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Barre de sauvegarde sticky */}
+          {dirty && !isReadOnly() && (
+            <div style={{ position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 40, display: 'flex', alignItems: 'center', gap: 14, background: C.card, border: `1px solid ${C.green}60`, borderRadius: 12, padding: '12px 18px', boxShadow: '0 12px 40px -12px rgba(0,0,0,.6)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.text, fontWeight: 600 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: C.yellow }} />{dirtyKeys.length} modification(s) non sauvegardée(s)
+              </span>
+              <button onClick={() => data && setForm(data)} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
+              <button onClick={handleSave} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saved ? '✓ Sauvegardé' : 'Sauvegarder'}</button>
+            </div>
+          )}
 
           {/* Banniere mot de passe expire */}
           {data && data['admin_password_expired'] === 'true' && (
@@ -3290,9 +3738,48 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
   )
 }
 
+// Panneau d'activité d'un opérateur (chargé à l'expansion).
+function MemberActivityPanel({ userId }: { userId: string }) {
+  const { data, loading } = useFetch(() => getMemberActivity(userId), [userId])
+  if (loading) return <div style={{ padding: '14px 18px', color: C.textMuted, fontSize: 12 }}>Chargement…</div>
+  if (!data) return null
+  return (
+    <div style={{ padding: '14px 18px', background: C.bg, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
+      {/* Connexion */}
+      <div>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Dernière connexion</div>
+        <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{data.lastLoginAt ? fmtDate(data.lastLoginAt) : 'Jamais'}</div>
+        {data.lastLoginIp && <div style={{ fontSize: 12, color: C.textMuted, fontFamily: 'monospace', marginTop: 2 }}>IP {data.lastLoginIp}</div>}
+      </div>
+      {/* Stats 30j */}
+      <div>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Statistiques (30j)</div>
+        <div style={{ display: 'flex', gap: 18 }}>
+          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{data.stats.actions30d}</div><div style={{ fontSize: 11, color: C.textMuted }}>actions</div></div>
+          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.purple }}>{data.stats.kycHandled}</div><div style={{ fontSize: 11, color: C.textMuted }}>KYC traités</div></div>
+        </div>
+      </div>
+      {/* Activité récente */}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>5 dernières actions</div>
+        {data.recent.length === 0 && <div style={{ fontSize: 12, color: C.textMuted }}>Aucune action enregistrée</div>}
+        {data.recent.map((a) => { const cat = auditCategory(a.action); return (
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: cat.color, background: cat.color + '20', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap' }}>{a.action}</span>
+            <span style={{ color: C.textMuted, fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.resource ?? '—'}</span>
+            <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{relativeTime(a.createdAt)}</span>
+          </div>
+        )})}
+      </div>
+    </div>
+  )
+}
+
 function TeamPage() {
   const { t } = useTranslation()
   const { data: members, loading, error, refetch } = useFetch(getAdminTeam, [])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleExpand = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toast = useToast()
   const myId = getAdminId()
   const isSuper = (() => { const r = getAdminRole(); return !r || r === 'SUPER_ADMIN' })()
@@ -3378,10 +3865,13 @@ function TeamPage() {
                 const color = ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted
                 const active = m.status === 'ACTIVE'
                 const isSelf = m.id === myId
+                const isOpen = expanded.has(m.id)
                 return (
-                  <tr key={m.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <Fragment key={m.id}>
+                  <tr className="cw-row" onClick={() => toggleExpand(m.id)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {isOpen ? <ChevronUp size={14} color={C.textMuted} /> : <ChevronDown size={14} color={C.textMuted} />}
                         <span style={{ width: 32, height: 32, borderRadius: 16, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, background: color + '22', color }}>{initials(m.fullName ?? m.email)}</span>
                         <span style={{ color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}{isSelf && <span style={{ color: C.textMuted, fontWeight: 400, fontSize: 11 }}> (vous)</span>}</span>
                       </div>
@@ -3399,7 +3889,7 @@ function TeamPage() {
                         <span style={{ width: 7, height: 7, borderRadius: 4, background: active ? C.green : C.red }} />{active ? 'Actif' : 'Inactif'}
                       </span>
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {isSuper && !isSelf && (
                           <button onClick={() => setEditTarget(m)} title="Modifier le rôle" style={iconBtn(C.blue)}><Pencil size={14} /></button>
@@ -3414,6 +3904,14 @@ function TeamPage() {
                       </div>
                     </td>
                   </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 0, borderTop: `1px solid ${C.border}` }}>
+                        <MemberActivityPanel userId={m.id} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>

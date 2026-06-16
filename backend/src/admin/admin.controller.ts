@@ -94,8 +94,10 @@ export class AdminController {
     @Query('search') search?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('amountMin') amountMin?: string,
+    @Query('amountMax') amountMax?: string,
   ) {
-    return this.adminService.getTransactions(+page, +limit, status, type, search, from, to);
+    return this.adminService.getTransactions(+page, +limit, status, type, search, from, to, amountMin, amountMax);
   }
 
   @Patch('users/:id/status')
@@ -185,16 +187,60 @@ export class AdminController {
   }
 
   @Patch('anif/cases/:id/close')
-  @ApiOperation({ summary: "Clôturer un dossier ANIF" })
+  @ApiOperation({ summary: "Clôturer un dossier ANIF (avec rapport optionnel)" })
   closeAnifCase(
     @Request() req: any,
     @Param('id') id: string,
-    @Body() body: { resolution: string },
+    @Body() body: { resolution: string; report?: string },
   ) {
     if (!body.resolution) {
       throw new BadRequestException('resolution est requis');
     }
-    return this.adminService.closeAnifCase(req.user.id, id, body.resolution);
+    return this.adminService.closeAnifCase(req.user.id, id, body.resolution, body.report);
+  }
+
+  @Post('anif/cases/:id/assign')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Assigner un dossier ANIF à un analyste" })
+  assignAnifCase(
+    @Request() req: any,
+    @Param('id') id: string,
+    @Body() body: { analystId: string },
+  ) {
+    if (!body.analystId) {
+      throw new BadRequestException('analystId est requis');
+    }
+    return this.adminService.assignAnifCase(req.user.id, id, body.analystId);
+  }
+
+  @Get('anif/stats')
+  @ApiOperation({ summary: 'Statistiques de conformité ANIF (cartes)' })
+  anifStats() {
+    return this.adminService.getAnifStats();
+  }
+
+  @Get('stats/alerts-timeline')
+  @ApiOperation({ summary: 'Alertes par heure sur 24 h (échecs + transactions > seuil)' })
+  alertsTimeline() {
+    return this.adminService.getAlertsTimeline();
+  }
+
+  @Get('audit/stats')
+  @ApiOperation({ summary: "Statistiques du journal d'audit (cartes)" })
+  auditStats() {
+    return this.adminService.getAuditStats();
+  }
+
+  @Get('team/:userId/activity')
+  @ApiOperation({ summary: "Activité récente + stats d'un opérateur admin" })
+  memberActivity(@Param('userId') userId: string) {
+    return this.adminService.getMemberActivity(userId);
+  }
+
+  @Patch('transactions/:id/resolve')
+  @ApiOperation({ summary: 'Marquer une transaction signalée comme résolue' })
+  resolveTransaction(@Request() req: any, @Param('id') id: string) {
+    return this.adminService.resolveTransaction(req.user.id, id);
   }
 
   @Get('settings')
