@@ -388,6 +388,7 @@ export interface AdminOperation {
   operator: string | null
   createdAt: string
   sender: { fullName: string | null; phone: string } | null
+  receiver: { fullName: string | null; phone: string } | null
   retryCount: number
 }
 

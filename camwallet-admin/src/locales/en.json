@@ -97,7 +97,9 @@
     "chart_series_volume": "Volume",
     "chart_series_fees": "Fees",
     "chart_series_users": "Users",
-    "chart_series_tx": "Transactions"
+    "chart_series_tx": "Transactions",
+    "evolution": "Trend",
+    "chart_donut_total": "Transactions"
   },
   "health": {
     "title": "Integration health",
