@@ -66,8 +66,16 @@ export class AdminController {
     @Query('limit') limit = 20,
     @Query('search') search?: string,
     @Query('status') status?: UserStatus,
+    @Query('kycStatus') kycStatus?: string,
+    @Query('role') role?: string,
   ) {
-    return this.adminService.getUsers(+page, +limit, search, status);
+    return this.adminService.getUsers(+page, +limit, search, status, kycStatus, role);
+  }
+
+  @Get('users/stats')
+  @ApiOperation({ summary: 'Statistiques agrégées des utilisateurs (cartes + tendances)' })
+  userStats() {
+    return this.adminService.getUserStats();
   }
 
   @Get('users/:id')

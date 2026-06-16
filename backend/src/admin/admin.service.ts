@@ -121,16 +121,26 @@ export class AdminService {
   }
 
   // ─── Liste paginée des utilisateurs ─────────────────────────────────────────
-  async getUsers(page = 1, limit = 20, search?: string, status?: UserStatus) {
+  async getUsers(
+    page = 1,
+    limit = 20,
+    search?: string,
+    status?: UserStatus,
+    kycStatus?: string,
+    role?: string,
+  ) {
     const skip = (page - 1) * limit;
     const where: any = {};
     if (search) {
       where.OR = [
         { phone: { contains: search } },
         { fullName: { contains: search, mode: 'insensitive' as const } },
+        { email: { contains: search, mode: 'insensitive' as const } },
       ];
     }
     if (status) where.status = status;
+    if (kycStatus) where.kycStatus = kycStatus;
+    if (role) where.role = role;
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -147,15 +157,91 @@ export class AdminService {
           status: true,
           kycStatus: true,
           createdAt: true,
+          lastLoginAt: true,
           wallet: { select: { balance: true, currency: true } },
+          kycDocument: { select: { reviewedAt: true } },
         },
       }),
       this.prisma.user.count({ where }),
     ]);
 
+    // Niveau de risque par utilisateur : volume COMPLETED (envoyé + reçu) sur
+    // 30 j, mêmes seuils ANIF que le détail (cohérence liste ↔ fiche).
+    const ids = users.map((u) => u.id);
+    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+    const [sentVol, recvVol] = ids.length
+      ? await Promise.all([
+          this.prisma.transaction.groupBy({
+            by: ['senderId'],
+            where: { senderId: { in: ids }, status: TransactionStatus.COMPLETED, createdAt: { gte: d30 } },
+            _sum: { amount: true },
+          }),
+          this.prisma.transaction.groupBy({
+            by: ['receiverId'],
+            where: { receiverId: { in: ids }, status: TransactionStatus.COMPLETED, createdAt: { gte: d30 } },
+            _sum: { amount: true },
+          }),
+        ])
+      : [[], []];
+
+    const volMap = new Map<string, bigint>();
+    for (const r of sentVol as any[]) if (r.senderId) volMap.set(r.senderId, (volMap.get(r.senderId) ?? 0n) + (r._sum.amount ?? 0n));
+    for (const r of recvVol as any[]) if (r.receiverId) volMap.set(r.receiverId, (volMap.get(r.receiverId) ?? 0n) + (r._sum.amount ?? 0n));
+    const riskOf = (id: string): 'Bas' | 'Moyen' | 'Élevé' => {
+      const v = volMap.get(id) ?? 0n;
+      return v >= ANIF_RISK_HIGH ? 'Élevé' : v >= ANIF_RISK_MED ? 'Moyen' : 'Bas';
+    };
+
+    const enriched = users.map((u) => ({
+      ...u,
+      kycReviewedAt: u.kycDocument?.reviewedAt ?? null,
+      riskLevel: riskOf(u.id),
+    }));
+
     return {
-      data: users,
+      data: enriched,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  // ─── Statistiques de la page Utilisateurs ───────────────────────────────────
+  async getUserStats() {
+    const now = Date.now();
+    const startToday = new Date();
+    startToday.setHours(0, 0, 0, 0);
+    const d30 = new Date(now - 30 * 24 * 3600 * 1000);
+    const d60 = new Date(now - 60 * 24 * 3600 * 1000);
+
+    const [
+      total, activeToday, newToday, kycApproved, merchants,
+      newCur, newPrev, kycCur, kycPrev, merchCur, merchPrev,
+    ] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { lastLoginAt: { gte: startToday } } }),
+      this.prisma.user.count({ where: { createdAt: { gte: startToday } } }),
+      this.prisma.user.count({ where: { kycStatus: KycStatus.APPROVED } }),
+      this.prisma.user.count({ where: { role: 'MERCHANT' } }),
+      this.prisma.user.count({ where: { createdAt: { gte: d30 } } }),
+      this.prisma.user.count({ where: { createdAt: { gte: d60, lt: d30 } } }),
+      this.prisma.user.count({ where: { kycStatus: KycStatus.APPROVED, createdAt: { gte: d30 } } }),
+      this.prisma.user.count({ where: { kycStatus: KycStatus.APPROVED, createdAt: { gte: d60, lt: d30 } } }),
+      this.prisma.user.count({ where: { role: 'MERCHANT', createdAt: { gte: d30 } } }),
+      this.prisma.user.count({ where: { role: 'MERCHANT', createdAt: { gte: d60, lt: d30 } } }),
+    ]);
+
+    const pct = (c: number, p: number): number | null => (p > 0 ? Math.round(((c - p) / p) * 100) : c > 0 ? 100 : null);
+
+    return {
+      total,
+      activeToday,
+      newToday,
+      kycApproved,
+      merchants,
+      trends: {
+        total: pct(newCur, newPrev),
+        kycApproved: pct(kycCur, kycPrev),
+        merchants: pct(merchCur, merchPrev),
+      },
     };
   }
 

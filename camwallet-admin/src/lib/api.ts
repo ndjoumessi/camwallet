@@ -212,7 +212,19 @@ export interface AdminUser {
   status: string
   kycStatus: string
   createdAt: string
+  lastLoginAt?: string | null
+  kycReviewedAt?: string | null // date d'approbation/décision KYC
+  riskLevel?: 'Bas' | 'Moyen' | 'Élevé' // niveau de risque dérivé (volume 30j)
   wallet: { balance: number; currency: string } | null // balance en centimes
+}
+
+export interface AdminUserStats {
+  total: number
+  activeToday: number
+  newToday: number
+  kycApproved: number
+  merchants: number
+  trends: { total: number | null; kycApproved: number | null; merchants: number | null }
 }
 
 export interface AdminTransaction {
@@ -291,10 +303,12 @@ function buildQuery(params: Record<string, string | number | undefined>): string
 }
 
 export function getUsers(
-  params: { page?: number; limit?: number; search?: string; status?: string } = {},
+  params: { page?: number; limit?: number; search?: string; status?: string; kycStatus?: string; role?: string } = {},
 ) {
   return request<Paginated<AdminUser>>(`/admin/users${buildQuery(params)}`)
 }
+
+export const getUserStats = () => request<AdminUserStats>('/admin/users/stats')
 
 export function getTransactions(
   params: { page?: number; limit?: number; type?: string; status?: string; search?: string; from?: string; to?: string } = {},
