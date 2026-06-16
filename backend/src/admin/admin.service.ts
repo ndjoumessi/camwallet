@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OtpService } from '../auth/otp.service';
@@ -23,6 +24,7 @@ export class AdminService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private otpService: OtpService,
+    private config: ConfigService,
   ) {}
 
   // ─── Statistiques globales ──────────────────────────────────────────────────
@@ -1020,57 +1022,109 @@ export class AdminService {
   }
 
   // ─── Santé des intégrations ───────────────────────────────────────────────
-  async getHealthIntegrations() {
-    const d24h = new Date(Date.now() - 24 * 3600 * 1000);
-    const d1h = new Date(Date.now() - 3600 * 1000);
+  // Mesure la latence réseau réelle vers une URL (n'importe quelle réponse HTTP
+  // compte comme « joignable » : on mesure le round-trip, pas le code retour).
+  private async pingLatency(url: string, timeoutMs = 4000): Promise<{ latency: number | null; reachable: boolean }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const start = Date.now();
+    try {
+      await fetch(url, { method: 'GET', signal: controller.signal });
+      return { latency: Date.now() - start, reachable: true };
+    } catch {
+      return { latency: null, reachable: false };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
-    const [omCompleted, mtnCompleted, failedWebhooks, stalePending] = await Promise.all([
-      this.prisma.transaction.count({
-        where: { operator: 'ORANGE_MONEY', status: TransactionStatus.COMPLETED, createdAt: { gte: d24h } },
+  // Santé d'un opérateur Mobile Money à partir des transactions des 24 dernières
+  // heures : UP si au moins une COMPLETED, DEGRADED si uniquement des FAILED,
+  // sinon UNKNOWN (ou DOWN si la passerelle est injoignable).
+  private async operatorHealth(operator: 'ORANGE_MONEY' | 'MTN_MOMO', since: Date, reachable: boolean) {
+    const [completed, failed, lastSuccessTx] = await Promise.all([
+      this.prisma.transaction.count({ where: { operator, status: TransactionStatus.COMPLETED, createdAt: { gte: since } } }),
+      this.prisma.transaction.count({ where: { operator, status: TransactionStatus.FAILED, createdAt: { gte: since } } }),
+      this.prisma.transaction.findFirst({
+        where: { operator, status: TransactionStatus.COMPLETED },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, processedAt: true },
       }),
-      this.prisma.transaction.count({
-        where: { operator: 'MTN_MOMO', status: TransactionStatus.COMPLETED, createdAt: { gte: d24h } },
-      }),
-      this.prisma.webhookEvent.count({ where: { processed: false, createdAt: { gte: d24h } } }),
-      this.prisma.transaction.count({ where: { status: TransactionStatus.PENDING, createdAt: { lt: d1h } } }),
     ]);
 
-    const omStatus = omCompleted > 0 ? 'UP' : failedWebhooks > 3 ? 'DOWN' : 'UNKNOWN';
-    const mtnStatus = mtnCompleted > 0 ? 'UP' : failedWebhooks > 3 ? 'DOWN' : 'UNKNOWN';
+    const txCount24h = completed + failed;
+    const uptime = txCount24h > 0 ? Math.round((completed / txCount24h) * 100) : null;
+    const lastSuccess = lastSuccessTx ? (lastSuccessTx.processedAt ?? lastSuccessTx.createdAt) : null;
+    const status =
+      completed > 0 ? 'UP' : failed > 0 ? 'DEGRADED' : reachable ? 'UNKNOWN' : 'DOWN';
+
+    return { txCount24h, completed, failed, uptime, lastSuccess, status };
+  }
+
+  async getHealthIntegrations() {
+    const now = Date.now();
+    const d24h = new Date(now - 24 * 3600 * 1000);
+    const d1h = new Date(now - 3600 * 1000);
+
+    // Ping réel de la passerelle CamPay (agrégateur OM + MTN) → latence partagée.
+    const campayUrl = this.config.get<string>('CAMPAY_BASE_URL') || 'https://demo.campay.net/api';
+    const [gateway, stalePending, failedWebhooks] = await Promise.all([
+      this.pingLatency(campayUrl),
+      this.prisma.transaction.count({ where: { status: TransactionStatus.PENDING, createdAt: { lt: d1h } } }),
+      this.prisma.webhookEvent.count({ where: { processed: false, createdAt: { gte: d24h } } }),
+    ]);
+
+    const [om, mtn] = await Promise.all([
+      this.operatorHealth('ORANGE_MONEY', d24h, gateway.reachable),
+      this.operatorHealth('MTN_MOMO', d24h, gateway.reachable),
+    ]);
 
     return {
       integrations: [
         {
           name: 'Orange Money',
           key: 'orange_money',
-          status: omStatus,
-          completedTx24h: omCompleted,
+          status: om.status,
+          latency: gateway.latency,
+          txCount24h: om.txCount24h,
+          lastSuccess: om.lastSuccess,
+          uptime: om.uptime,
           pendingWebhooks: failedWebhooks,
+          note: gateway.reachable ? 'Via passerelle CamPay' : 'Passerelle CamPay injoignable',
         },
         {
           name: 'MTN MoMo',
           key: 'mtn_momo',
-          status: mtnStatus,
-          completedTx24h: mtnCompleted,
-          pendingWebhooks: 0,
+          status: mtn.status,
+          latency: gateway.latency,
+          txCount24h: mtn.txCount24h,
+          lastSuccess: mtn.lastSuccess,
+          uptime: mtn.uptime,
+          note: gateway.reachable ? 'Via passerelle CamPay' : 'Passerelle CamPay injoignable',
         },
         {
           name: 'SMS OTP',
           key: 'sms_otp',
           status: 'SIMULATED',
+          latency: null,
+          txCount24h: null,
+          lastSuccess: null,
+          uptime: null,
           note: 'Simulation (AfricasTalking en prod)',
-          completedTx24h: null,
         },
         {
           name: 'Push Expo',
           key: 'expo_push',
           status: 'UP',
+          latency: null,
+          txCount24h: null,
+          lastSuccess: null,
+          uptime: null,
           note: 'Expo Push API',
-          completedTx24h: null,
         },
       ],
       stalePendingTx: stalePending,
-      updatedAt: new Date().toISOString(),
+      checkedAt: new Date().toISOString(),
     };
   }
 

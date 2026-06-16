@@ -737,22 +737,19 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
   )
 }
 
+// Couleur sémantique d'un statut d'intégration.
+const HEALTH_COLOR: Record<string, string> = {
+  UP: C.green, DEGRADED: '#FB923C', SIMULATED: '#FB923C', DOWN: C.red, UNKNOWN: C.textMuted,
+}
+const HEALTH_LABEL: Record<string, string> = {
+  UP: 'Opérationnel', DEGRADED: 'Dégradé', SIMULATED: 'Simulé', DOWN: 'Hors ligne', UNKNOWN: 'Inconnu',
+}
+// Couleur de la latence selon les seuils (<50ms vert, 50–200 orange, >200 rouge).
+const latencyColor = (ms: number) => (ms < 50 ? C.green : ms <= 200 ? '#FB923C' : C.red)
+
 function HealthWidget() {
   const { data, loading, error } = useFetch(getHealthIntegrations, [])
   const integrations = data?.integrations ?? []
-
-  const dot = (status: string) => {
-    if (status === 'UP') return C.green
-    if (status === 'DOWN') return C.red
-    if (status === 'SIMULATED') return C.yellow
-    return C.textMuted
-  }
-  const label = (status: string) => {
-    if (status === 'UP') return 'Opérationnel'
-    if (status === 'DOWN') return 'Hors ligne'
-    if (status === 'SIMULATED') return 'Simulé'
-    return 'Inconnu'
-  }
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginTop: 20 }}>
@@ -761,25 +758,60 @@ function HealthWidget() {
         <span style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>Santé des intégrations</span>
         {data?.checkedAt && (
           <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 'auto' }}>
-            Vérifié le {fmtDate(data.checkedAt)}
+            Vérifié {relativeTime(data.checkedAt)}
           </span>
         )}
       </div>
       {loading && <StateRow loading error={null} />}
       {error && <div style={{ color: C.red, fontSize: 12 }}>{error}</div>}
       {integrations.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-          {integrations.map(i => (
-            <div key={i.name} style={{ background: C.surface, border: `1px solid ${dot(i.status)}30`, borderRadius: 10, padding: '12px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 5, background: dot(i.status), flexShrink: 0 }} />
-                <span style={{ fontWeight: 700, color: C.text, fontSize: 13 }}>{i.name}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+          {integrations.map(i => {
+            const color = HEALTH_COLOR[i.status] ?? C.textMuted
+            const hasMetrics = i.txCount24h != null
+            return (
+              <div key={i.name} style={{ background: C.surface, border: `1px solid ${color}30`, borderRadius: 10, padding: '14px 16px' }}>
+                {/* En-tête : pastille + nom + latence */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10, flexShrink: 0 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 5, background: color }} />
+                    {i.status === 'UP' && <span style={{ position: 'absolute', inset: 0, borderRadius: 5, background: color, opacity: 0.5, animation: 'cwPulse 1.8s ease-out infinite' }} />}
+                  </span>
+                  <span style={{ fontWeight: 700, color: C.text, fontSize: 13 }}>{i.name}</span>
+                  {i.latency != null && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: latencyColor(i.latency) }}>{i.latency} ms</span>
+                  )}
+                </div>
+
+                {/* Statut */}
+                <div style={{ fontSize: 12, color, fontWeight: 600, marginBottom: hasMetrics ? 10 : 4 }}>{HEALTH_LABEL[i.status] ?? i.status}</div>
+
+                {hasMetrics ? (
+                  <>
+                    {/* Tx 24h + dernière activité */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.textMuted, marginBottom: 8 }}>
+                      <span><strong style={{ color: C.textSoft }}>{i.txCount24h}</strong> tx / 24h</span>
+                      <span>{i.lastSuccess ? relativeTime(i.lastSuccess) : 'aucune'}</span>
+                    </div>
+                    {/* Uptime + barre de progression */}
+                    {i.uptime != null && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginBottom: 3 }}>
+                          <span>Uptime 24h</span>
+                          <span style={{ fontWeight: 700, color: i.uptime >= 95 ? C.green : i.uptime >= 70 ? '#FB923C' : C.red }}>{i.uptime} %</span>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: 'hidden' }}>
+                          <div style={{ width: `${i.uptime}%`, height: '100%', borderRadius: 3, background: i.uptime >= 95 ? C.green : i.uptime >= 70 ? '#FB923C' : C.red, transition: 'width .4s' }} />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  i.note && <div style={{ fontSize: 11, color: C.textMuted, fontStyle: 'italic' }}>{i.note}</div>
+                )}
               </div>
-              <div style={{ fontSize: 12, color: dot(i.status), fontWeight: 600, marginBottom: 4 }}>{label(i.status)}</div>
-              <div style={{ fontSize: 11, color: C.textMuted }}>{i.txCount24h} tx / 24h</div>
-              {i.note && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, fontStyle: 'italic' }}>{i.note}</div>}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
