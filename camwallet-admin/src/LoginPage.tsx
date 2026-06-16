@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { loginAdmin } from './lib/api'
 
 // Palette alignée sur App.tsx
@@ -9,6 +10,7 @@ const C = {
 }
 
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('admin@camwallet.cm')
   const [password, setPassword] = useState('')
   const [totpRequired, setTotpRequired] = useState(false)
@@ -30,7 +32,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
       }
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Échec de la connexion')
+      setError(err instanceof Error ? err.message : t('login.error_fallback'))
     } finally {
       setLoading(false)
     }
@@ -61,17 +63,17 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>
               Cam<span style={{ color: C.green }}>Wallet</span>
             </div>
-            <div style={{ fontSize: 11, color: C.textMuted }}>Admin Panel</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>{t('nav.admin_panel')}</div>
           </div>
         </div>
 
-        <h1 style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 6 }}>Connexion</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 800, color: C.text, marginBottom: 6 }}>{t('login.title')}</h1>
         <p style={{ fontSize: 13, color: C.textMuted, marginBottom: 22 }}>
-          Accès réservé aux administrateurs.
+          {t('login.subtitle')}
         </p>
 
         <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600, display: 'block', marginBottom: 6 }}>
-          Email
+          {t('login.label_email')}
         </label>
         <input
           type="email" value={email} onChange={(e) => setEmail(e.target.value)}
@@ -80,7 +82,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         />
 
         <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600, display: 'block', marginBottom: 6 }}>
-          Mot de passe
+          {t('login.label_password')}
         </label>
         <input
           type="password" value={password} onChange={(e) => setPassword(e.target.value)}
@@ -92,7 +94,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         {totpRequired && (
           <>
             <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600, display: 'block', marginBottom: 6 }}>
-              Code de vérification (2FA)
+              {t('login.label_totp')}
             </label>
             <input
               type="text" inputMode="numeric" value={totpCode}
@@ -125,7 +127,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
                 cursor: disabled ? 'not-allowed' : 'pointer',
               }}
             >
-              {loading ? 'Connexion…' : totpRequired ? 'Vérifier le code' : 'Se connecter'}
+              {loading ? t('login.submit_loading') : totpRequired ? t('login.submit_verify') : t('login.submit')}
             </button>
           )
         })()}

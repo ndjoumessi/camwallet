@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, createContext, useContext, Fragment, type CSSProperties } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -133,7 +134,8 @@ function exportPdfReport(title: string, columns: string[], rows: (string | numbe
 
 // Petit bandeau d'état (chargement / erreur / vide) partagé par les pages.
 function StateRow({ loading, error, empty }: { loading: boolean; error: string | null; empty?: string }) {
-  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Chargement…</div>
+  const { t } = useTranslation()
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{t('common.loading')}</div>
   if (error) return <div style={{ textAlign: 'center', padding: 40, color: C.red }}>{error}</div>
   if (empty) return <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{empty}</div>
   return null
@@ -250,17 +252,18 @@ function useLiveEvents(onEvent: (e: { type: string; payload?: any }) => void) {
 
 // ── Status badges ─────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
   const map: Record<string, { bg: string, text: string, label: string, icon?: LucideIcon }> = {
-    success: { bg: '#00C89618', text: C.green, label: 'Succès' },
-    pending: { bg: C.yellowLight, text: '#B89000', label: 'En attente' },
-    failed: { bg: C.redLight, text: C.red, label: 'Échoué' },
-    flagged: { bg: '#A78BFA18', text: C.purple, label: 'Signalé', icon: Siren },
-    verified: { bg: '#00C89618', text: C.green, label: 'Vérifié', icon: CheckCircle2 },
-    blocked: { bg: C.redLight, text: C.red, label: 'Bloqué', icon: Lock },
-    suspended: { bg: '#A78BFA18', text: C.purple, label: 'Suspendu' },
-    approved: { bg: '#00C89618', text: C.green, label: 'Approuvé' },
-    rejected: { bg: C.redLight, text: C.red, label: 'Rejeté' },
-    review: { bg: C.yellowLight, text: '#B89000', label: 'Révision' },
+    success: { bg: '#00C89618', text: C.green, label: t('status.success') },
+    pending: { bg: C.yellowLight, text: '#B89000', label: t('status.pending') },
+    failed: { bg: C.redLight, text: C.red, label: t('status.failed') },
+    flagged: { bg: '#A78BFA18', text: C.purple, label: t('status.flagged'), icon: Siren },
+    verified: { bg: '#00C89618', text: C.green, label: t('status.verified'), icon: CheckCircle2 },
+    blocked: { bg: C.redLight, text: C.red, label: t('status.blocked'), icon: Lock },
+    suspended: { bg: '#A78BFA18', text: C.purple, label: t('status.suspended') },
+    approved: { bg: '#00C89618', text: C.green, label: t('status.approved') },
+    rejected: { bg: C.redLight, text: C.red, label: t('status.rejected') },
+    review: { bg: C.yellowLight, text: '#B89000', label: t('status.review') },
   }
   const s = map[status] ?? { bg: '#333', text: '#888', label: status }
   const Icon = s.icon
@@ -291,6 +294,7 @@ function TxTypeBadge({ type }: { type: string }) {
 function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, sub }: {
   label: string, value: string, delta?: string, deltaUp?: boolean, icon: LucideIcon, color?: string, sub?: string
 }) {
+  const { t } = useTranslation()
   const TrendIcon = deltaUp ? ArrowUpRight : ArrowDownRight
   return (
     <div
@@ -311,7 +315,7 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
       {delta && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: deltaUp ? C.green : C.red, fontWeight: 600 }}>
           <TrendIcon size={14} className={deltaUp ? 'cw-trend-up' : 'cw-trend-down'} />
-          {delta} vs 30 j préc.
+          {delta} {t('common.vs_prev_30d')}
         </div>
       )}
       {sub && <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>{sub}</div>}
@@ -336,6 +340,7 @@ const ChartTooltip = ({ active, payload, label }: any) => {
 
 // ── Pages ────────────────────────────────────────────────
 function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
+  const { t } = useTranslation()
   // Sources indépendantes : l'échec de l'une n'efface pas l'autre.
   const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useFetch(() => getStats(), [])
   const { data: recentData, loading: recentLoading, error: recentError, refetch: refetchRecent } = useFetch(
@@ -369,27 +374,27 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
     users: p.users,
   }))
   const PERIODS: { key: '7d' | '30d' | '90d'; label: string }[] = [
-    { key: '7d', label: '7 j' },
-    { key: '30d', label: '30 j' },
-    { key: '90d', label: '90 j' },
+    { key: '7d', label: t('dashboard.period_7d') },
+    { key: '30d', label: t('dashboard.period_30d') },
+    { key: '90d', label: t('dashboard.period_90d') },
   ]
 
-  const donut = (stats?.transactions.byType ?? []).map((t) => ({
-    name: TX_TYPE_LABEL[t.type] ?? t.type,
-    value: t.count,
-    color: TX_TYPE_COLOR[t.type] ?? C.textMuted,
+  const donut = (stats?.transactions.byType ?? []).map((tp) => ({
+    name: TX_TYPE_LABEL[tp.type] ?? tp.type,
+    value: tp.count,
+    color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
   }))
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vue d'ensemble</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{t('dashboard.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{t('dashboard.subtitle')}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 20, padding: '4px 12px', fontSize: 12, color: C.green, flexShrink: 0 }}>
           <div className="cw-live-dot" style={{ width: 8, height: 8, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} />
-          Live{liveCount > 0 && ` · ${liveCount}`}
+          {t('dashboard.live')}{liveCount > 0 && ` · ${liveCount}`}
           {lastEvent && <span style={{ color: C.textMuted, marginLeft: 4 }}>{lastEvent.type} {lastEvent.time}</span>}
         </div>
       </div>
@@ -399,16 +404,16 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       {/* KPIs */}
       {stats && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginBottom: 24 }}>
-        <KPICard label="Volume complété" value={fmt(toFcfa(stats.volume.completedAmount))} icon={Wallet}
+        <KPICard label={t('dashboard.kpi_volume')} value={fmt(toFcfa(stats.volume.completedAmount))} icon={Wallet}
           {...trendProps(stats.trends.volume)}
-          sub={`Frais perçus : ${fmt(toFcfa(stats.volume.collectedFees))}`} />
-        <KPICard label="Solde plateforme" value={fmt(toFcfa(stats.totalBalance))} icon={Landmark} color={C.purple} />
-        <KPICard label="Utilisateurs" value={stats.users.total.toLocaleString('fr-FR')} icon={UsersIcon} color={C.green}
+          sub={t('dashboard.kpi_fees_sub', { value: fmt(toFcfa(stats.volume.collectedFees)) })} />
+        <KPICard label={t('dashboard.kpi_balance')} value={fmt(toFcfa(stats.totalBalance))} icon={Landmark} color={C.purple} />
+        <KPICard label={t('dashboard.kpi_users')} value={stats.users.total.toLocaleString('fr-FR')} icon={UsersIcon} color={C.green}
           {...trendProps(stats.trends.users)}
           sub={stats.users.byRole.map((r) => `${r.count} ${r.role.toLowerCase()}`).join(' · ')} />
-        <KPICard label="Transactions" value={stats.transactions.total.toLocaleString('fr-FR')} icon={Zap} color={C.blue}
+        <KPICard label={t('dashboard.kpi_transactions')} value={stats.transactions.total.toLocaleString('fr-FR')} icon={Zap} color={C.blue}
           {...trendProps(stats.trends.transactions)}
-          sub={`${stats.transactions.pending} en attente`} />
+          sub={t('dashboard.kpi_pending_sub', { count: stats.transactions.pending })} />
       </div>
       )}
 
@@ -417,7 +422,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         {/* Volume area chart */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume de transactions</h2>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.chart_volume')}</h2>
             <div style={{ display: 'flex', gap: 4 }}>
               {PERIODS.map((p) => (
                 <button
@@ -449,14 +454,14 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               <XAxis dataKey="date" stroke={C.textMuted} fontSize={11} />
               <YAxis stroke={C.textMuted} fontSize={11} tickFormatter={v => (v / 1000000).toFixed(0) + 'M'} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="volume" stroke={C.green} strokeWidth={2} fill="url(#gradVol)" name="Volume" />
+              <Area type="monotone" dataKey="volume" stroke={C.green} strokeWidth={2} fill="url(#gradVol)" name={t('dashboard.chart_series_volume')} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
         {/* Donut */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Répartition des types</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_donut')}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <PieChart width={130} height={130}>
               <Pie data={donut} cx={60} cy={60} innerRadius={40} outerRadius={60} dataKey="value" paddingAngle={2}>
@@ -464,7 +469,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               </Pie>
             </PieChart>
             <div style={{ flex: 1 }}>
-              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>Aucune transaction</span>}
+              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>{t('dashboard.chart_no_tx')}</span>}
               {donut.map((d, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, flexShrink: 0 }} />
@@ -481,29 +486,29 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         {/* Revenue bar */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Revenus (frais perçus) par jour</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_revenue')}</h2>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={chart} barSize={10}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
               <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} />
               <YAxis stroke={C.textMuted} fontSize={10} tickFormatter={v => (v / 1000).toFixed(0) + 'k'} />
               <Tooltip content={<ChartTooltip />} />
-              <Bar dataKey="fees" fill={C.green} radius={[3, 3, 0, 0]} name="Frais" />
+              <Bar dataKey="fees" fill={C.green} radius={[3, 3, 0, 0]} name={t('dashboard.chart_series_fees')} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* User growth */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Activité (utilisateurs &amp; transactions)</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_activity')}</h2>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={chart}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
               <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} />
               <YAxis stroke={C.textMuted} fontSize={10} />
               <Tooltip content={<ChartTooltip />} />
-              <Line type="monotone" dataKey="users" stroke={C.purple} strokeWidth={2} dot={{ fill: C.purple, r: 3 }} name="Utilisateurs" />
-              <Line type="monotone" dataKey="tx" stroke={C.blue} strokeWidth={2} strokeDasharray="4 2" dot={{ fill: C.blue, r: 3 }} name="Transactions" />
+              <Line type="monotone" dataKey="users" stroke={C.purple} strokeWidth={2} dot={{ fill: C.purple, r: 3 }} name={t('dashboard.chart_series_users')} />
+              <Line type="monotone" dataKey="tx" stroke={C.blue} strokeWidth={2} strokeDasharray="4 2" dot={{ fill: C.blue, r: 3 }} name={t('dashboard.chart_series_tx')} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -512,16 +517,16 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
       {/* Recent transactions */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions récentes</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.recent_tx')}</h2>
           <button className="cw-link" onClick={() => onNavigate?.('transactions')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: C.green, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-            Voir tout <ArrowRight size={14} />
+            {t('dashboard.see_all')} <ArrowRight size={14} />
           </button>
         </div>
         <div className="cw-tablewrap">
         <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              {['Réf.', 'Type', 'De', 'À', 'Montant', 'Statut', 'Date'].map(h => (
+              {[t('alerts.col_ref'), t('alerts.col_type'), t('alerts.col_from'), t('alerts.col_to'), t('alerts.col_amount'), t('alerts.col_status'), t('alerts.col_date')].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '0 12px 10px' }}>{h}</th>
               ))}
             </tr>
@@ -531,8 +536,8 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               <tr key={tx.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                 <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, t('common.operator'))}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, t('common.operator'))}</td>
                 <td style={{ padding: '10px 12px', color: C.text, fontWeight: 600 }}>{fmt(toFcfa(tx.amount))}</td>
                 <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
                 <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
@@ -542,7 +547,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         </table>
         </div>
         {(recentLoading || recentError || recent.length === 0) && (
-          <StateRow loading={recentLoading} error={recentError} empty={!recentLoading && !recentError ? 'Aucune transaction' : undefined} />
+          <StateRow loading={recentLoading} error={recentError} empty={!recentLoading && !recentError ? t('dashboard.no_recent_tx') : undefined} />
         )}
       </div>
 
@@ -2305,24 +2310,61 @@ function TeamPage() {
 }
 
 // ── Sidebar nav items ─────────────────────────────────────
-const NAV: { id: string; label: string; icon: LucideIcon; group: string; badge?: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid, group: 'Vue générale' },
-  { id: 'alerts', label: 'Alertes', icon: AlertTriangle, group: 'Vue générale' },
-  { id: 'users', label: 'Utilisateurs', icon: UsersIcon, group: 'Utilisateurs' },
-  { id: 'kyc', label: 'Vérification KYC', icon: ClipboardCheck, group: 'Utilisateurs' },
-  { id: 'transactions', label: 'Transactions', icon: Zap, group: 'Finances' },
-  { id: 'finance', label: 'Finances & Revenus', icon: Wallet, group: 'Finances' },
-  { id: 'operations', label: 'Recharges & Retraits', icon: ArrowLeftRight, group: 'Finances' },
-  { id: 'anif', label: 'Conformité ANIF', icon: ShieldAlert, group: 'Conformité' },
-  { id: 'audit', label: 'Journal Audit', icon: FileText, group: 'Conformité' },
-  { id: 'team', label: 'Équipe Admin', icon: Shield, group: 'Conformité' },
-  { id: 'settings', label: 'Paramètres', icon: Settings, group: 'Conformité' },
+// `id` sert aussi de clé i18n : le libellé est résolu via t(`nav.${id}`) et le
+// groupe via t(`nav.group_${group}`). Voir src/locales/*.json (section « nav »).
+const NAV: { id: string; icon: LucideIcon; group: string; badge?: string }[] = [
+  { id: 'dashboard', icon: LayoutGrid, group: 'overview' },
+  { id: 'alerts', icon: AlertTriangle, group: 'overview' },
+  { id: 'users', icon: UsersIcon, group: 'users' },
+  { id: 'kyc', icon: ClipboardCheck, group: 'users' },
+  { id: 'transactions', icon: Zap, group: 'finances' },
+  { id: 'finance', icon: Wallet, group: 'finances' },
+  { id: 'operations', icon: ArrowLeftRight, group: 'finances' },
+  { id: 'anif', icon: ShieldAlert, group: 'compliance' },
+  { id: 'audit', icon: FileText, group: 'compliance' },
+  { id: 'team', icon: Shield, group: 'compliance' },
+  { id: 'settings', icon: Settings, group: 'compliance' },
 ]
 
-const GROUPS = ['Vue générale', 'Utilisateurs', 'Finances', 'Conformité']
+const GROUPS = ['overview', 'users', 'finances', 'compliance']
+
+// Sélecteur de langue FR | EN (header). Persiste le choix dans localStorage
+// (clé « lang », lue au démarrage par src/i18n.ts) et bascule i18next à chaud.
+function LangToggle() {
+  const { i18n } = useTranslation()
+  const current = (i18n.language || 'fr').split('-')[0]
+  const change = (lng: 'fr' | 'en') => {
+    if (lng === current) return
+    localStorage.setItem('lang', lng)
+    i18n.changeLanguage(lng)
+  }
+  return (
+    <div role="group" aria-label="Langue / Language" style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+      {(['fr', 'en'] as const).map((lng) => {
+        const active = current === lng
+        return (
+          <button
+            key={lng}
+            type="button"
+            onClick={() => change(lng)}
+            aria-pressed={active}
+            style={{
+              padding: '7px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none',
+              background: active ? C.green + '20' : 'none',
+              color: active ? C.green : C.textMuted,
+            }}
+          >
+            {lng.toUpperCase()}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
+  const { t } = useTranslation()
   const [authed, setAuthed] = useState(hasSession())
   const [activePage, setActivePage] = useState('dashboard')
   const [refreshNonce, setRefreshNonce] = useState(0)
@@ -2392,7 +2434,7 @@ export default function App() {
             <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>
               Cam<span style={{ color: C.green }}>Wallet</span>
             </div>
-            <div style={{ fontSize: 11, color: C.textMuted }}>Admin Panel</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>{t('nav.admin_panel')}</div>
           </div>
         </div>
 
@@ -2401,7 +2443,7 @@ export default function App() {
           {GROUPS.map(group => (
             <div key={group}>
               <div className="cw-compact-hide" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', padding: '8px 8px 4px' }}>
-                {group}
+                {t(`nav.group_${group}`)}
               </div>
               {NAV.filter(n => n.group === group).map(item => {
                 const Icon = item.icon
@@ -2412,7 +2454,7 @@ export default function App() {
                   className="cw-nav-btn"
                   onClick={() => setActivePage(item.id)}
                   aria-current={active ? 'page' : undefined}
-                  title={item.label}
+                  title={t(`nav.${item.id}`)}
                   style={{
                     position: 'relative', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px',
                     borderRadius: 10, cursor: 'pointer', fontSize: 13, width: '100%', textAlign: 'left',
@@ -2424,7 +2466,7 @@ export default function App() {
                 >
                   {active && <span style={{ position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: 3, background: C.green }} />}
                   <Icon size={18} style={{ flexShrink: 0 }} />
-                  <span className="cw-navlabel" style={{ flex: 1 }}>{item.label}</span>
+                  <span className="cw-navlabel" style={{ flex: 1 }}>{t(`nav.${item.id}`)}</span>
                   {item.badge && (
                     <span className="cw-nav-badge" style={{ fontSize: 10, background: C.blue + '25', color: C.blue, padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
                       {item.badge}
@@ -2439,10 +2481,10 @@ export default function App() {
 
         {/* Footer */}
         <div className="cw-compact-hide" style={{ padding: '12px 16px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.textMuted }}>
-          <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>Admin Système</div>
+          <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{t('nav.admin_system')}</div>
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: 4, background: C.green, display: 'inline-block' }} />
-            <span style={{ color: C.green, fontSize: 11, fontWeight: 600 }}>API opérationnelle</span>
+            <span style={{ color: C.green, fontSize: 11, fontWeight: 600 }}>{t('nav.api_operational')}</span>
           </div>
         </div>
       </aside>
@@ -2452,22 +2494,23 @@ export default function App() {
         {/* Topbar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>
-            {NAV.find(n => n.id === activePage)?.label ?? 'Dashboard'}
+            {NAV.some(n => n.id === activePage) ? t(`nav.${activePage}`) : t('nav.dashboard')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <LangToggle />
             <button
               className="cw-btn"
               onClick={() => setRefreshNonce(n => n + 1)}
-              aria-label="Actualiser les données"
+              aria-label={t('topbar.refresh_aria')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
-              <RefreshCw size={14} /> <span className="cw-topbar-label">Actualiser</span>
+              <RefreshCw size={14} /> <span className="cw-topbar-label">{t('common.refresh')}</span>
             </button>
             <button
               className="cw-btn"
               onClick={handleLogout}
-              aria-label="Se déconnecter"
+              aria-label={t('topbar.logout_aria')}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
-              <LogOut size={14} /> <span className="cw-topbar-label">Déconnexion</span>
+              <LogOut size={14} /> <span className="cw-topbar-label">{t('topbar.logout')}</span>
             </button>
             <div style={{ width: 34, height: 34, borderRadius: 17, background: C.green + '20', border: `2px solid ${C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: C.green, flexShrink: 0 }}>
               A
