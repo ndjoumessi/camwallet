@@ -27,7 +27,7 @@ import {
   downloadUsersCSV, downloadTransactionsCSV,
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
-  AdminTeamMember, getAdminTeam, setAdminRole,
+  AdminTeamMember, getAdminTeam, setAdminRole, setAdminPassword,
   getSseTicket, API_ORIGIN,
 } from './lib/api'
 
@@ -2442,6 +2442,18 @@ function TeamPage() {
     }
   }
 
+  const handleSetPassword = async (userId: string, email: string | null) => {
+    const pwd = window.prompt(`Nouveau mot de passe pour ${email ?? 'cet admin'} (min. 8 caractères) :`)
+    if (pwd == null) return
+    if (pwd.length < 8) { toast('Mot de passe trop court (min. 8)', 'error'); return }
+    try {
+      await setAdminPassword(userId, pwd)
+      toast('Mot de passe défini — cet admin peut se connecter', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+    }
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
@@ -2454,7 +2466,7 @@ function TeamPage() {
           <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Nom', 'Email', 'Role', "Date d'ajout"].map(h => (
+                {['Nom', 'Email', 'Role', "Date d'ajout", 'Actions'].map(h => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
@@ -2483,6 +2495,16 @@ function TeamPage() {
                     </div>
                   </td>
                   <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(m.createdAt)}</td>
+                  <td style={{ padding: '12px 14px' }}>
+                    <button
+                      className="cw-btn"
+                      onClick={() => handleSetPassword(m.id, m.email)}
+                      title="Définir un mot de passe de connexion"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', border: `1px solid ${C.border}`, borderRadius: 6, cursor: 'pointer', background: C.surface, color: C.textSoft, whiteSpace: 'nowrap' }}
+                    >
+                      <Lock size={13} /> Mot de passe
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

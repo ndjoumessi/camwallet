@@ -517,3 +517,6 @@ export interface AdminTeamMember { id: string; email: string | null; fullName: s
 export const getAdminTeam = () => request<AdminTeamMember[]>('/admin/team')
 export const setAdminRole = (userId: string, adminRole: string | null) =>
   request(`/admin/team/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ adminRole }) })
+// Définit le mot de passe de connexion par-utilisateur d'un admin (SUPER_ADMIN).
+export const setAdminPassword = (userId: string, password: string) =>
+  request(`/admin/team/${userId}/password`, { method: 'PATCH', body: JSON.stringify({ password }) })
