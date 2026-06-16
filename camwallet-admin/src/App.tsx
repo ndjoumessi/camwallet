@@ -22,7 +22,7 @@ import {
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase,
-  getOperations, retryOperation, WebhookEvent, AdminOperation,
+  getOperations, retryOperation, WebhookEvent, AdminOperation, resolveTransaction,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
   downloadUsersCSV, downloadTransactionsCSV,
@@ -1845,9 +1845,16 @@ function TransactionsPage() {
   const [customTo, setCustomTo] = useState('')
   const [searchRaw, setSearchRaw] = useState('')
   const search = useDebounced(searchRaw.trim(), 350)
+  const [amountMinRaw, setAmountMinRaw] = useState('')
+  const [amountMaxRaw, setAmountMaxRaw] = useState('')
+  const amountMin = useDebounced(amountMinRaw.trim(), 400)
+  const amountMax = useDebounced(amountMaxRaw.trim(), 400)
   const toast = useToast()
   const [exporting, setExporting] = useState(false)
   const [selectedTx, setSelectedTx] = useState<AdminTransaction | null>(null)
+  // Sélection en masse (export de la sélection).
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const togglePick = (id: string) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   // Bornes de dates dérivées de la période (ou personnalisées).
   const range = useMemo(() => {
@@ -1869,8 +1876,10 @@ function TransactionsPage() {
       search: search || undefined,
       from: range.from,
       to: range.to,
+      amountMin: amountMin || undefined,
+      amountMax: amountMax || undefined,
     }),
-    [txFilter, statusFilter, search, range.from, range.to],
+    [txFilter, statusFilter, search, range.from, range.to, amountMin, amountMax],
   )
   const txs = data?.data ?? []
   const total = data?.meta.total ?? 0
@@ -2004,18 +2013,35 @@ function TransactionsPage() {
             <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={inputStyle} />
           </>
         )}
-        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+        <input type="number" inputMode="numeric" value={amountMinRaw} onChange={(e) => setAmountMinRaw(e.target.value)} placeholder="Montant min" style={{ ...inputStyle, width: 120 }} />
+        <input type="number" inputMode="numeric" value={amountMaxRaw} onChange={(e) => setAmountMaxRaw(e.target.value)} placeholder="Montant max" style={{ ...inputStyle, width: 120 }} />
+        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
           <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Référence, émetteur, destinataire…"
             style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
       </div>
 
+      {/* Barre de sélection en masse */}
+      {picked.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '10px 14px', background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 10 }}>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{picked.size} sélectionnée(s)</span>
+          <button onClick={() => {
+            const rows = txs.filter((t) => picked.has(t.id))
+            downloadCsv('transactions-selection.csv', ['Réf.', 'Type', 'De', 'À', 'Montant (FCFA)', 'Frais (FCFA)', 'Statut', 'Date'],
+              rows.map((tx) => [tx.reference, TX_TYPE_LABEL[tx.type] ?? tx.type, partyLabel(tx.sender, 'Opérateur'), partyLabel(tx.receiver, 'Opérateur'), toFcfa(tx.amount).toLocaleString('fr-FR'), toFcfa(tx.fee).toLocaleString('fr-FR'), tx.status, fmtDate(tx.createdAt)]))
+            toast('Sélection exportée', 'success')
+          }} style={{ fontSize: 12, color: C.blue, background: C.card, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>⬇ Exporter la sélection (CSV)</button>
+          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Effacer</button>
+        </div>
+      )}
+
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
         <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
+              <th style={{ width: 36, padding: '12px 0 12px 14px' }}></th>
               {['Réf.', 'Type', 'Émetteur', 'Destinataire', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
@@ -2026,7 +2052,15 @@ function TransactionsPage() {
               const tColor = TX_TYPE_COLOR[tx.type] ?? C.text
               return (
               <tr key={tx.id} className="cw-row" onClick={() => setSelectedTx(tx)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}><CopyableRef value={tx.reference} truncate={10} /></td>
+                <td style={{ padding: '11px 0 11px 14px' }} onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={picked.has(tx.id)} onChange={() => togglePick(tx.id)} aria-label="Sélectionner" style={{ cursor: 'pointer', accentColor: C.green }} />
+                </td>
+                <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CopyableRef value={tx.reference} truncate={10} />
+                    {tx.resolved && <CheckCircle2 size={13} color={C.green} aria-label="Résolu" />}
+                  </div>
+                </td>
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '11px 14px' }}><UserCell party={tx.sender} /></td>
                 <td style={{ padding: '11px 14px' }}><UserCell party={tx.receiver} /></td>
@@ -2060,6 +2094,20 @@ function TransactionsPage() {
 function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransaction; onClose: () => void; onRetried: () => void }) {
   const toast = useToast()
   const [retrying, setRetrying] = useState(false)
+  const [resolving, setResolving] = useState(false)
+
+  const handleResolve = async () => {
+    setResolving(true)
+    try {
+      await resolveTransaction(tx.id)
+      toast('Transaction marquée résolue', 'success')
+      onRetried()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Échec', 'error')
+    } finally {
+      setResolving(false)
+    }
+  }
 
   const phase = TX_STATUS_BADGE[tx.status] ?? tx.status
   const failed = phase === 'failed'
@@ -2180,6 +2228,24 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
             ))}
           </div>
 
+          {/* Soldes émetteur avant / après (capturés dans la transaction ACID) */}
+          {tx.senderBalanceBefore != null && tx.senderBalanceAfter != null && (
+            <div>
+              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Solde émetteur</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>Avant</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: C.textSoft }}>{formatFCFA(tx.senderBalanceBefore)}</div>
+                </div>
+                <ArrowRight size={16} color={C.textMuted} />
+                <div style={{ flex: 1, textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>Après</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: tx.senderBalanceAfter < tx.senderBalanceBefore ? C.red : C.green }}>{formatFCFA(tx.senderBalanceAfter)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Section opérateur (recharge/retrait OM/MoMo) */}
           {isOperatorTx && (
             <div>
@@ -2213,7 +2279,7 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           </details>
 
           {/* Actions */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button className="cw-btn" onClick={handleReceipt}
               style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
               ⬇ Reçu PDF
@@ -2224,6 +2290,14 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
                 {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
               </button>
             )}
+            {!isReadOnly() && (tx.resolved ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.green, fontWeight: 600 }}><CheckCircle2 size={14} /> Résolu</span>
+            ) : (
+              <button className="cw-btn" onClick={handleResolve} disabled={resolving}
+                style={{ fontSize: 13, color: '#B89000', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 8, padding: '9px 16px', cursor: resolving ? 'wait' : 'pointer', fontWeight: 600 }}>
+                {resolving ? '…' : '✓ Marquer résolu'}
+              </button>
+            ))}
           </div>
         </div>
       </div>
