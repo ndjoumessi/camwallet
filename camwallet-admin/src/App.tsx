@@ -19,7 +19,7 @@ import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
-  getKyc, getAlerts, getAudit, getAuditStats, reviewKyc, setUserStatus,
+  getKyc, getAlerts, getAlertsTimeline, getAudit, getAuditStats, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase,
   getOperations, retryOperation, WebhookEvent, AdminOperation, resolveTransaction,
@@ -856,36 +856,108 @@ function HealthWidget() {
   )
 }
 
+// Niveau d'alerte → libellé + couleur (error=Critique, warn=Avertissement, info=Info).
+const ALERT_LEVEL: Record<string, { label: string; color: string; bg: string; icon: LucideIcon }> = {
+  error: { label: 'Critique', color: C.red, bg: C.redLight, icon: Siren },
+  warn: { label: 'Avertissement', color: '#FB923C', bg: '#FB923C18', icon: AlertTriangle },
+  info: { label: 'Info', color: C.blue, bg: C.blueLight, icon: Info },
+}
+
 function AlertsPage() {
-  const { data, loading, error } = useFetch(() => getAlerts(), [])
+  const { data, loading, error, refetch } = useFetch(() => getAlerts(), [])
+  const { data: timeline, refetch: refetchTl } = useFetch(() => getAlertsTimeline(), [])
   const alerts = data?.alerts ?? []
   const flagged = data?.flagged ?? []
+  const toast = useToast()
+  const [levelFilter, setLevelFilter] = useState('')
+  // État « lu » persisté localement (par id d'alerte).
+  const [readIds, setReadIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('cw_alerts_read') || '[]')) } catch { return new Set() }
+  })
+  const persistRead = (s: Set<string>) => { setReadIds(s); localStorage.setItem('cw_alerts_read', JSON.stringify([...s])) }
+
+  // Rafraîchissement temps réel via SSE.
+  useLiveEvents(useCallback((ev: { type: string }) => { if (ev.type !== 'ping') { refetch(); refetchTl() } }, [refetch, refetchTl]))
+
+  const filtered = levelFilter ? alerts.filter((a) => a.type === levelFilter) : alerts
+  const unread = alerts.filter((a) => !readIds.has(a.id)).length
+  const counts = { error: alerts.filter(a => a.type === 'error').length, warn: alerts.filter(a => a.type === 'warn').length, info: alerts.filter(a => a.type === 'info').length }
+  const tlData = (timeline?.series ?? []).map((p) => ({ label: p.label, failed: p.failed, highValue: p.highValue }))
+
+  const markAllRead = () => { persistRead(new Set(alerts.map((a) => a.id))); toast('Toutes les alertes marquées comme lues', 'success') }
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Alertes & Surveillance</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{alerts.length} alerte(s) active(s) — données en temps réel</p>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
+            Alertes & Surveillance
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 20, padding: '3px 10px' }}>
+              <span className="cw-live-dot" style={{ width: 7, height: 7, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} /> Temps réel
+            </span>
+          </h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{unread} non lue(s) sur {alerts.length} alerte(s)</p>
+        </div>
+        <button className="cw-btn" disabled={!unread} onClick={markAllRead}
+          style={{ fontSize: 13, color: unread ? C.green : C.textMuted, background: unread ? C.greenLight : C.surface, border: `1px solid ${unread ? C.green + '40' : C.border}`, borderRadius: 8, padding: '8px 16px', cursor: unread ? 'pointer' : 'default', fontWeight: 600 }}>
+          ✓ Tout marquer comme lu
+        </button>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
 
-      {/* Alert cards */}
+      {/* Graphe : alertes par heure sur 24h */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Alertes par heure · 24h</h2>
+          <div style={{ display: 'flex', gap: 14 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red }} />Échecs</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#FB923C' }} />Gros montants</span>
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={tlData} margin={{ top: 6, right: 8, left: 4, bottom: 0 }} barGap={2}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="label" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} interval={2} />
+            <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
+            <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
+            <Bar dataKey="failed" name="Échecs" stackId="a" fill={C.red} radius={[0, 0, 0, 0]} maxBarSize={18} />
+            <Bar dataKey="highValue" name="Gros montants" stackId="a" fill="#FB923C" radius={[3, 3, 0, 0]} maxBarSize={18} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Filtre par niveau */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button onClick={() => setLevelFilter('')} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === '' ? 700 : 500, background: levelFilter === '' ? C.green : C.card, border: `1px solid ${levelFilter === '' ? C.green : C.border}`, color: levelFilter === '' ? '#fff' : C.textSoft }}>Toutes ({alerts.length})</button>
+        {(['error', 'warn', 'info'] as const).map((lvl) => { const m = ALERT_LEVEL[lvl]; return (
+          <button key={lvl} onClick={() => setLevelFilter(levelFilter === lvl ? '' : lvl)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === lvl ? 700 : 500, background: levelFilter === lvl ? m.color : m.bg, border: `1px solid ${levelFilter === lvl ? m.color : m.color + '40'}`, color: levelFilter === lvl ? '#fff' : m.color }}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: levelFilter === lvl ? '#fff' : m.color }} />{m.label} ({counts[lvl]})
+          </button>
+        )})}
+      </div>
+
+      {/* Alert cards (3 niveaux) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-        {alerts.map(a => {
-          const cfg = {
-            error: { bg: C.redLight, border: C.red, icon: Siren },
-            warn: { bg: C.yellowLight, border: C.yellow, icon: AlertTriangle },
-            info: { bg: C.blueLight, border: C.blue, icon: Info },
-          }[a.type] ?? { bg: '#333', border: '#888', icon: Info }
-          const AlertIcon = cfg.icon
+        {filtered.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 24, color: C.textMuted, fontSize: 13 }}>Aucune alerte active</div>}
+        {filtered.map(a => {
+          const m = ALERT_LEVEL[a.type] ?? ALERT_LEVEL.info
+          const AlertIcon = m.icon
+          const isRead = readIds.has(a.id)
           return (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: cfg.bg, border: `1px solid ${cfg.border}40`, borderRadius: 12, padding: '14px 16px' }}>
-              <AlertIcon size={18} color={cfg.border} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: m.bg, border: `1px solid ${m.color}40`, borderRadius: 12, padding: '14px 16px', opacity: isRead ? 0.6 : 1 }}>
+              <AlertIcon size={18} color={m.color} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1 }}>
-                <div style={{ color: C.text, fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{a.title}</div>
-                <div style={{ color: C.textSoft, fontSize: 12 }}>{a.desc}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: m.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</span>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{a.title}</span>
+                </div>
+                <div style={{ color: C.textSoft, fontSize: 12, marginTop: 2 }}>{a.desc}</div>
               </div>
+              {!isRead && (
+                <button onClick={() => persistRead(new Set([...readIds, a.id]))} title="Marquer comme lu"
+                  style={{ flexShrink: 0, background: 'none', border: 'none', color: m.color, cursor: 'pointer', padding: 4, borderRadius: 6 }}><Check size={16} /></button>
+              )}
             </div>
           )
         })}

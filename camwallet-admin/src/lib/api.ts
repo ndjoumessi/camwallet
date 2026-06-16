@@ -436,6 +436,7 @@ export const assignAnifCase = (caseId: string, analystId: string) =>
 export interface AnifStats { activeAlerts: number; openCases: number; overThreshold30d: number; resolutionRate: number | null }
 export const getAnifStats = () => request<AnifStats>('/admin/anif/stats')
 
+// (exporté pour le hook useFetch côté UI)
 export interface AlertsTimelinePoint { hour: string; label: string; failed: number; highValue: number; total: number }
 export const getAlertsTimeline = () => request<{ series: AlertsTimelinePoint[] }>('/admin/stats/alerts-timeline')
 
