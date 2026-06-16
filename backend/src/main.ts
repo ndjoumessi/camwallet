@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
+import { I18nExceptionFilter } from './common/i18n/i18n-exception.filter';
 
 // Les montants/soldes sont des BigInt (centimes FCFA). JSON.stringify ne sait
 // pas sérialiser un BigInt — on le convertit en nombre pour toutes les réponses.
@@ -51,6 +52,10 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
+
+  // Filtre d'exceptions i18n : traduit les messages d'erreur selon
+  // l'en-tête Accept-Language du client (FR par défaut, EN si demandé).
+  app.useGlobalFilters(new I18nExceptionFilter());
 
   // Préfixe API
   app.setGlobalPrefix('api/v1');

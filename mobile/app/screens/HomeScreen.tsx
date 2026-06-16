@@ -147,7 +147,7 @@ export default function HomeScreen() {
             <IconButton
               icon={showBalance ? 'eye-off-outline' : 'eye-outline'}
               onPress={toggleShowBalance}
-              accessibilityLabel={showBalance ? 'Masquer le solde' : 'Afficher le solde'}
+              accessibilityLabel={showBalance ? t('home.a11yHideBalance') : t('home.a11yShowBalance')}
               size={18}
               color={Colors.primary}
               bg={Colors.primaryLight}
@@ -156,7 +156,7 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.balanceBadges}>
-            <Badge label="Compte vérifié" icon="checkmark-circle" color={Colors.primary} bg={Colors.primaryLight} />
+            <Badge label={t('home.balanceBadgeVerified')} icon="checkmark-circle" color={Colors.primary} bg={Colors.primaryLight} />
             <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
           </View>
         </LinearGradient>
@@ -166,7 +166,7 @@ export default function HomeScreen() {
         {loyalty !== null && (
           <View style={styles.loyaltyBanner}>
             <Text style={styles.loyaltyText}>
-              🎁  {loyalty.points.toLocaleString('fr-FR')} points fidélité  ·  Prochain palier : {loyalty.nextReward.toLocaleString('fr-FR')} pts
+              {t('home.loyaltyBanner', { points: loyalty.points.toLocaleString('fr-FR'), nextReward: loyalty.nextReward.toLocaleString('fr-FR') })}
             </Text>
           </View>
         )}
@@ -205,7 +205,7 @@ export default function HomeScreen() {
         {/* Contacts récents (dérivés de l'historique API) */}
         {recentContacts.length > 0 && (
           <>
-            <SectionTitle label="Contacts récents" />
+            <SectionTitle label={t('home.recentContacts')} />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -219,7 +219,7 @@ export default function HomeScreen() {
                   onPress={() => setActiveModal('send')}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel={`Envoyer à ${c.name}`}
+                  accessibilityLabel={t('home.a11yContactSend', { name: c.name })}
                 >
                   <Avatar initials={c.initials} size={52} color={c.color} bg={c.color + '20'} />
                   <Text style={styles.contactName}>{c.name.split(' ')[0]}</Text>
@@ -240,7 +240,7 @@ export default function HomeScreen() {
               onPress={() => openTransaction(tx)}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel={`Détail : ${meta.label} ${tx.name}, ${fmt(tx.amount)}`}
+              accessibilityLabel={t('home.a11yTxDetail', { type: meta.label, name: tx.name, amount: fmt(tx.amount) })}
             >
               <View style={[styles.txIcon, { backgroundColor: meta.amountColor + '22' }]}>
                 <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={18} color={meta.amountColor} />

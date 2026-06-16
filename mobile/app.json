@@ -57,7 +57,8 @@
         }
       ],
       "expo-asset",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-localization"
     ],
     "scheme": "camwallet",
     "experiments": {

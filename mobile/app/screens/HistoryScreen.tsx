@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Badge, IconButton } from '../components/ui';
@@ -21,23 +22,27 @@ import { useStore, Transaction } from '../store/useStore';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-const FILTERS = ['Tout', 'Reçus', 'Envois', 'Recharges', 'Retraits'];
-
 const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
+
+type PdfStrings = {
+  statementTitle: string; filterLabel: string; generatedOn: string;
+  colDate: string; colOperation: string; colType: string; colAmount: string;
+  noName: string; netTotal: string; footer: string;
+};
 
 function buildPdfHtml(
   transactions: ReturnType<typeof useStore.getState>['transactions'],
-  filter: string,
+  filterLabel: string,
   search: string,
+  tr: PdfStrings,
 ) {
-  const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
   const total = transactions.reduce((s, tx) => s + tx.amount, 0);
   const rows = transactions
     .map(
       (tx) => `
     <tr>
       <td>${tx.date}</td>
-      <td>${tx.name ?? '(sans nom)'}</td>
+      <td>${tx.name ?? tr.noName}</td>
       <td>${txMeta(tx.type).label}</td>
       <td style="color:${tx.amount >= 0 ? '#00C896' : '#FF4D6D'};font-weight:700">
         ${tx.amount >= 0 ? '+' : ''}${fmt(tx.amount)}
@@ -66,43 +71,58 @@ function buildPdfHtml(
 <body>
   <div class="logo">Cam<span>Wallet</span></div>
   <div class="meta">
-    <strong>Relevé de transactions</strong><br/>
-    Filtre : ${filter}${search ? ` · Recherche : "${search}"` : ''}<br/>
-    Généré le ${dateStr}
+    <strong>${tr.statementTitle}</strong><br/>
+    ${tr.filterLabel} ${filterLabel}${search ? ` · "${search}"` : ''}<br/>
+    ${tr.generatedOn}
   </div>
   <table>
-    <thead><tr><th>Date</th><th>Opération</th><th>Type</th><th>Montant</th></tr></thead>
+    <thead><tr><th>${tr.colDate}</th><th>${tr.colOperation}</th><th>${tr.colType}</th><th>${tr.colAmount}</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div class="total">Total net : ${total >= 0 ? '+' : ''}${fmt(total)}</div>
-  <div class="footer">CamWallet · Document généré automatiquement · Non contractuel</div>
+  <div class="total">${tr.netTotal} ${total >= 0 ? '+' : ''}${fmt(total)}</div>
+  <div class="footer">${tr.footer}</div>
 </body>
 </html>`;
 }
 
-// Stable component — no dependency on parent state.
-const ListEmpty = () => (
-  <View style={styles.empty}>
-    <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
-    <Text style={styles.emptyText}>Aucune transaction trouvée</Text>
-  </View>
-);
+const ListEmpty = () => {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.empty}>
+      <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
+      <Text style={styles.emptyText}>{t('history.emptyText')}</Text>
+    </View>
+  );
+};
 
 interface ListFooterProps { loading: boolean; hasMore: boolean; total: number; }
-const ListFooter = React.memo(({ loading, hasMore, total }: ListFooterProps) => (
-  <View style={styles.listFooter}>
-    {loading ? (
-      <ActivityIndicator size="small" color={Colors.primary} />
-    ) : !hasMore && total > 0 ? (
-      <Text style={styles.listFooterText}>Toutes les transactions chargées</Text>
-    ) : null}
-    <View style={{ height: 80 }} />
-  </View>
-));
+const ListFooter = React.memo(({ loading, hasMore, total }: ListFooterProps) => {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.listFooter}>
+      {loading ? (
+        <ActivityIndicator size="small" color={Colors.primary} />
+      ) : !hasMore && total > 0 ? (
+        <Text style={styles.listFooterText}>{t('history.footerAllLoaded')}</Text>
+      ) : null}
+      <View style={{ height: 80 }} />
+    </View>
+  );
+});
 
 export default function HistoryScreen() {
+  const { t } = useTranslation();
   const { transactions, historyHasMore, historyLoading, fetchHistoryPage, resetHistory, openTransaction } = useStore();
-  const [activeFilter, setActiveFilter] = useState('Tout');
+
+  const FILTERS = [
+    { key: 'all', label: t('history.filters.all') },
+    { key: 'received', label: t('history.filters.received') },
+    { key: 'sent', label: t('history.filters.sent') },
+    { key: 'recharge', label: t('history.filters.recharge') },
+    { key: 'withdrawal', label: t('history.filters.withdrawals') },
+  ];
+
+  const [activeFilter, setActiveFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
 
@@ -113,36 +133,50 @@ export default function HistoryScreen() {
 
   const filtered = useMemo(() => transactions.filter((tx) => {
     const matchFilter =
-      activeFilter === 'Tout' ||
-      (activeFilter === 'Envois' && (tx.type === 'sent' || tx.type === 'qr_payment')) ||
-      (activeFilter === 'Reçus' && (tx.type === 'received' || tx.type === 'refund')) ||
-      (activeFilter === 'Recharges' && tx.type === 'recharge') ||
-      (activeFilter === 'Retraits' && tx.type === 'withdrawal');
+      activeFilter === 'all' ||
+      (activeFilter === 'sent' && (tx.type === 'sent' || tx.type === 'qr_payment')) ||
+      (activeFilter === 'received' && (tx.type === 'received' || tx.type === 'refund')) ||
+      (activeFilter === 'recharge' && tx.type === 'recharge') ||
+      (activeFilter === 'withdrawal' && tx.type === 'withdrawal');
     const matchSearch = search === '' || (tx.name ?? '').toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
   }), [transactions, activeFilter, search]);
 
   const exportPdf = async () => {
     if (filtered.length === 0) {
-      Alert.alert('Aucune transaction', 'Aucune transaction à exporter pour ce filtre.');
+      Alert.alert(t('history.alertNoTxTitle'), t('history.alertNoTxMsg'));
       return;
     }
     setExporting(true);
     try {
-      const html = buildPdfHtml(filtered, activeFilter, search);
+      const dateStr = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+      const activeLabel = FILTERS.find((f) => f.key === activeFilter)?.label ?? activeFilter;
+      const tr: PdfStrings = {
+        statementTitle: t('history.pdf.statementTitle'),
+        filterLabel: t('history.pdf.filterLabel'),
+        generatedOn: t('history.pdf.generatedOn', { date: dateStr }),
+        colDate: t('history.pdf.colDate'),
+        colOperation: t('history.pdf.colOperation'),
+        colType: t('history.pdf.colType'),
+        colAmount: t('history.pdf.colAmount'),
+        noName: t('history.pdf.noName'),
+        netTotal: t('history.pdf.netTotal'),
+        footer: t('history.pdf.footer'),
+      };
+      const html = buildPdfHtml(filtered, activeLabel, search, tr);
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',
-          dialogTitle: 'Exporter le relevé CamWallet',
+          dialogTitle: t('history.pdf.dialogTitle'),
           UTI: 'com.adobe.pdf',
         });
       } else {
-        Alert.alert('PDF généré', `Fichier enregistré : ${uri}`);
+        Alert.alert(t('history.alertPdfTitle'), t('history.alertPdfMsg', { uri }));
       }
     } catch (e: any) {
-      Alert.alert('Erreur', e?.message ?? 'Impossible de générer le PDF');
+      Alert.alert(t('history.alertErrorTitle'), e?.message ?? t('history.alertErrorMsg'));
     } finally {
       setExporting(false);
     }
@@ -197,16 +231,16 @@ export default function HistoryScreen() {
           style={styles.searchInput}
           value={search}
           onChangeText={setSearch}
-          placeholder="Rechercher une transaction…"
+          placeholder={t('history.search.placeholder')}
           placeholderTextColor={Colors.textMuted}
-          accessibilityLabel="Rechercher une transaction"
+          accessibilityLabel={t('history.search.a11yLabel')}
           autoCorrect={false}
         />
         {search !== '' && (
           <IconButton
             icon="close"
             onPress={() => setSearch('')}
-            accessibilityLabel="Effacer la recherche"
+            accessibilityLabel={t('history.search.a11yClear')}
             size={18}
             color={Colors.textMuted}
           />
@@ -217,7 +251,7 @@ export default function HistoryScreen() {
           onPress={exportPdf}
           disabled={exporting}
           accessibilityRole="button"
-          accessibilityLabel="Exporter en PDF"
+          accessibilityLabel={t('history.export.a11y')}
         >
           {exporting ? (
             <ActivityIndicator size="small" color={Colors.primary} />
@@ -238,19 +272,19 @@ export default function HistoryScreen() {
       >
         {FILTERS.map((f) => (
           <Pressable
-            key={f}
+            key={f.key}
             style={({ pressed }) => [
               styles.filterChip,
-              activeFilter === f && styles.filterChipActive,
+              activeFilter === f.key && styles.filterChipActive,
               pressed && styles.pressed,
             ]}
-            onPress={() => setActiveFilter(f)}
+            onPress={() => setActiveFilter(f.key)}
             accessibilityRole="button"
-            accessibilityLabel={`Filtrer : ${f}`}
-            accessibilityState={{ selected: activeFilter === f }}
+            accessibilityLabel={f.label}
+            accessibilityState={{ selected: activeFilter === f.key }}
           >
-            <Text style={[styles.filterText, activeFilter === f && styles.filterTextActive]}>
-              {f}
+            <Text style={[styles.filterText, activeFilter === f.key && styles.filterTextActive]}>
+              {f.label}
             </Text>
           </Pressable>
         ))}

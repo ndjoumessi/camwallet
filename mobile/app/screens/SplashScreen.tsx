@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, Easing, AccessibilityInfo } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BALANCE_GRADIENT } from '../constants/theme';
 
 interface SplashScreenProps {
@@ -8,6 +9,7 @@ interface SplashScreenProps {
 }
 
 export default function SplashScreen({ onFinish }: SplashScreenProps) {
+  const { t } = useTranslation();
   const logoScale = useRef(new Animated.Value(0.5)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
@@ -114,7 +116,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
         <Text style={styles.title}>
           Cam<Text style={styles.titleGreen}>Wallet</Text>
         </Text>
-        <Text style={styles.subtitle}>Votre portefeuille numérique</Text>
+        <Text style={styles.subtitle}>{t('splash.tagline')}</Text>
       </Animated.View>
 
       {/* Spinner */}

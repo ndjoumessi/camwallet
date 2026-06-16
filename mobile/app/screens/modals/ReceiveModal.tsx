@@ -17,6 +17,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { useTranslation } from 'react-i18next';
 
 interface ReceiveModalProps {
   visible: boolean;
@@ -27,6 +28,7 @@ const formatPhone = (phone: string) => (phone.startsWith('+') ? phone : `+237 ${
 
 export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const { user } = useStore();
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'static' | 'dynamic'>('static');
   const [dynamicAmount, setDynamicAmount] = useState('');
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -65,8 +67,8 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Payez-moi via CamWallet\n${displayPhone}\nRéférence: ${rawPhone}`,
-        title: 'CamWallet — Mon QR de paiement',
+        message: t('receive.shareMessage', { phone: displayPhone, rawPhone }),
+        title: t('receive.shareTitle'),
       });
     } catch {}
   };
@@ -77,8 +79,8 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
         <Animated.View style={[styles.flex, animStyle]}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Recevoir de l'argent</Text>
-            <IconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" />
+            <Text style={styles.headerTitle}>{t('receive.headerTitle')}</Text>
+            <IconButton icon="close" onPress={onClose} accessibilityLabel={t('receive.closeBtnA11y')} />
           </View>
 
           <ScrollView contentContainerStyle={styles.body}>
@@ -86,7 +88,7 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
           <View style={styles.tabBar}>
             {(['static', 'dynamic'] as const).map((tab) => {
               const active = activeTab === tab;
-              const label = tab === 'static' ? 'QR Statique' : 'QR Dynamique';
+              const label = tab === 'static' ? t('receive.tabStatic') : t('receive.tabDynamic');
               return (
                 <TouchableOpacity
                   key={tab}
@@ -130,14 +132,14 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
             <Text style={styles.userName}>{user?.name ?? '—'}</Text>
             <Text style={styles.userPhone}>{displayPhone || '—'}</Text>
             {activeTab === 'static' && (
-              <Text style={styles.infoNote}>Ce QR code est permanent. Partagez-le librement.</Text>
+              <Text style={styles.infoNote}>{t('receive.infoNote')}</Text>
             )}
           </View>
 
           {/* Dynamic amount */}
           {activeTab === 'dynamic' && (
             <View style={styles.dynamicWrap}>
-              <Text style={styles.dynamicLabel}>Montant spécifique (optionnel)</Text>
+              <Text style={styles.dynamicLabel}>{t('receive.dynamic.label')}</Text>
               <View style={styles.inputRow}>
                 <TextInput
                   style={styles.dynamicInput}
@@ -147,13 +149,11 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
                   placeholderTextColor={Colors.textMuted}
                   keyboardType="numeric"
                   autoCorrect={false}
-                  accessibilityLabel="Montant à encoder dans le QR code"
+                  accessibilityLabel={t('receive.dynamic.inputA11y')}
                 />
-                <Text style={styles.currency}>FCFA</Text>
+                <Text style={styles.currency}>{t('common.currency')}</Text>
               </View>
-              <Text style={styles.dynamicNote}>
-                Le QR dynamique expire dans 15 minutes et inclut le montant exact.
-              </Text>
+              <Text style={styles.dynamicNote}>{t('receive.dynamic.note')}</Text>
             </View>
           )}
 
@@ -178,8 +178,8 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
           )}
 
           {/* Actions */}
-          <Button label="Partager mon QR Code" icon="share-outline" onPress={handleShare} variant="secondary" fullWidth style={{ marginBottom: Spacing.md }} />
-          <Button label="Fermer" onPress={onClose} variant="ghost" fullWidth />
+          <Button label={t('receive.btnShare')} icon="share-outline" onPress={handleShare} variant="secondary" fullWidth style={{ marginBottom: Spacing.md }} />
+          <Button label={t('receive.btnClose')} onPress={onClose} variant="ghost" fullWidth />
           </ScrollView>
         </Animated.View>
       </SafeAreaView>

@@ -15,33 +15,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { Button } from '../components/ui';
 import { authApi } from '../../src/lib/api';
 
 const { width } = Dimensions.get('window');
 const RESEND_COOLDOWN_S = 60;
-
-const SLIDES = [
-  {
-    icon: 'phone-portrait-outline' as const,
-    title: 'Paiements instantanés',
-    desc: "Scannez un QR Code et payez en 3 secondes, n'importe où au Cameroun.",
-    gradient: [BALANCE_GRADIENT[0], Colors.bg] as [string, string],
-  },
-  {
-    icon: 'lock-closed-outline' as const,
-    title: 'Sécurisé & fiable',
-    desc: 'Chiffrement militaire, PIN à 6 chiffres et alertes SMS en temps réel.',
-    gradient: [BALANCE_GRADIENT[1], Colors.bg] as [string, string],
-  },
-  {
-    icon: 'flash' as const,
-    title: 'Rechargez facilement',
-    desc: 'Via MTN MoMo, Orange Money ou agents partenaires près de chez vous.',
-    gradient: ['#1a1505', Colors.bg] as [string, string],
-  },
-];
 
 function isPhoneValid(phone: string): boolean {
   return /^[62]\d{8}$/.test(phone);
@@ -57,6 +37,29 @@ interface OnboardingProps {
 }
 
 export default function OnboardingScreen({ onComplete }: OnboardingProps) {
+  const { t } = useTranslation();
+
+  const SLIDES = [
+    {
+      icon: 'phone-portrait-outline' as const,
+      title: t('onboarding.slides.0.title'),
+      desc: t('onboarding.slides.0.desc'),
+      gradient: [BALANCE_GRADIENT[0], Colors.bg] as [string, string],
+    },
+    {
+      icon: 'lock-closed-outline' as const,
+      title: t('onboarding.slides.1.title'),
+      desc: t('onboarding.slides.1.desc'),
+      gradient: [BALANCE_GRADIENT[1], Colors.bg] as [string, string],
+    },
+    {
+      icon: 'flash' as const,
+      title: t('onboarding.slides.2.title'),
+      desc: t('onboarding.slides.2.desc'),
+      gradient: ['#1a1505', Colors.bg] as [string, string],
+    },
+  ];
+
   const [step, setStep] = useState<'slides' | 'phone' | 'otp' | 'pin'>('slides');
   const [slideIndex, setSlideIndex] = useState(0);
   const [phone, setPhone] = useState('');
@@ -73,8 +76,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
-    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
   }, [resendCooldown]);
 
   const triggerShake = useCallback(() => {
@@ -109,13 +112,13 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
     } catch (err: any) {
       const status: number | undefined = err?.response?.status;
       if (status === 409) {
-        setError("Ce numéro est déjà inscrit. Connectez-vous depuis l'accueil.");
+        setError(t('onboarding.phone.errorAlreadyRegistered'));
       } else if (status === 429) {
-        setError('Trop de tentatives. Réessayez dans quelques minutes.');
+        setError(t('onboarding.phone.errorTooManyAttempts'));
       } else if (status === 400) {
-        setError(extractApiError(err, 'Numéro invalide.'));
+        setError(extractApiError(err, t('onboarding.phone.errorInvalidNumber')));
       } else {
-        setError("Impossible d'envoyer le SMS. Vérifiez votre connexion.");
+        setError(t('onboarding.phone.errorSendFailed'));
       }
     } finally {
       setLoading(false);
@@ -131,7 +134,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
       setUserId(result.userId);
       setResendCooldown(RESEND_COOLDOWN_S);
     } catch {
-      setError("Impossible de renvoyer le SMS. Vérifiez votre connexion.");
+      setError(t('onboarding.phone.errorResendFailed'));
     } finally {
       setLoading(false);
     }
@@ -147,13 +150,13 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
     } catch (err: any) {
       const status: number | undefined = err?.response?.status;
       if (status === 400 || status === 401) {
-        setError('Code incorrect. Vérifiez le SMS et réessayez.');
+        setError(t('onboarding.otp.errorWrongCode'));
       } else if (status === 410) {
-        setError('Ce code a expiré. Demandez un nouveau code.');
+        setError(t('onboarding.otp.errorExpiredCode'));
       } else if (status === 429) {
-        setError('Trop de tentatives. Demandez un nouveau code.');
+        setError(t('onboarding.otp.errorTooMany'));
       } else {
-        setError('Erreur de vérification. Réessayez.');
+        setError(t('onboarding.otp.errorVerification'));
       }
       triggerShake();
     } finally {
@@ -184,15 +187,15 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
               const status: number | undefined = err?.response?.status;
               setError(
                 status === 429
-                  ? 'Trop de tentatives. Attendez quelques minutes.'
-                  : "Impossible de finaliser l'inscription. Réessayez."
+                  ? t('onboarding.phone.errorTooManyAttempts')
+                  : t('onboarding.pin.errorFinalizeError')
               );
               triggerShake();
               setPinConfirm('');
               setLoading(false);
             });
         } else {
-          setError('Les PINs ne correspondent pas.');
+          setError(t('onboarding.pin.errorMismatch'));
           triggerShake();
           setTimeout(() => setPinConfirm(''), 300);
         }
@@ -270,7 +273,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
 
           <View style={styles.actions}>
             <Button
-              label={slideIndex < SLIDES.length - 1 ? 'Suivant' : 'Créer mon compte'}
+              label={slideIndex < SLIDES.length - 1 ? t('onboarding.btn.next') : t('onboarding.btn.createAccount')}
               icon={slideIndex < SLIDES.length - 1 ? 'arrow-forward' : undefined}
               onPress={slideToNext}
             />
@@ -279,10 +282,10 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
                 onPress={() => setStep('phone')}
                 style={({ pressed }) => [styles.skipBtn, pressed && styles.pressed]}
                 accessibilityRole="button"
-                accessibilityLabel="Passer l'introduction et créer un compte"
+                accessibilityLabel={t('onboarding.a11y.skipIntro')}
                 hitSlop={8}
               >
-                <Text style={styles.skipText}>Passer</Text>
+                <Text style={styles.skipText}>{t('onboarding.btn.skip')}</Text>
               </Pressable>
             )}
           </View>
@@ -308,14 +311,14 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
             <Text style={styles.stepDesc}>Nous envoyons un SMS de vérification</Text>
 
             <View>
-              <Text style={styles.inputLabel}>Numéro de téléphone</Text>
+              <Text style={styles.inputLabel}>{t('onboarding.phone.label')}</Text>
               <View style={[styles.inputRow, !!error && styles.inputRowError]}>
                 <Text style={styles.inputPrefix}>+237</Text>
                 <TextInput
                   style={styles.input}
                   value={phone}
                   onChangeText={handlePhoneChange}
-                  placeholder="6XX XX XX XX"
+                  placeholder={t('onboarding.phone.placeholder')}
                   placeholderTextColor={Colors.textMuted}
                   keyboardType="phone-pad"
                   maxLength={9}
@@ -323,23 +326,23 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
                   autoCorrect={false}
                   autoCapitalize="none"
                   editable={!loading}
-                  accessibilityLabel="Numéro de téléphone sans l'indicatif pays"
-                  accessibilityHint="9 chiffres, commençant par 6 ou 2"
+                  accessibilityLabel={t('onboarding.phone.a11yLabel')}
+                  accessibilityHint={t('onboarding.phone.a11yHint')}
                 />
               </View>
               {!!error && <Text style={styles.errorText}>{error}</Text>}
             </View>
 
             <Button
-              label="Envoyer le code SMS"
+              label={t('onboarding.phone.btnSendSms')}
               onPress={sendOtp}
               loading={loading}
               disabled={!isPhoneValid(phone) || loading}
             />
 
             <Text style={styles.termsText}>
-              En continuant, vous acceptez nos{' '}
-              <Text style={styles.termsLink}>Conditions d'utilisation</Text>
+              {t('onboarding.phone.terms')}{' '}
+              <Text style={styles.termsLink}>{t('onboarding.phone.termsLink')}</Text>
             </Text>
           </View>
         </KeyboardAvoidingView>
@@ -361,13 +364,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
             <View style={styles.stepIconWrap}>
               <Ionicons name="chatbubble-ellipses-outline" size={36} color={Colors.primary} />
             </View>
-            <Text style={styles.stepTitle}>Code de vérification</Text>
-            <Text style={styles.stepDesc}>
-              Code envoyé au +237 {phone}
-            </Text>
+            <Text style={styles.stepTitle}>{t('onboarding.otp.title')}</Text>
+            <Text style={styles.stepDesc}>{t('onboarding.otp.desc', { phone: `+237 ${phone}` })}</Text>
 
             <View>
-              <Text style={styles.inputLabel}>Code à 6 chiffres</Text>
+              <Text style={styles.inputLabel}>{t('onboarding.otp.label')}</Text>
               <Animated.View style={{ transform: [{ translateX: shake }] }}>
                 <View style={[styles.inputRow, !!error && styles.inputRowError]}>
                   <TextInput
@@ -382,7 +383,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
                     autoCorrect={false}
                     autoCapitalize="none"
                     editable={!loading}
-                    accessibilityLabel="Code de vérification à 6 chiffres reçu par SMS"
+                    accessibilityLabel={t('onboarding.otp.a11yLabel')}
                   />
                 </View>
               </Animated.View>
@@ -390,7 +391,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
             </View>
 
             <Button
-              label="Vérifier"
+              label={t('onboarding.otp.btnVerify')}
               onPress={verifyOtp}
               loading={loading}
               disabled={otp.length < 6 || loading}
@@ -406,14 +407,14 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
               accessibilityRole="button"
               accessibilityLabel={
                 resendCooldown > 0
-                  ? `Renvoyer le code disponible dans ${resendCooldown} secondes`
-                  : 'Renvoyer le code par SMS'
+                  ? t('onboarding.otp.btnResendCooldown', { seconds: resendCooldown })
+                  : t('onboarding.otp.btnResend')
               }
             >
               <Text style={[styles.resendText, !resendActive && styles.resendTextDisabled]}>
                 {resendCooldown > 0
-                  ? `Renvoyer le code (${resendCooldown}s)`
-                  : 'Renvoyer le code'}
+                  ? t('onboarding.otp.btnResendCooldown', { seconds: resendCooldown })
+                  : t('onboarding.otp.btnResend')}
               </Text>
             </Pressable>
 
@@ -421,11 +422,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
               onPress={() => { setStep('phone'); setError(''); setOtp(''); }}
               style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
               accessibilityRole="button"
-              accessibilityLabel="Modifier le numéro de téléphone"
+              accessibilityLabel={t('onboarding.otp.a11yChangeNumber')}
             >
               <View style={styles.backRow}>
                 <Ionicons name="arrow-back" size={16} color={Colors.textMuted} />
-                <Text style={styles.backText}>Modifier le numéro</Text>
+                <Text style={styles.backText}>{t('onboarding.otp.btnChangeNumber')}</Text>
               </View>
             </Pressable>
           </View>
@@ -443,12 +444,10 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
         <Ionicons name="shield-checkmark-outline" size={36} color={Colors.primary} />
       </View>
       <Text style={styles.stepTitle}>
-        {pinStep === 'create' ? 'Créez votre PIN' : 'Confirmez votre PIN'}
+        {pinStep === 'create' ? t('onboarding.pin.titleCreate') : t('onboarding.pin.titleConfirm')}
       </Text>
       <Text style={styles.stepDesc}>
-        {pinStep === 'create'
-          ? 'Choisissez un code PIN à 6 chiffres'
-          : 'Saisissez à nouveau votre PIN pour confirmer'}
+        {pinStep === 'create' ? t('onboarding.pin.descCreate') : t('onboarding.pin.descConfirm')}
       </Text>
 
       <Animated.View
@@ -493,7 +492,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
               accessibilityRole={isEmpty ? undefined : 'button'}
               accessibilityLabel={
                 isDelete
-                  ? 'Supprimer le dernier chiffre'
+                  ? t('onboarding.pin.a11yDelete')
                   : isEmpty
                   ? undefined
                   : `Chiffre ${key}`
@@ -525,11 +524,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
           }}
           style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
           accessibilityRole="button"
-          accessibilityLabel="Recommencer la saisie du PIN"
+          accessibilityLabel={t('onboarding.pin.a11yRestart')}
         >
           <View style={styles.backRow}>
             <Ionicons name="arrow-back" size={16} color={Colors.textMuted} />
-            <Text style={styles.backText}>Recommencer</Text>
+            <Text style={styles.backText}>{t('onboarding.pin.btnRestart')}</Text>
           </View>
         </Pressable>
       )}
