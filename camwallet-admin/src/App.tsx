@@ -3391,37 +3391,62 @@ function SettingsPage() {
     }
   }
 
+  // Intégrations (test de connexion) + impact ANIF + historique modifs.
+  const { data: health, refetch: refetchHealth, loading: healthLoading } = useFetch(getHealthIntegrations, [])
+  const { data: anifImpact } = useFetch(getAnifStats, [])
+  const { data: history, refetch: refetchHistory } = useFetch(() => getAudit({ action: 'SETTINGS_UPDATE', take: 10 }), [])
+
   // Initialise le formulaire dès que les données arrivent
   useEffect(() => {
     if (data) setForm(data)
   }, [data])
 
-  const fields: { key: string; label: string }[] = [
-    { key: 'daily_limit_fcfa', label: 'Limite journalière (FCFA)' },
-    { key: 'monthly_limit_fcfa', label: 'Limite mensuelle (FCFA)' },
-    { key: 'p2p_fee_rate', label: 'Taux frais P2P (%)' },
-    { key: 'session_duration_minutes', label: 'Durée session (minutes)' },
-    { key: 'anif_threshold_fcfa', label: 'Seuil déclaration ANIF (FCFA)' },
-  ]
+  const num = (k: string, def = 0) => Number(form[k] ?? def)
+  const setVal = (k: string, v: string | number) => setForm((p) => ({ ...p, [k]: String(v) }))
+  const dirtyKeys = data ? Object.keys(form).filter((k) => form[k] !== data[k]) : []
+  const dirty = dirtyKeys.length > 0
 
   const handleSave = async () => {
     try {
       await updateSettings(form)
       setSaved(true)
       showToast('Paramètres sauvegardés', 'success')
+      refetchHistory()
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde', 'error')
     }
   }
 
-  const inputStyle: CSSProperties = {
-    background: C.surface, border: `1px solid ${C.border}`, color: C.text,
-    borderRadius: 8, padding: '9px 12px', fontSize: 14, width: '100%',
-  }
+  const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: '100%' }
+  const card: CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }
+  const h2: CSSProperties = { color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }
+
+  // Ligne slider : libellé + valeur + range.
+  const SliderRow = ({ k, label, min, max, step, fmt }: { k: string; label: string; min: number; max: number; step: number; fmt?: (n: number) => string }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <label style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{label}</label>
+        <span style={{ fontSize: 13, color: C.green, fontWeight: 800 }}>{fmt ? fmt(num(k)) : num(k)}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={num(k)} disabled={isReadOnly()} onChange={(e) => setVal(k, e.target.value)} style={{ width: '100%', accentColor: C.green, cursor: isReadOnly() ? 'default' : 'pointer' }} />
+    </div>
+  )
+  // Ligne toggle on/off.
+  const ToggleRow = ({ k, label, desc }: { k: string; label: string; desc: string }) => { const on = (form[k] ?? 'off') === 'on'; return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderTop: `1px solid ${C.border}` }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{label}</div>
+        <div style={{ color: C.textMuted, fontSize: 12 }}>{desc}</div>
+      </div>
+      <button disabled={isReadOnly()} onClick={() => setVal(k, on ? 'off' : 'on')} aria-label={label} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: isReadOnly() ? 'default' : 'pointer', background: on ? C.green : C.border, flexShrink: 0 }}>
+        <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: 9, background: '#fff', transition: 'left .15s' }} />
+      </button>
+    </div>
+  )}
 
   return (
-    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+    <div className="cw-page" style={{ padding: 24, paddingBottom: dirty ? 90 : 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Paramètres système</h1>
         <p style={{ color: C.textMuted, fontSize: 13 }}>Configuration globale de la plateforme CamWallet</p>
@@ -3431,32 +3456,83 @@ function SettingsPage() {
 
       {!loading && (
         <>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }}>Limites & Frais</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-              {fields.map(f => (
-                <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <label htmlFor={`setting-${f.key}`} style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>{f.label}</label>
-                  <input
-                    id={`setting-${f.key}`}
-                    value={form[f.key] ?? ''}
-                    onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    style={inputStyle}
-                    placeholder="Non défini"
-                  />
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-              <button
-                onClick={handleSave}
-                style={{ padding: '9px 22px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-              >
-                Sauvegarder
-              </button>
-              {saved && <span style={{ color: C.green, fontSize: 13, fontWeight: 600 }}>Paramètres sauvegardés</span>}
+          {/* Limites & Frais — sliders */}
+          <div style={card}>
+            <h2 style={h2}>Limites & Frais</h2>
+            {SliderRow({ k: "daily_limit_fcfa", label: "Limite journalière", min: 0, max: 2_000_000, step: 50_000, fmt: fmt })}
+            {SliderRow({ k: "monthly_limit_fcfa", label: "Limite mensuelle", min: 0, max: 20_000_000, step: 500_000, fmt: fmt })}
+            {SliderRow({ k: 'p2p_fee_rate', label: 'Taux de frais P2P', min: 0, max: 5, step: 0.1, fmt: (n: number) => n + ' %' })}
+          </div>
+
+          {/* Seuils ANIF — avec aperçu d'impact */}
+          <div style={card}>
+            <h2 style={h2}>Seuils ANIF</h2>
+            {SliderRow({ k: "anif_threshold_fcfa", label: "Seuil de déclaration ANIF", min: 100_000, max: 5_000_000, step: 50_000, fmt: fmt })}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+              <Info size={16} color={C.blue} />
+              <span style={{ fontSize: 12, color: C.textSoft }}>
+                Impact : <strong style={{ color: C.text }}>{anifImpact?.overThreshold30d ?? '—'}</strong> transaction(s) ont dépassé le seuil actuel sur les 30 derniers jours.
+              </span>
             </div>
           </div>
+
+          {/* Sécurité */}
+          <div style={card}>
+            <h2 style={h2}>Sécurité</h2>
+            {SliderRow({ k: 'session_duration_minutes', label: 'Durée de session (minutes)', min: 5, max: 120, step: 5, fmt: (n: number) => n + ' min' })}
+            {ToggleRow({ k: "require_2fa", label: "2FA obligatoire pour les administrateurs", desc: "Impose l'authentification à deux facteurs à tous les opérateurs." })}
+          </div>
+
+          {/* Notifications */}
+          <div style={card}>
+            <h2 style={h2}>Notifications (alertes email / SMS)</h2>
+            {ToggleRow({ k: "notify_kyc_submitted", label: "KYC soumis", desc: "Notifier l'équipe conformité à chaque nouveau dossier KYC." })}
+            {ToggleRow({ k: "notify_high_value", label: "Transaction à montant élevé", desc: "Alerter à chaque transaction au-dessus du seuil ANIF." })}
+            {ToggleRow({ k: "notify_failed_payment", label: "Paiement échoué", desc: "Alerter en cas d'échec de recharge/retrait opérateur." })}
+          </div>
+
+          {/* Intégrations — statut + test de connexion */}
+          <div style={card}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ ...h2, marginBottom: 0 }}>Intégrations</h2>
+              <button onClick={() => refetchHealth()} disabled={healthLoading} style={{ fontSize: 12, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>
+                {healthLoading ? 'Test…' : '↻ Tester les connexions'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+              {(health?.integrations ?? []).map((i) => { const col = HEALTH_COLOR[i.status] ?? C.textMuted; return (
+                <div key={i.name} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 5, background: col, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 13, color: C.text, fontWeight: 600 }}>{i.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: col }}>{HEALTH_LABEL[i.status] ?? i.status}{i.latency != null ? ` · ${i.latency}ms` : ''}</span>
+                </div>
+              )})}
+            </div>
+          </div>
+
+          {/* Historique des modifications */}
+          <div style={card}>
+            <h2 style={h2}>Historique des modifications</h2>
+            {(history ?? []).length === 0 && <div style={{ fontSize: 13, color: C.textMuted }}>Aucune modification enregistrée.</div>}
+            {(history ?? []).map((e) => (
+              <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+                <span style={{ width: 24, height: 24, borderRadius: 12, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.purple + '22', color: C.purple }}>{initials(e.user?.email ?? 'SYS')}</span>
+                <span style={{ color: C.textSoft, flex: 1 }}>{e.user?.email ?? 'Système'} — {e.metadata ? Object.keys((e.metadata as any).updates ?? e.metadata).join(', ') : 'paramètres'}</span>
+                <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }} title={fmtDate(e.createdAt)}>{relativeTime(e.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Barre de sauvegarde sticky */}
+          {dirty && !isReadOnly() && (
+            <div style={{ position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 40, display: 'flex', alignItems: 'center', gap: 14, background: C.card, border: `1px solid ${C.green}60`, borderRadius: 12, padding: '12px 18px', boxShadow: '0 12px 40px -12px rgba(0,0,0,.6)' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.text, fontWeight: 600 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: C.yellow }} />{dirtyKeys.length} modification(s) non sauvegardée(s)
+              </span>
+              <button onClick={() => data && setForm(data)} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
+              <button onClick={handleSave} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saved ? '✓ Sauvegardé' : 'Sauvegarder'}</button>
+            </div>
+          )}
 
           {/* Banniere mot de passe expire */}
           {data && data['admin_password_expired'] === 'true' && (
