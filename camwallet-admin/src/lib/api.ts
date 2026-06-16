@@ -620,3 +620,57 @@ export const deleteAdmin = (userId: string) =>
 // Active / désactive un opérateur admin (SUPER_ADMIN).
 export const setAdminStatus = (userId: string, active: boolean) =>
   request(`/admin/team/${userId}/status`, { method: 'PATCH', body: JSON.stringify({ active }) })
+
+// ── Support & Tickets ─────────────────────────────────────
+
+export interface SupportClient { id: string; fullName: string | null; phone: string; email?: string | null; avatarUrl?: string | null; kycStatus?: string }
+export interface SupportAssignee { id: string; fullName: string | null; email: string | null; adminRole: string | null }
+export interface SupportMessage {
+  id: string
+  ticketId: string
+  authorId: string
+  authorRole: string
+  content: string
+  internal: boolean
+  createdAt: string
+  author: { id: string; fullName: string | null; email: string | null; role?: string; adminRole?: string | null; avatarUrl?: string | null } | null
+}
+export interface SupportTicket {
+  id: string
+  reference: string
+  title: string
+  description: string
+  category: string
+  priority: string
+  status: string
+  userId: string
+  assignedTo: string | null
+  createdAt: string
+  updatedAt: string
+  resolvedAt: string | null
+  user: SupportClient | null
+  assignee: SupportAssignee | null
+  _count?: { messages: number }
+}
+export interface SupportTicketDetail extends SupportTicket {
+  messages: SupportMessage[]
+}
+export interface SupportStats {
+  open: number
+  inProgress: number
+  resolvedToday: number
+  openUnassigned: number
+  avgResolutionMs: number | null
+}
+
+export function getSupportTickets(params: { page?: number; limit?: number; status?: string; priority?: string; category?: string; assignedTo?: string; search?: string } = {}) {
+  return request<Paginated<SupportTicket>>(`/admin/support/tickets${buildQuery(params)}`)
+}
+export const getSupportTicket = (id: string) => request<SupportTicketDetail>(`/admin/support/tickets/${id}`)
+export const getSupportStats = () => request<SupportStats>('/admin/support/stats')
+export const updateSupportTicket = (id: string, dto: { status?: string; priority?: string; assignedTo?: string | null }) =>
+  request<SupportTicket>(`/admin/support/tickets/${id}`, { method: 'PATCH', body: JSON.stringify(dto) })
+export const addSupportMessage = (id: string, content: string, internal = false) =>
+  request<SupportMessage>(`/admin/support/tickets/${id}/messages`, { method: 'POST', body: JSON.stringify({ content, internal }) })
+export const createSupportTicket = (dto: { userId: string; title: string; description: string; category?: string; priority?: string; assignedTo?: string }) =>
+  request<SupportTicket>('/admin/support/tickets', { method: 'POST', body: JSON.stringify(dto) })
