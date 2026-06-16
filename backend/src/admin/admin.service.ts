@@ -163,11 +163,34 @@ export class AdminService {
     limit = 20,
     status?: TransactionStatus,
     type?: TransactionType,
+    search?: string,
+    from?: string,
+    to?: string,
   ) {
     const skip = (page - 1) * limit;
     const where: any = {};
     if (status) where.status = status;
     if (type) where.type = type;
+
+    // Recherche libre : référence, ou nom/téléphone de l'émetteur/destinataire.
+    if (search?.trim()) {
+      const q = search.trim();
+      where.OR = [
+        { reference: { contains: q, mode: 'insensitive' } },
+        { operatorRef: { contains: q, mode: 'insensitive' } },
+        { sender: { fullName: { contains: q, mode: 'insensitive' } } },
+        { sender: { phone: { contains: q } } },
+        { receiver: { fullName: { contains: q, mode: 'insensitive' } } },
+        { receiver: { phone: { contains: q } } },
+      ];
+    }
+
+    // Plage de dates (période ou personnalisée).
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from);
+      if (to) where.createdAt.lte = new Date(to);
+    }
 
     const [transactions, total] = await Promise.all([
       this.prisma.transaction.findMany({
@@ -797,19 +820,68 @@ export class AdminService {
   }
 
   // ─── Opérations OM/MoMo (Recharges & Retraits) ───────────────────────────
-  async getOperations(page = 1, limit = 20, operator?: string) {
+  async getOperations(
+    page = 1,
+    limit = 20,
+    operator?: string,
+    status?: string,
+    type?: string,
+    search?: string,
+    period?: string,
+  ) {
     const skip = (page - 1) * limit;
+
+    // Filtres de la liste paginée (recharges + retraits uniquement).
     const txWhere: any = {
       type: { in: [TransactionType.RECHARGE, TransactionType.WITHDRAWAL] },
     };
     if (operator) txWhere.operator = operator;
+    if (status) txWhere.status = status;
+    if (type === 'RECHARGE' || type === 'WITHDRAWAL') txWhere.type = type;
+    if (search?.trim()) {
+      const q = search.trim();
+      txWhere.OR = [
+        { operatorRef: { contains: q, mode: 'insensitive' } },
+        { reference: { contains: q, mode: 'insensitive' } },
+        { sender: { fullName: { contains: q, mode: 'insensitive' } } },
+        { sender: { phone: { contains: q } } },
+        { receiver: { fullName: { contains: q, mode: 'insensitive' } } },
+        { receiver: { phone: { contains: q } } },
+      ];
+    }
+    // Période de la liste : 7/30/90 jours (par défaut : pas de borne).
+    const periodDays = period === '90d' ? 90 : period === '30d' ? 30 : period === '7d' ? 7 : 0;
+    if (periodDays > 0) {
+      txWhere.createdAt = { gte: new Date(Date.now() - periodDays * 86400000) };
+    }
 
     const whWhere: any = {};
     if (operator) whWhere.operator = operator;
 
-    const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const now = Date.now();
+    const d7 = new Date(now - 7 * 86400000);
+    const d14 = new Date(now - 14 * 86400000);
+    // Début de journée UTC il y a 6 jours → fenêtre glissante de 7 jours pour le graphe.
+    const today = new Date();
+    const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const chartStart = new Date(todayUtc - 6 * 86400000);
 
-    const [operations, total, rechargeVol, withdrawalVol, webhookEvents, pendingWebhooks] = await Promise.all([
+    const completedRecharge = { type: TransactionType.RECHARGE, status: TransactionStatus.COMPLETED };
+    const completedWithdrawal = { type: TransactionType.WITHDRAWAL, status: TransactionStatus.COMPLETED };
+
+    const [
+      operations,
+      total,
+      rechargeVol,
+      withdrawalVol,
+      prevRechargeVol,
+      prevWithdrawalVol,
+      completed7d,
+      failed7d,
+      webhookEvents,
+      pendingWebhooks,
+      chartRows,
+    ] = await Promise.all([
       this.prisma.transaction.findMany({
         where: txWhere,
         skip,
@@ -824,12 +896,28 @@ export class AdminService {
       this.prisma.transaction.aggregate({
         _sum: { amount: true },
         _count: { _all: true },
-        where: { type: TransactionType.RECHARGE, status: TransactionStatus.COMPLETED, createdAt: { gte: d7 } },
+        where: { ...completedRecharge, createdAt: { gte: d7 } },
       }),
       this.prisma.transaction.aggregate({
         _sum: { amount: true },
         _count: { _all: true },
-        where: { type: TransactionType.WITHDRAWAL, status: TransactionStatus.COMPLETED, createdAt: { gte: d7 } },
+        where: { ...completedWithdrawal, createdAt: { gte: d7 } },
+      }),
+      // Fenêtre précédente (J-14 → J-7) pour calculer la tendance.
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: { ...completedRecharge, createdAt: { gte: d14, lt: d7 } },
+      }),
+      this.prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: { ...completedWithdrawal, createdAt: { gte: d14, lt: d7 } },
+      }),
+      // Taux de succès sur 7 j : complétées vs (complétées + échouées).
+      this.prisma.transaction.count({
+        where: { type: { in: [TransactionType.RECHARGE, TransactionType.WITHDRAWAL] }, status: TransactionStatus.COMPLETED, createdAt: { gte: d7 } },
+      }),
+      this.prisma.transaction.count({
+        where: { type: { in: [TransactionType.RECHARGE, TransactionType.WITHDRAWAL] }, status: TransactionStatus.FAILED, createdAt: { gte: d7 } },
       }),
       // 50 derniers événements webhook (toutes opérations MoMo)
       this.prisma.webhookEvent.findMany({
@@ -848,7 +936,43 @@ export class AdminService {
         },
       }),
       this.prisma.webhookEvent.count({ where: { ...whWhere, processed: false } }),
+      // Graphe : volume complété par jour et par type, sur 7 jours glissants.
+      this.prisma.$queryRaw<Array<{ day: Date; type: string; total: bigint }>>`
+        SELECT date_trunc('day', "createdAt")::date AS day, type,
+               COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN amount ELSE 0 END), 0)::bigint AS total
+        FROM "transactions"
+        WHERE type IN ('RECHARGE', 'WITHDRAWAL') AND "createdAt" >= ${chartStart}
+        GROUP BY day, type
+      `,
     ]);
+
+    // Reconstruit la série continue de 7 jours (jours vides à 0).
+    const keyOf = (d: Date) => d.toISOString().slice(0, 10);
+    const chartMap = new Map<string, { recharge: number; withdrawal: number }>();
+    for (const r of chartRows) {
+      const k = keyOf(new Date(r.day));
+      const e = chartMap.get(k) ?? { recharge: 0, withdrawal: 0 };
+      if (r.type === 'RECHARGE') e.recharge = Number(r.total);
+      else if (r.type === 'WITHDRAWAL') e.withdrawal = Number(r.total);
+      chartMap.set(k, e);
+    }
+    const chart = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(chartStart.getTime() + i * 86400000);
+      const k = keyOf(d);
+      const e = chartMap.get(k) ?? { recharge: 0, withdrawal: 0 };
+      chart.push({ date: k, recharge: e.recharge, withdrawal: e.withdrawal });
+    }
+
+    // Tendance en % (volume 7 j vs 7 j précédents) ; null si pas de base.
+    const trend = (cur: bigint, prev: bigint): number | null => {
+      const p = Number(prev);
+      if (p <= 0) return null;
+      return Math.round(((Number(cur) - p) / p) * 100);
+    };
+
+    const completedTotal = completed7d + failed7d;
+    const successRate = completedTotal > 0 ? Math.round((completed7d / completedTotal) * 100) : null;
 
     return {
       data: operations,
@@ -858,10 +982,14 @@ export class AdminService {
       stats: {
         rechargeCount: rechargeVol._count._all,
         rechargeTotal: rechargeVol._sum.amount ?? 0n,
+        rechargeTrend: trend(rechargeVol._sum.amount ?? 0n, prevRechargeVol._sum.amount ?? 0n),
         withdrawalCount: withdrawalVol._count._all,
         withdrawalTotal: withdrawalVol._sum.amount ?? 0n,
+        withdrawalTrend: trend(withdrawalVol._sum.amount ?? 0n, prevWithdrawalVol._sum.amount ?? 0n),
         pendingWebhooks,
+        successRate,
       },
+      chart,
       webhookEvents,
     };
   }
@@ -872,13 +1000,17 @@ export class AdminService {
       select: { id: true, status: true, type: true, retryCount: true },
     });
     if (!tx) throw new NotFoundException('Opération introuvable');
-    if (tx.status !== TransactionStatus.PENDING) {
-      throw new NotFoundException('Seules les opérations PENDING peuvent être relancées');
+    if (tx.status !== TransactionStatus.PENDING && tx.status !== TransactionStatus.FAILED) {
+      throw new NotFoundException('Seules les opérations PENDING ou FAILED peuvent être relancées');
     }
 
     await this.prisma.transaction.update({
       where: { id },
-      data: { retryCount: { increment: 1 } },
+      // Une opération échouée repart en attente d'un nouveau callback opérateur.
+      data: {
+        retryCount: { increment: 1 },
+        ...(tx.status === TransactionStatus.FAILED ? { status: TransactionStatus.PENDING, failureReason: null } : {}),
+      },
     });
 
     await this.writeAudit(adminId, 'OPERATION_RETRY', `Transaction:${id}`, {

@@ -83,8 +83,11 @@ export class AdminController {
     @Query('limit') limit = 20,
     @Query('status') status?: TransactionStatus,
     @Query('type') type?: TransactionType,
+    @Query('search') search?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
-    return this.adminService.getTransactions(+page, +limit, status, type);
+    return this.adminService.getTransactions(+page, +limit, status, type, search, from, to);
   }
 
   @Patch('users/:id/status')
@@ -212,8 +215,12 @@ export class AdminController {
     @Query('page') page = 1,
     @Query('limit') limit = 20,
     @Query('operator') operator?: string,
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+    @Query('search') search?: string,
+    @Query('period') period?: string,
   ) {
-    return this.adminService.getOperations(+page, +limit, operator);
+    return this.adminService.getOperations(+page, +limit, operator, status, type, search, period);
   }
 
   @Post('operations/:id/retry')
