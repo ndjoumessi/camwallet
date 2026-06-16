@@ -349,9 +349,10 @@ export class AdminService {
         { action: { startsWith: 'KYC_' } },
         { action: { startsWith: 'ANIF_' } },
         { action: { startsWith: 'OPERATION_' } },
+        { action: { startsWith: 'TRANSACTION_' } },
+        { action: { startsWith: 'ADMIN_' } },
         { action: 'USER_PIN_RESET' },
         { action: 'SETTINGS_UPDATE' },
-        { action: 'ANIF_CASE_CLOSE' },
       ];
     }
 
