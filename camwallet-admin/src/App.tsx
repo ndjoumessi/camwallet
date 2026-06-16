@@ -2630,6 +2630,16 @@ export default function App() {
     return () => window.removeEventListener('cw-session-expired', onExpired)
   }, [handleLogout])
 
+  // RBAC : après connexion (le rôle n'est connu qu'une fois authentifié), si la
+  // page active n'est pas autorisée pour le rôle, basculer sur la première page
+  // permise. Évite qu'un admin restreint atterrisse sur une page masquée.
+  useEffect(() => {
+    if (authed && !canAccess(adminRole, activePage)) {
+      const first = NAV.find((n) => canAccess(adminRole, n.id))
+      if (first) setActivePage(first.id)
+    }
+  }, [authed, adminRole, activePage])
+
   // ── SSE global : toasts pour les événements temps réel ──
   const handleGlobalEvent = useCallback((event: { type: string; payload?: any }) => {
     if (event.type === 'transaction') showToast('Nouvelle transaction reçue')
@@ -2643,8 +2653,12 @@ export default function App() {
     return <LoginPage onSuccess={() => setAuthed(true)} />
   }
 
+  // Page effective : si la page active n'est pas autorisée (ex. juste après une
+  // connexion restreinte), on rend la première page permise — pas de flash.
+  const effectivePage = canAccess(adminRole, activePage) ? activePage : (visibleNav[0]?.id ?? activePage)
+
   const renderPage = () => {
-    switch (activePage) {
+    switch (effectivePage) {
       case 'dashboard': return <DashboardPage onNavigate={setActivePage} />
       case 'alerts': return <AlertsPage />
       case 'users': return <UsersPage />
@@ -2735,7 +2749,7 @@ export default function App() {
         {/* Topbar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 20px', borderBottom: `1px solid ${C.border}`, background: C.surface, flexShrink: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>
-            {NAV.some(n => n.id === activePage) ? t(`nav.${activePage}`) : t('nav.dashboard')}
+            {NAV.some(n => n.id === effectivePage) ? t(`nav.${effectivePage}`) : t('nav.dashboard')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <LangToggle />
