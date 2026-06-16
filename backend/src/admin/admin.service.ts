@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
 import { ADMIN_ROLES } from './dto/set-admin-role.dto';
+import * as bcrypt from 'bcryptjs';
 
 const ANIF_RISK_HIGH = 50_000_000n;  // 500 000 FCFA en centimes
 const ANIF_RISK_MED  = 5_000_000n;   //  50 000 FCFA en centimes
@@ -1212,6 +1213,30 @@ export class AdminService {
       },
     });
     return updated;
+  }
+
+  // Définit le mot de passe de connexion par-utilisateur d'un admin (SUPER_ADMIN
+  // uniquement). Le mot de passe est haché en bcrypt ; jamais renvoyé.
+  async setAdminPassword(actorId: string, userId: string, password: string) {
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { adminRole: true } });
+    if (actor?.adminRole !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Seul un SUPER_ADMIN peut définir un mot de passe');
+    }
+    const target = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (target?.role !== 'ADMIN') {
+      throw new BadRequestException('La cible n\'est pas un compte administrateur');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    void this.prisma.auditLog.create({
+      data: {
+        userId: actorId,
+        action: 'ADMIN_PASSWORD_SET',
+        metadata: { targetId: userId } as any,
+      },
+    });
+    return { ok: true };
   }
 
   // ─── Export CSV ──────────────────────────────────────────────────────────

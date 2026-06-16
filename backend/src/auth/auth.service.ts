@@ -184,6 +184,11 @@ export class AuthService {
     const passwordMatch = this.safeEqual(dto.password, adminPassword);
 
     if (!emailMatch || !passwordMatch) {
+      // Repli : connexion par-utilisateur d'un admin en base (email + mot de
+      // passe propre). Le super-admin configuré garde sa connexion via la config.
+      const perUser = await this.loginAdminUser(dto);
+      if (perUser) return perUser;
+
       const count = (entry?.count ?? 0) + 1;
       const lockedUntil =
         count >= ADMIN_MAX_ATTEMPTS ? Date.now() + ADMIN_LOCK_DURATION_MS : 0;
@@ -236,6 +241,56 @@ export class AuthService {
     return this.generateTokens(sub, 'ADMIN', { adminCredHash: this.adminCredHash(), adminRole });
   }
 
+  // Connexion par-utilisateur d'un admin disposant d'un mot de passe propre
+  // (User.passwordHash). Renvoie null si aucun compte admin correspondant n'a de
+  // mot de passe défini — le caller traite alors « identifiants invalides ».
+  // Le token émis porte `adminRole` + `tv` (pas d'adminCredHash) : le refresh
+  // est donc validé via tokenVersion en base, comme pour un utilisateur normal.
+  private async loginAdminUser(dto: LoginAdminDto) {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: { equals: dto.email, mode: 'insensitive' },
+        role: 'ADMIN',
+        deletedAt: null,
+        passwordHash: { not: null },
+      },
+    });
+    if (!user) return null;
+
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      throw new UnauthorizedException(`Compte bloqué. Réessayez dans ${minutes} minute(s).`);
+    }
+
+    const valid = await bcrypt.compare(dto.password, user.passwordHash!);
+    if (!valid) {
+      const attempts = user.pinAttempts + 1;
+      if (attempts >= MAX_PIN_ATTEMPTS) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { pinAttempts: 0, lockedUntil: new Date(Date.now() + LOCK_DURATION_MS) },
+        });
+        throw new UnauthorizedException('Trop de tentatives. Compte bloqué 30 minutes.');
+      }
+      await this.prisma.user.update({ where: { id: user.id }, data: { pinAttempts: attempts } });
+      throw new UnauthorizedException('Identifiants administrateur invalides');
+    }
+
+    // 2FA TOTP (si activée sur ce compte admin).
+    if (user.totpEnabled) {
+      if (!dto.totpCode) return { requiresTOTP: true };
+      const ok = authenticator.verify({ token: dto.totpCode, secret: user.totpSecret! });
+      if (!ok) throw new UnauthorizedException('Code TOTP invalide ou expiré');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+    });
+    this.logger.log(`Connexion admin par-utilisateur : ${user.email}`);
+    return this.generateTokens(user.id, 'ADMIN', { adminRole: user.adminRole, tv: user.tokenVersion });
+  }
+
   // Échange un refresh token valide contre une nouvelle paire de tokens.
   async refresh(refreshToken: string) {
     if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
@@ -250,8 +305,11 @@ export class AuthService {
 
     // L'admin n'existe pas en base : on régénère directement ses tokens, mais
     // seulement si les identifiants admin n'ont pas changé depuis l'émission.
-    if (payload.role === 'ADMIN') {
-      if (!payload.adminCredHash || payload.adminCredHash !== this.adminCredHash()) {
+    // Admin configuré (token portant adminCredHash) : revalider l'empreinte des
+    // identifiants de config. Les admins par-utilisateur n'ont pas d'adminCredHash
+    // et tombent dans la branche base ci-dessous (validation par tokenVersion).
+    if (payload.role === 'ADMIN' && payload.adminCredHash) {
+      if (payload.adminCredHash !== this.adminCredHash()) {
         throw new UnauthorizedException('Session administrateur expirée');
       }
       return this.generateTokens(payload.sub, 'ADMIN', { adminCredHash: this.adminCredHash(), adminRole: payload.adminRole ?? 'SUPER_ADMIN' });
@@ -265,7 +323,10 @@ export class AuthService {
       throw new UnauthorizedException('Session expirée — reconnectez-vous');
     }
 
-    return this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
+    // Préserver le sous-rôle admin pour les admins par-utilisateur.
+    const extra: Record<string, any> = { tv: user.tokenVersion };
+    if (user.role === 'ADMIN') extra.adminRole = user.adminRole ?? null;
+    return this.generateTokens(user.id, user.role, extra);
   }
 
   // ─── Déconnexion (invalide les refresh tokens en cours) ───────────────────
