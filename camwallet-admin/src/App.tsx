@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import LoginPage from './LoginPage'
 import {
-  hasSession, logout, toFcfa, SessionExpiredError,
+  hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getTransactions, getTimeseries, AdminTransaction,
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
@@ -2429,13 +2429,14 @@ function SettingsPage() {
 }
 
 function TeamPage() {
-  const { data: members, loading, error } = useFetch(getAdminTeam, [])
+  const { data: members, loading, error, refetch } = useFetch(getAdminTeam, [])
   const toast = useToast()
 
   const handleRoleChange = async (userId: string, role: string) => {
     try {
       await setAdminRole(userId, role || null)
-      toast('Role mis a jour', 'success')
+      toast('Rôle mis à jour', 'success')
+      refetch()
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Erreur', 'error')
     }
@@ -2464,16 +2465,22 @@ function TeamPage() {
                   <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}</td>
                   <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
                   <td style={{ padding: '12px 14px' }}>
-                    <select
-                      value={m.adminRole ?? ''}
-                      onChange={e => handleRoleChange(m.id, e.target.value)}
-                      style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
-                    >
-                      <option value="">Aucun</option>
-                      <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                      <option value="ANALYST">ANALYST</option>
-                      <option value="SUPPORT">SUPPORT</option>
-                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: (ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted) + '20', color: ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted }}>
+                        {m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : 'Aucun'}
+                      </span>
+                      <select
+                        value={m.adminRole ?? ''}
+                        onChange={e => handleRoleChange(m.id, e.target.value)}
+                        title="Modifier le rôle"
+                        style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
+                      >
+                        <option value="">Aucun</option>
+                        {Object.keys(ROLE_LABELS).map((r) => (
+                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                        ))}
+                      </select>
+                    </div>
                   </td>
                   <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(m.createdAt)}</td>
                 </tr>
@@ -2507,6 +2514,31 @@ const NAV: { id: string; icon: LucideIcon; group: string; badge?: string }[] = [
 ]
 
 const GROUPS = ['overview', 'users', 'finances', 'compliance']
+
+// ── RBAC : pages visibles selon le sous-rôle admin (claim JWT adminRole) ──
+// '*' = toutes les pages. Un rôle inconnu/absent retombe sur l'accès complet
+// (le compte admin configuré est SUPER_ADMIN ; le backend garde l'autorité).
+const ROLE_PAGES: Record<string, string[] | '*'> = {
+  SUPER_ADMIN: '*',
+  ADMIN: ['dashboard', 'alerts', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
+  COMPLIANCE_OFFICER: ['anif', 'audit'],
+  SUPPORT_OPERATOR: ['users', 'transactions'],
+  FINANCE_OFFICER: ['finance', 'operations'],
+}
+const ROLE_LABELS: Record<string, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  ADMIN: 'Admin',
+  COMPLIANCE_OFFICER: 'Conformité',
+  SUPPORT_OPERATOR: 'Support',
+  FINANCE_OFFICER: 'Finance',
+}
+const ROLE_COLORS: Record<string, string> = {
+  SUPER_ADMIN: C.green, ADMIN: C.blue, COMPLIANCE_OFFICER: C.red, SUPPORT_OPERATOR: C.yellow, FINANCE_OFFICER: C.purple,
+}
+function canAccess(role: string | null, page: string): boolean {
+  const allowed = ROLE_PAGES[role ?? ''] ?? '*'
+  return allowed === '*' || allowed.includes(page)
+}
 
 // Sélecteur de langue FR | EN (header). Persiste le choix dans localStorage
 // (clé « lang », lue au démarrage par src/i18n.ts) et bascule i18next à chaud.
@@ -2546,7 +2578,14 @@ function LangToggle() {
 export default function App() {
   const { t } = useTranslation()
   const [authed, setAuthed] = useState(hasSession())
-  const [activePage, setActivePage] = useState('dashboard')
+  // Sous-rôle admin (RBAC) lu depuis le token ; recalculé à chaque (dé)connexion.
+  const adminRole = useMemo(() => getAdminRole(), [authed])
+  const visibleNav = useMemo(() => NAV.filter((n) => canAccess(adminRole, n.id)), [adminRole])
+  // Page par défaut = première page autorisée pour le rôle.
+  const [activePage, setActivePage] = useState(() => {
+    const role = getAdminRole()
+    return NAV.find((n) => canAccess(role, n.id))?.id ?? 'dashboard'
+  })
   const [refreshNonce, setRefreshNonce] = useState(0)
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -2620,12 +2659,12 @@ export default function App() {
 
         {/* Nav */}
         <nav style={{ padding: '12px 8px', flex: 1, overflowY: 'auto' }}>
-          {GROUPS.map(group => (
+          {GROUPS.filter(group => visibleNav.some(n => n.group === group)).map(group => (
             <div key={group}>
               <div className="cw-compact-hide" style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: C.textMuted, textTransform: 'uppercase', padding: '8px 8px 4px' }}>
                 {t(`nav.group_${group}`)}
               </div>
-              {NAV.filter(n => n.group === group).map(item => {
+              {visibleNav.filter(n => n.group === group).map(item => {
                 const Icon = item.icon
                 const active = activePage === item.id
                 return (
@@ -2692,8 +2731,18 @@ export default function App() {
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'none', color: C.textSoft }}>
               <LogOut size={14} /> <span className="cw-topbar-label">{t('topbar.logout')}</span>
             </button>
-            <div style={{ width: 34, height: 34, borderRadius: 17, background: C.green + '20', border: `2px solid ${C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: C.green, flexShrink: 0 }}>
-              A
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="cw-compact-hide" style={{ textAlign: 'right', lineHeight: 1.25 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Admin</div>
+                {adminRole && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[adminRole] ?? C.textMuted }}>
+                    {ROLE_LABELS[adminRole] ?? adminRole}
+                  </div>
+                )}
+              </div>
+              <div style={{ width: 34, height: 34, borderRadius: 17, background: (ROLE_COLORS[adminRole ?? ''] ?? C.green) + '20', border: `2px solid ${ROLE_COLORS[adminRole ?? ''] ?? C.green}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: ROLE_COLORS[adminRole ?? ''] ?? C.green, flexShrink: 0 }}>
+                A
+              </div>
             </div>
           </div>
         </div>
