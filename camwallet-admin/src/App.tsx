@@ -11,7 +11,7 @@ import {
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
-  Settings, Shield, Loader2,
+  Settings, Shield, Loader2, Plus,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -28,6 +28,7 @@ import {
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
   AdminTeamMember, getAdminTeam, setAdminRole, setAdminPassword,
+  createAdminOperator, deleteAdmin, setAdminStatus, getAdminId,
   getSseTicket, API_ORIGIN,
 } from './lib/api'
 
@@ -899,7 +900,8 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
               )}
             </div>
 
-            {/* Actions */}
+            {/* Actions (masquées en lecture seule) */}
+            {!isReadOnly() && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
               {u.role !== 'ADMIN' && (u.status === 'LOCKED' ? (
                 <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'), 'Compte débloqué')}
@@ -929,6 +931,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
                 </>
               )}
             </div>
+            )}
 
             {/* Document KYC */}
             <h2 style={{ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Document KYC</h2>
@@ -1182,7 +1185,7 @@ function UsersPage() {
                       style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                       Détails
                     </button>
-                    {u.role === 'ADMIN' ? null : acting === u.id ? (
+                    {!isReadOnly() && (u.role === 'ADMIN' ? null : acting === u.id ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.textMuted, padding: '4px 10px' }}>
                         <Loader2 size={12} className="cw-spin" /> En cours…
                       </span>
@@ -1204,7 +1207,7 @@ function UsersPage() {
                         style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
                         Bloquer
                       </button>
-                    )}
+                    ))}
                   </div>
                 </td>
               </tr>
@@ -1577,8 +1580,8 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
             <pre style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 11.5, color: C.textSoft, overflowX: 'auto', margin: 0 }}>{JSON.stringify(tx, null, 2)}</pre>
           </div>
 
-          {/* Actions */}
-          {canRetry && (
+          {/* Actions (masquées en lecture seule) */}
+          {!isReadOnly() && canRetry && (
             <button
               className="cw-btn"
               onClick={handleRetry}
@@ -2428,92 +2431,258 @@ function SettingsPage() {
   )
 }
 
+// Génère un mot de passe temporaire fort (12 caractères, sans ambigus).
+function genTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  const sym = '!@#$%&*'
+  const arr = new Uint32Array(12)
+  crypto.getRandomValues(arr)
+  let p = ''
+  for (let i = 0; i < 11; i++) p += chars[arr[i] % chars.length]
+  return p + sym[arr[11] % sym.length]
+}
+
+// Modal de création d'un opérateur admin (SUPER_ADMIN).
+function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const toast = useToast()
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [adminRole, setRole] = useState('SUPPORT_OPERATOR')
+  const [password, setPassword] = useState(() => genTempPassword())
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    if (fullName.trim().length < 2) { toast('Nom complet requis', 'error'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast('Email invalide', 'error'); return }
+    if (password.length < 8) { toast('Mot de passe trop court (min. 8)', 'error'); return }
+    setBusy(true)
+    try {
+      await createAdminOperator({ fullName: fullName.trim(), email: email.trim(), adminRole, password })
+      toast('Opérateur créé — communiquez-lui ses identifiants', 'success')
+      onCreated(); onClose()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+    } finally { setBusy(false) }
+  }
+
+  const field: CSSProperties = { width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '10px 12px', fontSize: 13, outline: 'none' }
+  const labelStyle: CSSProperties = { fontSize: 11, color: C.textSoft, fontWeight: 600, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Ajouter un opérateur</h2>
+          <button onClick={onClose} className="cw-iconbtn" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex' }}><X size={18} /></button>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Prénom &amp; nom</label>
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jean Mballa" style={field} autoFocus />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Email</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jean@camwallet.cm" style={field} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Rôle</label>
+          <select value={adminRole} onChange={(e) => setRole(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
+            {ROLE_ORDER.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]} — {ROLE_DESCRIPTIONS[r]}</option>)}
+          </select>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[adminRole]}</div>
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <label style={labelStyle}>Mot de passe temporaire</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={password} onChange={(e) => setPassword(e.target.value)} style={{ ...field, fontFamily: 'monospace', letterSpacing: 1 }} />
+            <button onClick={() => setPassword(genTempPassword())} title="Régénérer" className="cw-btn" style={{ flexShrink: 0, padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.surface, color: C.textSoft, cursor: 'pointer' }}><RefreshCw size={15} /></button>
+          </div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>À communiquer à l'opérateur ; il pourra le changer ensuite.</div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} className="cw-btn" style={{ padding: '9px 16px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Annuler</button>
+          <button onClick={submit} disabled={busy} className="cw-btn" style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? .6 : 1 }}>Créer l'opérateur</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TeamPage() {
+  const { t } = useTranslation()
   const { data: members, loading, error, refetch } = useFetch(getAdminTeam, [])
   const toast = useToast()
+  const myId = getAdminId()
+  const isSuper = (() => { const r = getAdminRole(); return !r || r === 'SUPER_ADMIN' })()
+  const [showAdd, setShowAdd] = useState(false)
+  const [showPerms, setShowPerms] = useState(false)
+  const list = members ?? []
+
+  const todayStr = new Date().toDateString()
+  const connectedToday = list.filter((m) => m.lastLoginAt && new Date(m.lastLoginAt).toDateString() === todayStr).length
+  const activeRoles = new Set(list.map((m) => m.adminRole).filter(Boolean)).size
+  const lastActivity = list.map((m) => m.lastLoginAt).filter(Boolean).sort().slice(-1)[0] as string | undefined
 
   const handleRoleChange = async (userId: string, role: string) => {
-    try {
-      await setAdminRole(userId, role || null)
-      toast('Rôle mis à jour', 'success')
-      refetch()
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur', 'error')
-    }
+    try { await setAdminRole(userId, role || null); toast('Rôle mis à jour', 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
   }
-
-  const handleSetPassword = async (userId: string, email: string | null) => {
-    const pwd = window.prompt(`Nouveau mot de passe pour ${email ?? 'cet admin'} (min. 8 caractères) :`)
+  const handleSetPassword = async (m: AdminTeamMember) => {
+    const pwd = window.prompt(`Nouveau mot de passe pour ${m.email ?? 'cet admin'} (min. 8) :`, genTempPassword())
     if (pwd == null) return
     if (pwd.length < 8) { toast('Mot de passe trop court (min. 8)', 'error'); return }
-    try {
-      await setAdminPassword(userId, pwd)
-      toast('Mot de passe défini — cet admin peut se connecter', 'success')
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur', 'error')
-    }
+    try { await setAdminPassword(m.id, pwd); toast('Mot de passe défini', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
   }
+  const handleToggleStatus = async (m: AdminTeamMember) => {
+    const activate = m.status !== 'ACTIVE'
+    try { await setAdminStatus(m.id, activate); toast(activate ? 'Compte réactivé' : 'Compte désactivé', 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+  }
+  const handleDelete = async (m: AdminTeamMember) => {
+    if (!window.confirm(`Supprimer définitivement ${m.fullName ?? m.email ?? 'cet opérateur'} ?`)) return
+    try { await deleteAdmin(m.id); toast('Opérateur supprimé', 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+  }
+
+  const stats: { label: string; value: string; icon: LucideIcon; color: string }[] = [
+    { label: 'Total opérateurs', value: String(list.length), icon: UsersIcon, color: C.green },
+    { label: 'Connectés aujourd\'hui', value: String(connectedToday), icon: Activity, color: C.blue },
+    { label: 'Rôles actifs', value: String(activeRoles), icon: Shield, color: C.purple },
+    { label: 'Dernière activité', value: lastActivity ? fmtDate(lastActivity) : '—', icon: Clock, color: C.yellow },
+  ]
+  const iconBtn = (color: string): CSSProperties => ({ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, color, cursor: 'pointer' })
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Equipe Admin</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Gestion des roles de l'equipe d'administration</p>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 22 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Équipe Administration</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>Opérateurs, rôles et accès du back-office</p>
+        </div>
+        {isSuper && (
+          <button onClick={() => setShowAdd(true)} className="cw-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            <Plus size={16} /> Ajouter un opérateur
+          </button>
+        )}
       </div>
+
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 22 }}>
+        {stats.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 19, fontWeight: 900, color: C.text }}>{s.value}</div>
+          </div>
+        )})}
+      </div>
+
       {(loading || error) && <StateRow loading={loading} error={error} />}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+
+      {/* Table opérateurs */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 20 }}>
         <div className="cw-tablewrap">
-          <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Nom', 'Email', 'Role', "Date d'ajout", 'Actions'].map(h => (
+                {['Opérateur', 'Email', 'Rôle', 'Dernière connexion', 'Statut', 'Actions'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {(members ?? []).map((m: AdminTeamMember) => (
-                <tr key={m.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
-                  <td style={{ padding: '12px 14px', color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}</td>
-                  <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
-                  <td style={{ padding: '12px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: (ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted) + '20', color: ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted }}>
-                        {m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : 'Aucun'}
+              {list.map((m) => {
+                const color = ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted
+                const active = m.status === 'ACTIVE'
+                const isSelf = m.id === myId
+                return (
+                  <tr key={m.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={{ padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ width: 32, height: 32, borderRadius: 16, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, background: color + '22', color }}>{initials(m.fullName ?? m.email)}</span>
+                        <span style={{ color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}{isSelf && <span style={{ color: C.textMuted, fontWeight: 400, fontSize: 11 }}> (vous)</span>}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: color + '20', color }}>{m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : 'Aucun'}</span>
+                        {isSuper && (
+                          <select value={m.adminRole ?? ''} onChange={(e) => handleRoleChange(m.id, e.target.value)} title="Modifier le rôle" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>
+                            <option value="">Aucun</option>
+                            {ROLE_ORDER.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{m.lastLoginAt ? fmtDate(m.lastLoginAt) : 'Jamais'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: active ? C.green : C.red }}>
+                        <span style={{ width: 7, height: 7, borderRadius: 4, background: active ? C.green : C.red }} />{active ? 'Actif' : 'Inactif'}
                       </span>
-                      <select
-                        value={m.adminRole ?? ''}
-                        onChange={e => handleRoleChange(m.id, e.target.value)}
-                        title="Modifier le rôle"
-                        style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}
-                      >
-                        <option value="">Aucun</option>
-                        {Object.keys(ROLE_LABELS).map((r) => (
-                          <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </td>
-                  <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(m.createdAt)}</td>
-                  <td style={{ padding: '12px 14px' }}>
-                    <button
-                      className="cw-btn"
-                      onClick={() => handleSetPassword(m.id, m.email)}
-                      title="Définir un mot de passe de connexion"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '5px 10px', border: `1px solid ${C.border}`, borderRadius: 6, cursor: 'pointer', background: C.surface, color: C.textSoft, whiteSpace: 'nowrap' }}
-                    >
-                      <Lock size={13} /> Mot de passe
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => handleSetPassword(m)} title="Définir / réinitialiser le mot de passe" style={iconBtn(C.textSoft)}><Lock size={14} /></button>
+                        {isSuper && !isSelf && (
+                          <button onClick={() => handleToggleStatus(m)} title={active ? 'Désactiver' : 'Réactiver'} style={iconBtn(active ? C.yellow : C.green)}>{active ? <WifiOff size={14} /> : <Wifi size={14} />}</button>
+                        )}
+                        {isSuper && !isSelf && (
+                          <button onClick={() => handleDelete(m)} title="Supprimer" style={iconBtn(C.red)}><X size={14} /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
-        {!loading && !error && (!members || members.length === 0) && (
-          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun membre dans l'équipe</div>
+        {!loading && !error && list.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun opérateur</div>
         )}
       </div>
+
+      {/* Permissions par rôle (dépliable) */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        <button onClick={() => setShowPerms((v) => !v)} className="cw-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', color: C.text, fontWeight: 700, fontSize: 14 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Shield size={16} color={C.green} /> Permissions par rôle</span>
+          {showPerms ? <ChevronUp size={18} color={C.textMuted} /> : <ChevronDown size={18} color={C.textMuted} />}
+        </button>
+        {showPerms && (
+          <div className="cw-tablewrap" style={{ borderTop: `1px solid ${C.border}` }}>
+            <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: C.surface }}>
+                  <th style={{ textAlign: 'left', padding: '10px 14px', color: C.textMuted, fontWeight: 600 }}>Rôle</th>
+                  {NAV.map((n) => <th key={n.id} style={{ padding: '10px 8px', color: C.textMuted, fontWeight: 600, fontSize: 11 }}>{t(`nav.${n.id}`)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {ROLE_ORDER.map((r) => (
+                  <tr key={r} style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: ROLE_COLORS[r] + '20', color: ROLE_COLORS[r] }}>{ROLE_LABELS[r]}</span>
+                    </td>
+                    {NAV.map((n) => (
+                      <td key={n.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
+                        {canAccess(r, n.id) ? <Check size={15} color={C.green} /> : <span style={{ color: C.textMuted, opacity: .4 }}>—</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {showAdd && <AddOperatorModal onClose={() => setShowAdd(false)} onCreated={refetch} />}
     </div>
   )
 }
@@ -2546,20 +2715,42 @@ const ROLE_PAGES: Record<string, string[] | '*'> = {
   COMPLIANCE_OFFICER: ['anif', 'audit'],
   SUPPORT_OPERATOR: ['users', 'transactions'],
   FINANCE_OFFICER: ['finance', 'operations'],
+  KYC_OFFICER: ['kyc'],
 }
+// Ordre d'affichage stable des rôles (selects, légendes, matrice).
+const ROLE_ORDER = ['SUPER_ADMIN', 'ADMIN', 'COMPLIANCE_OFFICER', 'SUPPORT_OPERATOR', 'FINANCE_OFFICER', 'KYC_OFFICER']
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
   ADMIN: 'Admin',
   COMPLIANCE_OFFICER: 'Conformité',
   SUPPORT_OPERATOR: 'Support',
   FINANCE_OFFICER: 'Finance',
+  KYC_OFFICER: 'KYC',
 }
+// Couleurs de badge par rôle (hex exacts demandés).
 const ROLE_COLORS: Record<string, string> = {
-  SUPER_ADMIN: C.green, ADMIN: C.blue, COMPLIANCE_OFFICER: C.red, SUPPORT_OPERATOR: C.yellow, FINANCE_OFFICER: C.purple,
+  SUPER_ADMIN: '#00C896',
+  ADMIN: '#3B82F6',
+  COMPLIANCE_OFFICER: '#8B5CF6',
+  SUPPORT_OPERATOR: '#F59E0B',
+  FINANCE_OFFICER: '#06B6D4',
+  KYC_OFFICER: '#EC4899',
+}
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  SUPER_ADMIN: 'Accès total, gestion de l\'équipe',
+  ADMIN: 'Accès total sauf équipe et paramètres critiques',
+  COMPLIANCE_OFFICER: 'Conformité ANIF + Journal Audit uniquement',
+  SUPPORT_OPERATOR: 'Utilisateurs + Transactions (lecture seule)',
+  FINANCE_OFFICER: 'Finances + Recharges & Retraits',
+  KYC_OFFICER: 'Vérification KYC uniquement',
 }
 function canAccess(role: string | null, page: string): boolean {
   const allowed = ROLE_PAGES[role ?? ''] ?? '*'
   return allowed === '*' || allowed.includes(page)
+}
+// SUPPORT_OPERATOR : accès en lecture seule (aucune action sur Utilisateurs/Transactions).
+function isReadOnly(): boolean {
+  return getAdminRole() === 'SUPPORT_OPERATOR'
 }
 
 // Sélecteur de langue FR | EN (header). Persiste le choix dans localStorage

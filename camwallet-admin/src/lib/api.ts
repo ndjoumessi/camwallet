@@ -26,15 +26,22 @@ const getRefresh = () => localStorage.getItem(REFRESH_KEY)
 
 // Décode le sous-rôle admin (claim `adminRole`) du token d'accès, pour le RBAC
 // du dashboard (affichage/masquage des pages). Renvoie null si absent/illisible.
-export function getAdminRole(): string | null {
+function decodeAccess(): Record<string, any> | null {
   const token = getAccess()
   if (!token) return null
   try {
     const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
-    return JSON.parse(decodeURIComponent(escape(atob(part)))).adminRole ?? null
+    return JSON.parse(decodeURIComponent(escape(atob(part))))
   } catch {
     return null
   }
+}
+export function getAdminRole(): string | null {
+  return decodeAccess()?.adminRole ?? null
+}
+// Id de l'admin connecté (claim `sub`) — pour masquer les actions sur soi-même.
+export function getAdminId(): string | null {
+  return decodeAccess()?.sub ?? null
 }
 
 // Erreur levée quand la session n'est plus valide → l'app redirige vers le login.
@@ -513,10 +520,27 @@ export const getSseTicket = () => request<{ ticket: string }>('/admin/sse-ticket
 
 // ── Équipe admin ──────────────────────────────────────────
 
-export interface AdminTeamMember { id: string; email: string | null; fullName: string | null; adminRole: string | null; createdAt: string }
+export interface AdminTeamMember {
+  id: string
+  email: string | null
+  fullName: string | null
+  adminRole: string | null
+  status: string
+  lastLoginAt: string | null
+  createdAt: string
+}
 export const getAdminTeam = () => request<AdminTeamMember[]>('/admin/team')
 export const setAdminRole = (userId: string, adminRole: string | null) =>
   request(`/admin/team/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ adminRole }) })
 // Définit le mot de passe de connexion par-utilisateur d'un admin (SUPER_ADMIN).
 export const setAdminPassword = (userId: string, password: string) =>
   request(`/admin/team/${userId}/password`, { method: 'PATCH', body: JSON.stringify({ password }) })
+// Crée un opérateur admin (SUPER_ADMIN).
+export const createAdminOperator = (body: { fullName: string; email: string; adminRole: string; password: string }) =>
+  request<AdminTeamMember>('/admin/team', { method: 'POST', body: JSON.stringify(body) })
+// Supprime un opérateur admin (SUPER_ADMIN).
+export const deleteAdmin = (userId: string) =>
+  request(`/admin/team/${userId}`, { method: 'DELETE' })
+// Active / désactive un opérateur admin (SUPER_ADMIN).
+export const setAdminStatus = (userId: string, active: boolean) =>
+  request(`/admin/team/${userId}/status`, { method: 'PATCH', body: JSON.stringify({ active }) })
