@@ -58,7 +58,8 @@
       ],
       "expo-asset",
       "expo-notifications",
-      "expo-localization"
+      "expo-localization",
+      "expo-font"
     ],
     "scheme": "camwallet",
     "experiments": {
