@@ -2486,10 +2486,31 @@ function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Rôle</label>
-          <select value={adminRole} onChange={(e) => setRole(e.target.value)} style={{ ...field, cursor: 'pointer' }}>
-            {ROLE_ORDER.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]} — {ROLE_DESCRIPTIONS[r]}</option>)}
-          </select>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[adminRole]}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {ROLE_ORDER.map((r) => {
+              const sel = adminRole === r
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRole(r)}
+                  aria-pressed={sel}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', width: '100%',
+                    padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                    background: sel ? ROLE_COLORS[r] + '14' : C.surface,
+                    border: `1px solid ${sel ? ROLE_COLORS[r] : C.border}`,
+                  }}
+                >
+                  <span style={{ width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0, background: ROLE_COLORS[r] }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: sel ? ROLE_COLORS[r] : C.text }}>{ROLE_LABELS[r]}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
         <div style={{ marginBottom: 22 }}>
           <label style={labelStyle}>Mot de passe temporaire</label>
@@ -2717,8 +2738,8 @@ const ROLE_PAGES: Record<string, string[] | '*'> = {
   FINANCE_OFFICER: ['finance', 'operations'],
   KYC_OFFICER: ['kyc'],
 }
-// Ordre d'affichage stable des rôles (selects, légendes, matrice).
-const ROLE_ORDER = ['SUPER_ADMIN', 'ADMIN', 'COMPLIANCE_OFFICER', 'SUPPORT_OPERATOR', 'FINANCE_OFFICER', 'KYC_OFFICER']
+// Ordre d'affichage des rôles, du plus au moins privilégié (selects, modal, matrice).
+const ROLE_ORDER = ['SUPER_ADMIN', 'ADMIN', 'COMPLIANCE_OFFICER', 'FINANCE_OFFICER', 'KYC_OFFICER', 'SUPPORT_OPERATOR']
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
   ADMIN: 'Admin',
