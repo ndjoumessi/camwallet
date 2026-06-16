@@ -94,6 +94,7 @@ enum KycStatus {
   SUBMITTED
   APPROVED
   REJECTED
+  RESUBMIT_REQUIRED
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

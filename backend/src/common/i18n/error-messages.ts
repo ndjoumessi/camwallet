@@ -81,6 +81,7 @@ export const ERROR_MESSAGES_EN: Record<string, string> = {
   'Un admin ne peut pas modifier son propre rôle': 'An admin cannot change their own role',
   "La cible n'est pas un compte administrateur": 'The target is not an administrator account',
   'Seul un SUPER_ADMIN peut définir un mot de passe': 'Only a SUPER_ADMIN can set a password',
+  'Décision KYC invalide': 'Invalid KYC decision',
   'Seul un SUPER_ADMIN peut créer un opérateur': 'Only a SUPER_ADMIN can create an operator',
   'Seul un SUPER_ADMIN peut supprimer un opérateur': 'Only a SUPER_ADMIN can delete an operator',
   'Seul un SUPER_ADMIN peut modifier le statut': 'Only a SUPER_ADMIN can change the status',

@@ -285,9 +285,12 @@ export class AdminService {
 
   // ─── KYC ──────────────────────────────────────────────────────────────────
   async getKyc() {
-    const pending = await this.prisma.user.findMany({
-      where: { kycStatus: { in: [KycStatus.PENDING, KycStatus.SUBMITTED] } },
-      orderBy: { createdAt: 'asc' },
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const rawQueue = await this.prisma.user.findMany({
+      where: { kycDocument: { isNot: null } },
+      orderBy: { createdAt: 'desc' },
       select: {
         id: true,
         phone: true,
@@ -301,25 +304,48 @@ export class AdminService {
             idFrontUrl: true,
             idBackUrl: true,
             selfieUrl: true,
+            reviewNote: true,
+            reviewedAt: true,
           },
         },
       },
     });
 
-    const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-    const [approved30, rejected30] = await Promise.all([
-      this.prisma.kycDocument.count({
-        where: { status: KycStatus.APPROVED, reviewedAt: { gte: d30 } },
-      }),
-      this.prisma.kycDocument.count({
-        where: { status: KycStatus.REJECTED, reviewedAt: { gte: d30 } },
-      }),
-    ]);
+    const queue = rawQueue.map((u) => ({
+      ...u,
+      complianceScore: this.computeKycScore(u.kycDocument),
+    }));
+
+    const [pendingCount, approvedToday, rejectedToday, resubmitCount, totalApproved, totalRejected] =
+      await Promise.all([
+        this.prisma.user.count({ where: { kycStatus: KycStatus.SUBMITTED } }),
+        this.prisma.kycDocument.count({ where: { status: KycStatus.APPROVED, reviewedAt: { gte: today } } }),
+        this.prisma.kycDocument.count({ where: { status: KycStatus.REJECTED, reviewedAt: { gte: today } } }),
+        this.prisma.user.count({ where: { kycStatus: KycStatus.RESUBMIT_REQUIRED } }),
+        this.prisma.kycDocument.count({ where: { status: KycStatus.APPROVED } }),
+        this.prisma.kycDocument.count({ where: { status: KycStatus.REJECTED } }),
+      ]);
+
+    const approvalRate =
+      totalApproved + totalRejected > 0
+        ? Math.round((totalApproved / (totalApproved + totalRejected)) * 100)
+        : 0;
 
     return {
-      pending,
-      counts: { pending: pending.length, approved30, rejected30 },
+      queue,
+      counts: { pending: pendingCount, approvedToday, rejectedToday, resubmitRequired: resubmitCount, approvalRate },
     };
+  }
+
+  private computeKycScore(
+    doc: { idFrontUrl: string | null; idBackUrl: string | null; selfieUrl: string | null } | null,
+  ): number {
+    if (!doc) return 0;
+    let score = 0;
+    if (doc.idFrontUrl) score += 33;
+    if (doc.idBackUrl) score += 33;
+    if (doc.selfieUrl) score += 34;
+    return score;
   }
 
   async reviewKyc(adminId: string, userId: string, dto: ReviewKycDto) {
@@ -329,43 +355,53 @@ export class AdminService {
     });
     if (!exists) throw new NotFoundException('Utilisateur introuvable');
 
-    const newStatus = dto.decision as KycStatus; // APPROVED | REJECTED
+    const newStatus = dto.decision as KycStatus;
     const user = await this.prisma.$transaction(async (tx) => {
       const u = await tx.user.update({
         where: { id: userId },
         data: { kycStatus: newStatus },
         select: { id: true, fullName: true, kycStatus: true },
       });
-      // Le document peut ne pas exister (flux d'upload non encore branché).
       await tx.kycDocument.updateMany({
         where: { userId },
         data: {
           status: newStatus,
           reviewedBy: adminId,
           reviewedAt: new Date(),
-          reviewNote: dto.note,
+          reviewNote: dto.comment,
         },
       });
       return u;
     });
 
     await this.writeAudit(adminId, `KYC_${dto.decision}`, `User:${userId}`, {
-      note: dto.note,
+      comment: dto.comment,
     });
 
-    // Notification push + SMS — fire-and-forget
-    const approved = newStatus === KycStatus.APPROVED;
-    const pushTitle = approved ? 'KYC approuvé ✓' : 'KYC rejeté';
-    const pushBody = approved
-      ? 'Votre identité a été vérifiée. Votre compte est maintenant complet.'
-      : `Votre dossier KYC a été rejeté.${dto.note ? ' Motif : ' + dto.note : ''}`;
-    void this.notifications.sendToUser(userId, pushTitle, pushBody, { type: 'KYC', status: newStatus });
-
-    const smsMsg = approved
-      ? 'CamWallet: Votre KYC est approuvé ! Votre compte est maintenant vérifié.'
-      : 'CamWallet: Votre dossier KYC a été rejeté. Reconnectez-vous pour plus d\'infos.';
-    const smsUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
-    if (smsUser) void this.otpService.sendSms(smsUser.phone, smsMsg);
+    // Notifications push + SMS selon la décision — fire-and-forget
+    const pushConfig: Record<string, { title: string; body: string; sms: string }> = {
+      APPROVED: {
+        title: 'KYC approuvé ✓',
+        body: 'Votre identité a été vérifiée. Votre compte est maintenant complet.',
+        sms: 'CamWallet: Votre KYC est approuvé ! Votre compte est maintenant vérifié.',
+      },
+      REJECTED: {
+        title: 'KYC rejeté',
+        body: `Votre dossier KYC a été rejeté.${dto.comment ? ' Motif : ' + dto.comment : ''}`,
+        sms: "CamWallet: Votre dossier KYC a été rejeté. Reconnectez-vous pour plus d'infos.",
+      },
+      RESUBMIT_REQUIRED: {
+        title: 'Nouveau document requis',
+        body: `Veuillez soumettre de nouveaux documents KYC.${dto.comment ? ' Motif : ' + dto.comment : ''}`,
+        sms: 'CamWallet: Nouveau document requis pour votre KYC. Reconnectez-vous pour soumettre.',
+      },
+    };
+    const notif = pushConfig[dto.decision];
+    if (notif) {
+      void this.notifications.sendToUser(userId, notif.title, notif.body, { type: 'KYC', status: newStatus });
+      const smsUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+      if (smsUser) void this.otpService.sendSms(smsUser.phone, notif.sms);
+    }
 
     return user;
   }
