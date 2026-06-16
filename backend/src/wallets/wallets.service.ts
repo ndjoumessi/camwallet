@@ -130,6 +130,10 @@ export class WalletsService {
         );
       }
 
+      // Instantanés de solde (avant/après réservation des fonds).
+      const balanceBefore = wallet.balance;
+      const balanceAfter = balanceBefore - total;
+
       // Réservation des fonds dès la demande (évite tout double-débit pendant
       // le traitement). Recrédités par le webhook si le décaissement échoue.
       await tx.wallet.update({
@@ -146,6 +150,8 @@ export class WalletsService {
           senderId: userId,
           operator: MobileOperator.CAMPAY,
           operatorRef,
+          senderBalanceBefore: balanceBefore,
+          senderBalanceAfter: balanceAfter,
           description: phone ? `Retrait CamWallet vers ${phone}` : 'Retrait CamWallet',
         },
       });

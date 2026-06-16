@@ -254,11 +254,20 @@ export class AdminService {
     search?: string,
     from?: string,
     to?: string,
+    amountMin?: string,
+    amountMax?: string,
   ) {
     const skip = (page - 1) * limit;
     const where: any = {};
     if (status) where.status = status;
     if (type) where.type = type;
+
+    // Plage de montant (FCFA → centimes).
+    if (amountMin || amountMax) {
+      where.amount = {};
+      if (amountMin) where.amount.gte = BigInt(Math.round(Number(amountMin) * 100));
+      if (amountMax) where.amount.lte = BigInt(Math.round(Number(amountMax) * 100));
+    }
 
     // Recherche libre : référence, ou nom/téléphone de l'émetteur/destinataire.
     if (search?.trim()) {
@@ -367,8 +376,10 @@ export class AdminService {
         action: true,
         resource: true,
         metadata: true,
+        ipAddress: true,
+        userAgent: true,
         createdAt: true,
-        user: { select: { fullName: true, email: true } },
+        user: { select: { fullName: true, email: true, adminRole: true, role: true } },
       },
     });
   }
@@ -1437,7 +1448,7 @@ export class AdminService {
   }
 
   // ─── Clôture de dossier ANIF ─────────────────────────────────────────────
-  async closeAnifCase(adminId: string, caseId: string, resolution: string) {
+  async closeAnifCase(adminId: string, caseId: string, resolution: string, report?: string) {
     const existing = await this.prisma.auditLog.findFirst({
       where: { id: caseId, action: 'ANIF_CASE_OPEN' },
       select: { id: true, resource: true },
@@ -1451,11 +1462,145 @@ export class AdminService {
         userId: adminId,
         action: 'ANIF_CASE_CLOSE',
         resource: `AuditLog:${caseId}`,
-        metadata: { resolution, closedBy: adminId, originalResource: existing.resource },
+        metadata: { resolution, report: report ?? null, closedBy: adminId, originalResource: existing.resource },
       },
     });
 
     return { ok: true, caseId, resolution };
+  }
+
+  // Assigne un dossier ANIF à un analyste (membre de l'équipe). Tracé en audit.
+  async assignAnifCase(adminId: string, caseId: string, analystId: string) {
+    const existing = await this.prisma.auditLog.findFirst({
+      where: { id: caseId, action: 'ANIF_CASE_OPEN' },
+      select: { id: true, resource: true },
+    });
+    if (!existing) throw new NotFoundException('Dossier ANIF introuvable');
+
+    const analyst = await this.prisma.user.findFirst({
+      where: { id: analystId, role: 'ADMIN', deletedAt: null },
+      select: { id: true, fullName: true, email: true },
+    });
+    if (!analyst) throw new NotFoundException("Analyste introuvable ou n'est pas un opérateur");
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: adminId,
+        action: 'ANIF_CASE_ASSIGN',
+        resource: `AuditLog:${caseId}`,
+        metadata: { analystId, analystName: analyst.fullName ?? analyst.email, assignedBy: adminId },
+      },
+    });
+    return { ok: true, caseId, analyst };
+  }
+
+  // Marque une transaction signalée comme résolue (revue conformité).
+  async resolveTransaction(adminId: string, txId: string) {
+    const tx = await this.prisma.transaction.findUnique({ where: { id: txId }, select: { id: true, resolved: true } });
+    if (!tx) throw new NotFoundException('Transaction introuvable');
+
+    await this.prisma.transaction.update({
+      where: { id: txId },
+      data: { resolved: true, resolvedAt: new Date(), resolvedBy: adminId },
+    });
+    await this.writeAudit(adminId, 'TRANSACTION_RESOLVE', `Transaction:${txId}`, {});
+    return { ok: true, id: txId, resolved: true };
+  }
+
+  // Statistiques de la page Conformité ANIF.
+  async getAnifStats() {
+    const d30 = new Date(Date.now() - 30 * 86400000);
+    const [overThreshold, opens, closes, highValueRecent] = await Promise.all([
+      this.prisma.transaction.count({ where: { amount: { gte: ANIF_RISK_HIGH }, createdAt: { gte: d30 } } }),
+      this.prisma.auditLog.count({ where: { action: 'ANIF_CASE_OPEN' } }),
+      this.prisma.auditLog.count({ where: { action: 'ANIF_CASE_CLOSE' } }),
+      this.prisma.auditLog.count({ where: { action: 'ANIF_HIGH_VALUE_ALERT', createdAt: { gte: d30 } } }),
+    ]);
+    const openCases = Math.max(0, opens - closes);
+    const resolutionRate = opens > 0 ? Math.round((closes / opens) * 100) : null;
+    return {
+      activeAlerts: highValueRecent + openCases,
+      openCases,
+      overThreshold30d: overThreshold,
+      resolutionRate,
+    };
+  }
+
+  // Timeline des alertes par heure sur 24 h (échecs + transactions > seuil).
+  async getAlertsTimeline() {
+    const since = new Date(Date.now() - 24 * 3600 * 1000);
+    const rows = await this.prisma.$queryRaw<Array<{ hour: Date; failed: bigint; highvalue: bigint }>>`
+      SELECT date_trunc('hour', "createdAt") AS hour,
+             COUNT(*) FILTER (WHERE status = 'FAILED')::bigint AS failed,
+             COUNT(*) FILTER (WHERE amount >= ${ANIF_RISK_HIGH})::bigint AS highvalue
+      FROM "transactions"
+      WHERE "createdAt" >= ${since}
+      GROUP BY hour
+    `;
+    const map = new Map<string, { failed: number; highValue: number }>();
+    for (const r of rows) {
+      map.set(new Date(r.hour).toISOString().slice(0, 13), { failed: Number(r.failed), highValue: Number(r.highvalue) });
+    }
+    const series = [];
+    const now = Date.now();
+    const base = new Date(now - 23 * 3600 * 1000);
+    base.setMinutes(0, 0, 0);
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(base.getTime() + i * 3600 * 1000);
+      const k = d.toISOString().slice(0, 13);
+      const e = map.get(k) ?? { failed: 0, highValue: 0 };
+      series.push({ hour: d.toISOString(), label: d.getHours() + 'h', failed: e.failed, highValue: e.highValue, total: e.failed + e.highValue });
+    }
+    return { series };
+  }
+
+  // Statistiques de la page Journal d'audit.
+  async getAuditStats() {
+    const d30 = new Date(Date.now() - 30 * 86400000);
+    const [total, actorsRows, last, criticalCount] = await Promise.all([
+      this.prisma.auditLog.count({ where: { createdAt: { gte: d30 } } }),
+      this.prisma.auditLog.findMany({ where: { createdAt: { gte: d30 }, userId: { not: null } }, select: { userId: true }, distinct: ['userId'] }),
+      this.prisma.auditLog.findFirst({ orderBy: { createdAt: 'desc' }, select: { action: true, createdAt: true } }),
+      this.prisma.auditLog.count({
+        where: {
+          createdAt: { gte: d30 },
+          OR: [
+            { action: { startsWith: 'USER_STATUS_' } },
+            { action: { contains: 'PIN_RESET' } },
+            { action: { startsWith: 'ADMIN_' } },
+            { action: { contains: 'ANIF' } },
+          ],
+        },
+      }),
+    ]);
+    return {
+      total30d: total,
+      criticalActions: criticalCount,
+      uniqueActors: actorsRows.length,
+      lastAction: last ? { action: last.action, at: last.createdAt } : null,
+    };
+  }
+
+  // Activité d'un opérateur admin : 5 dernières actions + stats 30 j.
+  async getMemberActivity(userId: string) {
+    const d30 = new Date(Date.now() - 30 * 86400000);
+    const [recent, actions30d, kycHandled, member] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, action: true, resource: true, createdAt: true },
+      }),
+      this.prisma.auditLog.count({ where: { userId, createdAt: { gte: d30 } } }),
+      this.prisma.auditLog.count({ where: { userId, action: { startsWith: 'KYC_' }, createdAt: { gte: d30 } } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { lastLoginAt: true, lastLoginIp: true } }),
+    ]);
+    return {
+      recent,
+      stats: { actions30d, kycHandled },
+      lastLoginAt: member?.lastLoginAt ?? null,
+      lastLoginIp: member?.lastLoginIp ?? null,
+    };
   }
 
   // Force la réinitialisation du PIN : le hash est vidé (l'utilisateur doit

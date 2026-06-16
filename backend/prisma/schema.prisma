@@ -159,6 +159,16 @@ model Transaction {
   failureReason   String?
   retryCount      Int     @default(0)
 
+  // Instantanés de solde de l'émetteur (centimes) — capturés dans la transaction
+  // ACID au moment du débit. Null pour les transactions antérieures à la feature.
+  senderBalanceBefore BigInt?
+  senderBalanceAfter  BigInt?
+
+  // Marquage de résolution des transactions signalées (revue conformité).
+  resolved    Boolean   @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String?
+
   processedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
