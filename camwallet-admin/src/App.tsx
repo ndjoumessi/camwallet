@@ -2546,8 +2546,14 @@ function OperationsPage() {
     [page, operator, statusFilter, typeFilter, search, period],
   )
 
+  // Sélection en masse + détail au clic.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [bulkRetrying, setBulkRetrying] = useState(false)
+  const [detailOp, setDetailOp] = useState<AdminOperation | null>(null)
+  const togglePick = (id: string) => setPicked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
   // Tout changement de filtre ramène à la première page.
-  useEffect(() => { setPage(1) }, [operator, statusFilter, typeFilter, search, period])
+  useEffect(() => { setPage(1); setPicked(new Set()) }, [operator, statusFilter, typeFilter, search, period])
 
   const handleRetry = async (id: string) => {
     try {
@@ -2557,6 +2563,17 @@ function OperationsPage() {
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Échec de la relance', 'error')
     }
+  }
+
+  const handleBulkRetry = async () => {
+    setBulkRetrying(true)
+    const ids = [...picked]
+    let ok = 0, ko = 0
+    for (const id of ids) {
+      try { await retryOperation(id); ok++ } catch { ko++ }
+    }
+    setBulkRetrying(false); setPicked(new Set()); refetch()
+    showToast(`${ok} relancée(s)${ko ? `, ${ko} échec(s)` : ''}`, ko ? 'error' : 'success')
   }
 
   const ops = data?.data ?? []
@@ -2663,6 +2680,27 @@ function OperationsPage() {
         </div>
       </div>
 
+      {/* Alerte seuil d'échec (> 10 %) */}
+      {successRate != null && (100 - successRate) > 10 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '12px 16px', background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 10 }}>
+          <Siren size={18} color={C.red} />
+          <span style={{ fontSize: 13, color: C.text }}><strong style={{ color: C.red }}>Taux d'échec élevé : {100 - successRate} %</strong> sur les 7 derniers jours (seuil d'alerte : 10 %). Vérifiez l'intégration opérateur.</span>
+        </div>
+      )}
+
+      {/* Barre de relance en masse */}
+      {picked.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 14px', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 10 }}>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{picked.size} opération(s) sélectionnée(s)</span>
+          {!isReadOnly() && (
+            <button onClick={handleBulkRetry} disabled={bulkRetrying} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#B89000', background: C.card, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '6px 12px', cursor: bulkRetrying ? 'wait' : 'pointer', fontWeight: 600 }}>
+              <RotateCcw size={13} /> {bulkRetrying ? 'Relance…' : 'Relancer les sélectionnés'}
+            </button>
+          )}
+          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Effacer</button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: `1px solid ${C.border}` }}>
         {(['ops', 'webhooks'] as const).map(t => (
@@ -2698,14 +2736,18 @@ function OperationsPage() {
               <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead style={{ background: C.surface }}>
                   <tr>
+                    <th style={{ width: 34, padding: '12px 0 12px 12px' }}></th>
                     {['Date', 'Type', 'Utilisateur', 'Opérateur', 'Montant', 'Statut', 'Réf. opérateur', 'Tent.', 'Action'].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '12px 12px', color: C.textMuted, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ops.map(op => (
-                    <tr key={op.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  {ops.map(op => { const retriable = op.status === 'PENDING' || op.status === 'FAILED'; return (
+                    <tr key={op.id} className="cw-row" onClick={() => setDetailOp(op)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                      <td style={{ padding: '10px 0 10px 12px' }} onClick={(e) => e.stopPropagation()}>
+                        {retriable && <input type="checkbox" checked={picked.has(op.id)} onChange={() => togglePick(op.id)} aria-label="Sélectionner" style={{ cursor: 'pointer', accentColor: C.yellow }} />}
+                      </td>
                       <td style={{ padding: '10px 12px', color: C.textMuted, whiteSpace: 'nowrap', fontSize: 12 }} title={fmtDate(op.createdAt)}>{relativeTime(op.createdAt)}</td>
                       <td style={{ padding: '10px 12px' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, background: opTypeColor(op.type) + '20', color: opTypeColor(op.type), padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap' }}>
@@ -2716,14 +2758,14 @@ function OperationsPage() {
                       <td style={{ padding: '10px 12px' }}><OperatorBadge operator={op.operator ?? null} /></td>
                       <td style={{ padding: '10px 12px', fontWeight: 700, color: opTypeColor(op.type), whiteSpace: 'nowrap' }}>{formatFCFA(op.amount)}</td>
                       <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[op.status] ?? op.status} /></td>
-                      <td style={{ padding: '10px 12px' }}>{op.operatorRef ? <CopyableRef value={op.operatorRef} truncate={14} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: '10px 12px' }} onClick={(e) => e.stopPropagation()}>{op.operatorRef ? <CopyableRef value={op.operatorRef} truncate={14} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
                       <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                         {op.retryCount > 0
                           ? <span style={{ fontSize: 11, fontWeight: 800, background: C.redLight, color: C.red, borderRadius: 10, padding: '2px 8px' }}>{op.retryCount}</span>
                           : <span style={{ color: C.textMuted }}>0</span>}
                       </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        {!isReadOnly() && (op.status === 'PENDING' || op.status === 'FAILED') && (
+                      <td style={{ padding: '10px 12px' }} onClick={(e) => e.stopPropagation()}>
+                        {!isReadOnly() && retriable && (
                           <button
                             onClick={() => handleRetry(op.id)}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: C.yellow + '20', color: '#B89000', border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
@@ -2733,7 +2775,7 @@ function OperationsPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -2781,6 +2823,14 @@ function OperationsPage() {
             </div>
           )}
         </>
+      )}
+
+      {detailOp && (
+        <TransactionDetailModal
+          tx={{ ...detailOp, reference: detailOp.operatorRef ?? detailOp.id } as unknown as AdminTransaction}
+          onClose={() => setDetailOp(null)}
+          onRetried={() => { setDetailOp(null); refetch() }}
+        />
       )}
     </div>
   )
