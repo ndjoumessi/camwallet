@@ -80,6 +80,13 @@ export const ERROR_MESSAGES_EN: Record<string, string> = {
   'Seul un SUPER_ADMIN peut modifier les rôles': 'Only a SUPER_ADMIN can change roles',
   'Un admin ne peut pas modifier son propre rôle': 'An admin cannot change their own role',
   "La cible n'est pas un compte administrateur": 'The target is not an administrator account',
+  'Seul un SUPER_ADMIN peut définir un mot de passe': 'Only a SUPER_ADMIN can set a password',
+  'Seul un SUPER_ADMIN peut créer un opérateur': 'Only a SUPER_ADMIN can create an operator',
+  'Seul un SUPER_ADMIN peut supprimer un opérateur': 'Only a SUPER_ADMIN can delete an operator',
+  'Seul un SUPER_ADMIN peut modifier le statut': 'Only a SUPER_ADMIN can change the status',
+  'Un admin ne peut pas se supprimer lui-même': 'An admin cannot delete themselves',
+  'Un admin ne peut pas se désactiver lui-même': 'An admin cannot deactivate themselves',
+  'Compte administrateur désactivé': 'Administrator account is disabled',
 
   // --- Validation de champs ---
   'content est requis': 'content is required',

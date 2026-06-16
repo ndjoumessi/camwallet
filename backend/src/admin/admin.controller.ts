@@ -28,6 +28,8 @@ import { ReviewKycDto } from './dto/review-kyc.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
 import { SetAdminRoleDto } from './dto/set-admin-role.dto';
 import { SetAdminPasswordDto } from './dto/set-admin-password.dto';
+import { CreateAdminOperatorDto } from './dto/create-admin-operator.dto';
+import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -235,6 +237,28 @@ export class AdminController {
   @ApiOperation({ summary: 'Liste des membres de l\'équipe admin' })
   getAdminTeam() {
     return this.adminService.getAdminTeam();
+  }
+
+  @Post('team')
+  @ApiOperation({ summary: 'Créer un opérateur admin (SUPER_ADMIN)' })
+  createAdminOperator(@Request() req: any, @Body() body: CreateAdminOperatorDto) {
+    return this.adminService.createAdminOperator(req.user.id, body);
+  }
+
+  @Delete('team/:userId')
+  @ApiOperation({ summary: 'Supprimer un opérateur admin (SUPER_ADMIN)' })
+  deleteAdmin(@Request() req: any, @Param('userId') userId: string) {
+    return this.adminService.deleteAdmin(req.user.id, userId);
+  }
+
+  @Patch('team/:userId/status')
+  @ApiOperation({ summary: 'Activer / désactiver un opérateur admin (SUPER_ADMIN)' })
+  setAdminStatus(
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Body() body: SetAdminStatusDto,
+  ) {
+    return this.adminService.setAdminStatus(req.user.id, userId, body.active);
   }
 
   @Patch('team/:userId/role')
