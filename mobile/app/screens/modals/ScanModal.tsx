@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
+import { useTranslation } from 'react-i18next';
 
 // Destinataire décodé depuis un QR Code CamWallet.
 export interface ScannedRecipient {
@@ -67,6 +68,7 @@ const initials = (name?: string, phone?: string) =>
     : (phone ?? '?').replace(/\D/g, '').slice(-2);
 
 export default function ScanModal({ visible, onClose, onDetected }: ScanModalProps) {
+  const { t } = useTranslation();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<ScannedRecipient | null>(null);
   const [error, setError] = useState(false);
@@ -142,8 +144,8 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
       <SafeAreaView style={styles.sheet} edges={['top']}>
         <Animated.View style={[styles.flex, animStyle]}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Scanner un QR Code</Text>
-          <IconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" />
+          <Text style={styles.headerTitle}>{t('scan.headerTitle')}</Text>
+          <IconButton icon="close" onPress={onClose} accessibilityLabel={t('scan.closeBtnA11y')} />
         </View>
 
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
@@ -154,7 +156,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
               color={scanned ? Colors.primary : error ? Colors.yellow : Colors.textSoft}
             />
             <Text style={styles.hint}>
-              {scanned ? 'QR Code détecté !' : error ? 'QR Code non reconnu' : 'Pointez la caméra vers le QR Code'}
+              {scanned ? t('scan.hintDetected') : error ? t('scan.hintNotRecognized') : t('scan.hintAim')}
             </Text>
           </View>
 
@@ -165,8 +167,8 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
                 <Ionicons name="close-circle-outline" size={40} color={Colors.textMuted} style={styles.cameraIcon} />
                 <Text style={styles.cameraText}>
                   {permission && !permission.canAskAgain
-                    ? 'Accès caméra refusé.\nActivez-le dans les réglages.'
-                    : 'Autorisation caméra requise'}
+                    ? t('scan.cameraPermissionDenied')
+                    : t('scan.cameraPermissionRequired')}
                 </Text>
               </View>
             ) : (
@@ -199,7 +201,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
           {/* Permission CTA */}
           {!granted && permission?.canAskAgain && (
             <View style={{ paddingHorizontal: Spacing.xxl, width: '100%' }}>
-              <Button label="Autoriser la caméra" onPress={requestPermission} />
+              <Button label={t('scan.btnAllowCamera')} onPress={requestPermission} />
             </View>
           )}
 
@@ -210,9 +212,9 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
                 <Text style={styles.resultAvatarText}>{initials(scanned.name, scanned.phone)}</Text>
               </View>
               <View>
-                <Text style={styles.resultName}>{scanned.name ?? 'Destinataire'}</Text>
+                <Text style={styles.resultName}>{scanned.name ?? t('scan.resultDefaultName')}</Text>
                 <Text style={styles.resultPhone}>+237 {scanned.phone.replace(/^\+?237/, '')}</Text>
-                {scanned.amount && <Text style={styles.resultPhone}>Montant : {scanned.amount} FCFA</Text>}
+                {scanned.amount && <Text style={styles.resultPhone}>{t('scan.resultAmount', { amount: scanned.amount })}</Text>}
               </View>
             </View>
           )}
@@ -220,7 +222,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
           {granted && (
             <View style={{ paddingHorizontal: Spacing.xxl, width: '100%', marginTop: Spacing.xl }}>
               <Button
-                label={scanned ? "Envoyer de l'argent" : 'Scan en cours...'}
+                label={scanned ? t('scan.btnSend') : t('scan.btnScanning')}
                 icon={scanned ? 'arrow-forward' : undefined}
                 onPress={() => {
                   if (scanned) {
@@ -239,9 +241,9 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
             style={styles.cancelBtn}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Annuler"
+            accessibilityLabel={t('scan.btnCancelA11y')}
           >
-            <Text style={styles.cancelText}>Annuler</Text>
+            <Text style={styles.cancelText}>{t('scan.btnCancel')}</Text>
           </TouchableOpacity>
         </ScrollView>
         </Animated.View>

@@ -37,13 +37,6 @@ const PUSH_KEY = 'cw_push_enabled';
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-// Mapping statut KYC → badge.
-const KYC_BADGE: Record<string, { label: string; icon: IoniconName; color: string; bg: string }> = {
-  APPROVED: { label: 'Vérifié', icon: 'checkmark-circle', color: Colors.primary, bg: Colors.primaryLight },
-  PENDING: { label: 'En attente', icon: 'time-outline', color: Colors.yellow, bg: Colors.yellow + '20' },
-  SUBMITTED: { label: 'En revue', icon: 'time-outline', color: Colors.yellow, bg: Colors.yellow + '20' },
-  REJECTED: { label: 'Rejeté', icon: 'close-circle', color: Colors.red, bg: Colors.errorBg },
-};
 
 const initials = (name?: string | null, phone?: string) =>
   name
@@ -89,8 +82,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [biometric, setBiometric] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const { mode: themeMode, toggleTheme } = useTheme();
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const currentLang = i18n.language as 'fr' | 'en';
+
+  const KYC_BADGE: Record<string, { label: string; icon: IoniconName; color: string; bg: string }> = {
+    APPROVED: { label: t('profile.kycBadge.approved'), icon: 'checkmark-circle', color: Colors.primary, bg: Colors.primaryLight },
+    PENDING: { label: t('profile.kycBadge.pending'), icon: 'time-outline', color: Colors.yellow, bg: Colors.yellow + '20' },
+    SUBMITTED: { label: t('profile.kycBadge.submitted'), icon: 'time-outline', color: Colors.yellow, bg: Colors.yellow + '20' },
+    REJECTED: { label: t('profile.kycBadge.rejected'), icon: 'close-circle', color: Colors.red, bg: Colors.errorBg },
+  };
   const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'pin'>('idle');
   const [deletePin, setDeletePin] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -140,15 +140,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
   const save = async () => {
     if (form.fullName.trim() && form.fullName.trim().length < 2) {
-      Alert.alert('Validation', 'Le nom complet doit contenir au moins 2 caractères.');
+      Alert.alert(t('profile.alertValidationTitle'), t('profile.alertValidationNameError'));
       return;
     }
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      Alert.alert('Validation', "Format d'e-mail invalide.");
+      Alert.alert(t('profile.alertValidationTitle'), t('profile.alertValidationEmailError'));
       return;
     }
     if (form.dateOfBirth.trim() && !/^\d{2}\/\d{2}\/\d{4}$/.test(form.dateOfBirth.trim())) {
-      Alert.alert('Validation', 'Date de naissance : format JJ/MM/AAAA attendu.');
+      Alert.alert(t('profile.alertValidationTitle'), t('profile.alertValidationDobError'));
       return;
     }
     setSaving(true);
@@ -162,7 +162,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       setMe((prev) => (prev ? { ...prev, ...updated } : updated));
       setEditing(false);
     } catch (e: any) {
-      Alert.alert('Erreur', e?.response?.data?.message ?? 'Échec de la mise à jour');
+      Alert.alert(t('common.error_title'), e?.response?.data?.message ?? t('profile.alertUpdateError'));
     } finally {
       setSaving(false);
     }
@@ -171,7 +171,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const pickAvatar = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert('Permission requise', "Autorisez l'accès à la galerie pour changer la photo.");
+      Alert.alert(t('profile.alertPermissionTitle'), t('profile.alertPermissionMsg'));
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -186,7 +186,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       const { avatarUrl } = await userApi.uploadAvatar(result.assets[0].uri);
       setMe((prev) => (prev ? { ...prev, avatarUrl } : prev));
     } catch (e: any) {
-      Alert.alert('Erreur', e?.response?.data?.message ?? "Échec de l'upload");
+      Alert.alert(t('common.error_title'), e?.response?.data?.message ?? t('profile.alertUploadError'));
     } finally {
       setUploading(false);
     }
@@ -202,7 +202,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   // Étape 1 : confirme l'ancien PIN via POST /auth/verify-pin avant la saisie du nouveau.
   const handleVerifyCurrentPin = async () => {
     if (pinForm.current.length !== 6) {
-      setPinError('Le PIN actuel doit contenir 6 chiffres.');
+      setPinError(t('profile.pinModal.errorCurrentPinLength'));
       return;
     }
     setPinVerifying(true);
@@ -211,7 +211,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       await authApi.verifyPin(pinForm.current);
       setPinStep('new');
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'PIN actuel incorrect';
+      const msg = e?.response?.data?.message ?? e?.message ?? t('profile.pinModal.errorCurrentPinFallback');
       setPinError(Array.isArray(msg) ? msg.join(', ') : msg);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -223,11 +223,11 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const handleChangePin = async () => {
     const { current, next, confirm } = pinForm;
     if (next.length !== 6 || confirm.length !== 6) {
-      setPinError('Le nouveau PIN doit contenir 6 chiffres.');
+      setPinError(t('profile.pinModal.errorNewPinLength'));
       return;
     }
     if (next !== confirm) {
-      setPinError('Les deux nouveaux PIN ne correspondent pas.');
+      setPinError(t('profile.pinModal.errorNewPinMismatch'));
       return;
     }
     setPinSaving(true);
@@ -236,9 +236,9 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       await authApi.changePin(current, next);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setPinModalOpen(false);
-      Alert.alert('PIN modifié', 'Votre PIN a été changé. Reconnectez-vous.');
+      Alert.alert(t('profile.pinModal.alertChangedTitle'), t('profile.pinModal.alertChangedMsg'));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur inconnue';
+      const msg = e?.response?.data?.message ?? e?.message ?? t('profile.pinModal.errorUnknown');
       setPinError(Array.isArray(msg) ? msg.join(', ') : msg);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -256,10 +256,10 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       const hasHw = await LocalAuthentication.hasHardwareAsync();
       const enrolled = await LocalAuthentication.isEnrolledAsync();
       if (!hasHw || !enrolled) {
-        Alert.alert('Indisponible', "Aucune biométrie configurée sur cet appareil.");
+        Alert.alert(t('profile.alertBioUnavailableTitle'), t('profile.alertBioUnavailableMsg'));
         return;
       }
-      const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Activer la biométrie' });
+      const res = await LocalAuthentication.authenticateAsync({ promptMessage: t('profile.biometricPromptMessage') });
       if (!res.success) return;
     }
     setBiometric(value);
@@ -268,15 +268,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   };
 
   const handleLogout = () => {
-    Alert.alert('Se déconnecter', 'Êtes-vous sûr de vouloir vous déconnecter ?', [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Se déconnecter', style: 'destructive', onPress: onLogout },
+    Alert.alert(t('profile.alertLogoutTitle'), t('profile.alertLogoutMsg'), [
+      { text: t('profile.alertLogoutCancel'), style: 'cancel' },
+      { text: t('profile.alertLogoutConfirm'), style: 'destructive', onPress: onLogout },
     ]);
   };
 
   const handleDeleteAccount = async () => {
     if (deletePin.length !== 6) {
-      Alert.alert('PIN invalide', 'Saisissez votre PIN à 6 chiffres.');
+      Alert.alert(t('profile.alertDeleteInvalidPin'), t('profile.alertDeleteInvalidPinMsg'));
       return;
     }
     setDeleting(true);
@@ -289,11 +289,11 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       await userApi.deleteAccount();
       onLogout();
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur de suppression';
+      const msg = e?.response?.data?.message ?? e?.message ?? t('profile.alertDeleteErrorMsg');
       if (msg.toLowerCase().includes('pin') || msg.toLowerCase().includes('incorrect') || msg.toLowerCase().includes('invalide')) {
-        Alert.alert('PIN incorrect', 'Le code saisi ne correspond pas à votre PIN.');
+        Alert.alert(t('profile.alertDeletePinWrongTitle'), t('profile.alertDeletePinWrongMsg'));
       } else {
-        Alert.alert('Erreur', msg);
+        Alert.alert(t('common.error_title'), msg);
       }
     } finally {
       setDeleting(false);
@@ -320,7 +320,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           disabled={uploading}
           style={styles.profileAvatar}
           accessibilityRole="button"
-          accessibilityLabel="Changer la photo de profil"
+          accessibilityLabel={t('profile.a11yChangeAvatar')}
         >
           {me?.avatarUrl ? (
             <Image source={{ uri: me.avatarUrl }} style={styles.avatarImg} />
@@ -349,7 +349,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
             <Badge label={kyc.label} icon={kyc.icon} color={kyc.color} bg={kyc.bg} />
             <Badge label="XAF" color={Colors.blue} bg={Colors.infoBg} />
             {me?.role === 'MERCHANT' && (
-              <Badge label="Marchand" icon="storefront-outline" color={Colors.yellow} bg={Colors.yellow + '20'} />
+              <Badge label={t('profile.badgeMerchant')} icon="storefront-outline" color={Colors.yellow} bg={Colors.yellow + '20'} />
             )}
           </View>
         </View>
@@ -358,9 +358,9 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       {error && (
         <View style={styles.errorWrap}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={load} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Réessayer">
+          <Pressable onPress={load} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel={t('common.retry')}>
             <Ionicons name="refresh-outline" size={14} color={Colors.primary} />
-            <Text style={styles.retryText}>Réessayer</Text>
+            <Text style={styles.retryText}>{t('common.retry')}</Text>
           </Pressable>
         </View>
       )}
@@ -381,10 +381,10 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
             style={({ pressed }) => [styles.editBtn, pressed && styles.pressed]}
             onPress={openEdit}
             accessibilityRole="button"
-            accessibilityLabel="Modifier le profil"
+            accessibilityLabel={t('profile.btnEditA11y')}
           >
             <Ionicons name="create-outline" size={18} color={Colors.text} />
-            <Text style={styles.editBtnText}>Modifier le profil</Text>
+            <Text style={styles.editBtnText}>{t('profile.btnEditProfile')}</Text>
           </Pressable>
 
           {me && me.kycStatus !== 'APPROVED' && (
@@ -392,11 +392,11 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
               style={({ pressed }) => [styles.kycBtn, pressed && styles.pressed]}
               onPress={() => setKycOpen(true)}
               accessibilityRole="button"
-              accessibilityLabel="Vérifier mon identité"
+              accessibilityLabel={t('profile.kycBtnA11y')}
             >
               <Ionicons name="card-outline" size={18} color={Colors.yellow} />
               <Text style={styles.kycBtnText}>
-                {me.kycStatus === 'REJECTED' ? 'Re-soumettre mon KYC' : me.kycStatus === 'SUBMITTED' ? 'KYC en revue — re-soumettre' : 'Vérifier mon identité (KYC)'}
+                {me.kycStatus === 'REJECTED' ? t('profile.kycBtnResubmit') : me.kycStatus === 'SUBMITTED' ? t('profile.kycBtnInReview') : t('profile.kycBtnVerify')}
               </Text>
             </Pressable>
           )}
@@ -407,10 +407,10 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
               {/* Téléphone — lecture seule */}
               <View style={{ marginBottom: Spacing.md }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={styles.fieldLabel}>Téléphone</Text>
+                  <Text style={styles.fieldLabel}>{t('profile.edit.phoneLabel')}</Text>
                   <TouchableOpacity
                     onPress={() => setPhoneTooltip((v) => !v)}
-                    accessibilityLabel="Pourquoi ce champ est verrouillé"
+                    accessibilityLabel={t('profile.edit.phoneLockA11y')}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Ionicons name="lock-closed" size={13} color={Colors.textMuted} />
@@ -421,30 +421,30 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                   <Text style={{ color: Colors.textMuted, fontSize: Typography.base, flex: 1 }}>{phone}</Text>
                 </View>
                 {phoneTooltip && (
-                  <Text style={styles.readonlyNote}>Non modifiable pour des raisons de sécurité</Text>
+                  <Text style={styles.readonlyNote}>{t('profile.edit.phoneReadonlyNote')}</Text>
                 )}
-                <Text style={styles.readonlyNote}>Pour modifier votre numéro, contactez le support</Text>
+                <Text style={styles.readonlyNote}>{t('profile.edit.phoneSupportNote')}</Text>
               </View>
 
               {/* Statut KYC — badge uniquement */}
               <View style={{ marginBottom: Spacing.md, opacity: 0.5 }}>
-                <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>Statut KYC</Text>
+                <Text style={[styles.fieldLabel, { marginBottom: 6 }]}>{t('profile.edit.kycStatusLabel')}</Text>
                 <Badge label={kyc.label} icon={kyc.icon} color={kyc.color} bg={kyc.bg} />
               </View>
 
               {/* Devise — lecture seule */}
               <View style={{ marginBottom: Spacing.xl }}>
-                <Text style={styles.fieldLabel}>Devise</Text>
+                <Text style={styles.fieldLabel}>{t('profile.edit.currencyLabel')}</Text>
                 <View style={[styles.input, styles.readonlyInput, { flexDirection: 'row', alignItems: 'center', marginTop: 4 }]}>
-                  <Text style={{ color: Colors.textMuted, fontSize: Typography.base }}>XAF — Franc CFA</Text>
+                  <Text style={{ color: Colors.textMuted, fontSize: Typography.base }}>{t('profile.edit.currencyValue')}</Text>
                 </View>
               </View>
 
               {/* Champs modifiables */}
               {([
-                ['fullName', 'Nom complet', 'Jean Dupont'],
-                ['email', 'Email', 'jean@example.cm'],
-                ['city', 'Ville', 'Douala'],
+                ['fullName', t('profile.edit.fullNameLabel'), t('profile.edit.fullNamePlaceholder')],
+                ['email', t('profile.edit.emailLabel'), t('profile.edit.emailPlaceholder')],
+                ['city', t('profile.edit.cityLabel'), t('profile.edit.cityPlaceholder')],
               ] as const).map(([key, label, ph]) => (
                 <View key={key} style={{ marginBottom: Spacing.md }}>
                   <Text style={styles.fieldLabel}>{label}</Text>
@@ -463,7 +463,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
               {/* Date de naissance — verrouillée si KYC approuvé */}
               <View style={{ marginBottom: Spacing.md }}>
-                <Text style={styles.fieldLabel}>Date de naissance</Text>
+                <Text style={styles.fieldLabel}>{t('profile.edit.dobLabel')}</Text>
                 {me?.kycStatus === 'APPROVED' ? (
                   <>
                     <View style={[styles.input, styles.readonlyInput, { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: 4 }]}>
@@ -472,14 +472,14 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                         {form.dateOfBirth || '—'}
                       </Text>
                     </View>
-                    <Text style={styles.readonlyNote}>Date de naissance non modifiable après vérification KYC</Text>
+                    <Text style={styles.readonlyNote}>{t('profile.edit.dobReadonlyNote')}</Text>
                   </>
                 ) : (
                   <TextInput
                     style={styles.input}
                     value={form.dateOfBirth}
                     onChangeText={(v) => setForm((f) => ({ ...f, dateOfBirth: formatDob(v) }))}
-                    placeholder="JJ/MM/AAAA"
+                    placeholder={t('profile.edit.dobPlaceholder')}
                     placeholderTextColor={Colors.textMuted}
                     autoCapitalize="none"
                     keyboardType="numeric"
@@ -487,11 +487,11 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 )}
               </View>
               <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
-                <TouchableOpacity style={[styles.formBtn, styles.cancelBtn]} onPress={() => setEditing(false)} accessibilityRole="button" accessibilityLabel="Annuler les modifications">
-                  <Text style={styles.cancelBtnText}>Annuler</Text>
+                <TouchableOpacity style={[styles.formBtn, styles.cancelBtn]} onPress={() => setEditing(false)} accessibilityRole="button" accessibilityLabel={t('profile.edit.btnCancelA11y')}>
+                  <Text style={styles.cancelBtnText}>{t('profile.edit.btnCancel')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.formBtn, styles.saveBtn]} onPress={save} disabled={saving} accessibilityRole="button" accessibilityLabel="Enregistrer les modifications">
-                  <Text style={styles.saveBtnText}>{saving ? '…' : 'Enregistrer'}</Text>
+                <TouchableOpacity style={[styles.formBtn, styles.saveBtn]} onPress={save} disabled={saving} accessibilityRole="button" accessibilityLabel={t('profile.edit.btnSaveA11y')}>
+                  <Text style={styles.saveBtnText}>{saving ? '…' : t('profile.edit.btnSave')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -501,36 +501,36 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{me?.wallet ? fcfa(me.wallet.balance) : '—'}</Text>
-              <Text style={styles.statLabel}>Solde FCFA</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.balance')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{me?.stats.transactionsCount ?? 0}</Text>
-              <Text style={styles.statLabel}>Transactions</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.transactions')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{memberSince}</Text>
-              <Text style={styles.statLabel}>Membre depuis</Text>
+              <Text style={styles.statLabel}>{t('profile.stats.memberSince')}</Text>
             </View>
           </View>
 
           {/* Tableau de bord commerçant */}
           {me?.role === 'MERCHANT' && onMerchant && (
             <View style={styles.menuGroup}>
-              <Text style={styles.groupLabel}>Espace commerçant</Text>
+              <Text style={styles.groupLabel}>{t('profile.merchant.groupLabel')}</Text>
               <Pressable
                 style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
                 onPress={onMerchant}
                 accessibilityRole="button"
-                accessibilityLabel="Tableau de bord commerçant"
+                accessibilityLabel={t('profile.merchant.dashboardA11y')}
               >
                 <View style={[styles.menuItemIcon, { backgroundColor: Colors.yellow + '20' }]}>
                   <Ionicons name="storefront-outline" size={20} color={Colors.yellow} />
                 </View>
                 <View style={styles.menuItemInfo}>
-                  <Text style={styles.menuItemLabel}>Tableau de bord marchand</Text>
-                  <Text style={styles.menuItemDesc}>Stats, transactions et QR dynamique</Text>
+                  <Text style={styles.menuItemLabel}>{t('profile.merchant.dashboardLabel')}</Text>
+                  <Text style={styles.menuItemDesc}>{t('profile.merchant.dashboardDesc')}</Text>
                 </View>
                 <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
               </Pressable>
@@ -539,19 +539,19 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
           {/* Sécurité */}
           <View style={styles.menuGroup}>
-            <Text style={styles.groupLabel}>Sécurité</Text>
+            <Text style={styles.groupLabel}>{t('profile.security_group.groupLabel')}</Text>
             <Pressable
               style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
               onPress={openPinModal}
               accessibilityRole="button"
-              accessibilityLabel="Changer le PIN"
+              accessibilityLabel={t('profile.security_group.changePinA11y')}
             >
               <View style={styles.menuItemIcon}>
                 <Ionicons name="lock-closed-outline" size={20} color={Colors.text} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Changer le PIN</Text>
-                <Text style={styles.menuItemDesc}>Ancien PIN requis</Text>
+                <Text style={styles.menuItemLabel}>{t('profile.security_group.changePinLabel')}</Text>
+                <Text style={styles.menuItemDesc}>{t('profile.security_group.changePinDesc')}</Text>
               </View>
               <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
             </Pressable>
@@ -560,15 +560,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 <Ionicons name="finger-print-outline" size={20} color={Colors.text} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Connexion biométrique</Text>
-                <Text style={styles.menuItemDesc}>Face ID / empreinte</Text>
+                <Text style={styles.menuItemLabel}>{t('profile.security_group.biometricLabel')}</Text>
+                <Text style={styles.menuItemDesc}>{t('profile.security_group.biometricDesc')}</Text>
               </View>
               <Switch
                 value={biometric}
                 onValueChange={toggleBiometric}
                 trackColor={{ false: Colors.border, true: Colors.primary }}
                 thumbColor="#fff"
-                accessibilityLabel="Activer la connexion biométrique"
+                accessibilityLabel={t('profile.security_group.biometricA11y')}
               />
             </View>
             <View style={styles.menuItem}>
@@ -576,15 +576,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 <Ionicons name={themeMode === 'dark' ? 'moon-outline' : 'sunny-outline'} size={20} color={Colors.text} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Mode {themeMode === 'dark' ? 'nuit' : 'clair'}</Text>
-                <Text style={styles.menuItemDesc}>Apparence de l'application</Text>
+                <Text style={styles.menuItemLabel}>{t(themeMode === 'dark' ? 'profile.security_group.themeDark' : 'profile.security_group.themeLight')}</Text>
+                <Text style={styles.menuItemDesc}>{t('profile.security_group.themeDesc')}</Text>
               </View>
               <Switch
                 value={themeMode === 'dark'}
                 onValueChange={toggleTheme}
                 trackColor={{ false: Colors.border, true: Colors.purple }}
                 thumbColor="#fff"
-                accessibilityLabel="Basculer le mode nuit"
+                accessibilityLabel={t('profile.security_group.themeA11y')}
               />
             </View>
             <View style={styles.menuItem}>
@@ -592,15 +592,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 <Ionicons name="notifications-outline" size={20} color={Colors.text} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Notifications push</Text>
-                <Text style={styles.menuItemDesc}>Alertes transactions en temps réel</Text>
+                <Text style={styles.menuItemLabel}>{t('profile.security_group.pushLabel')}</Text>
+                <Text style={styles.menuItemDesc}>{t('profile.security_group.pushDesc')}</Text>
               </View>
               <Switch
                 value={pushEnabled}
                 onValueChange={togglePushNotif}
                 trackColor={{ false: Colors.border, true: Colors.primary }}
                 thumbColor="#fff"
-                accessibilityLabel="Activer les notifications push"
+                accessibilityLabel={t('profile.security_group.pushA11y')}
               />
             </View>
             <View style={styles.menuItem}>
@@ -608,34 +608,34 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 <Ionicons name="language-outline" size={20} color={Colors.text} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Langue</Text>
-                <Text style={styles.menuItemDesc}>{currentLang === 'fr' ? 'Français' : 'English'}</Text>
+                <Text style={styles.menuItemLabel}>{t('profile.security_group.langLabel')}</Text>
+                <Text style={styles.menuItemDesc}>{currentLang === 'fr' ? t('profile.security_group.langDescFr') : t('profile.security_group.langDescEn')}</Text>
               </View>
               <Switch
                 value={currentLang === 'en'}
                 onValueChange={() => setLanguage(currentLang === 'fr' ? 'en' : 'fr')}
                 trackColor={{ false: Colors.border, true: Colors.blue }}
                 thumbColor="#fff"
-                accessibilityLabel="Basculer la langue FR / EN"
+                accessibilityLabel={t('profile.security_group.langA11y')}
               />
             </View>
           </View>
 
           {/* Informations légales */}
           <View style={styles.menuGroup}>
-            <Text style={styles.groupLabel}>Informations légales</Text>
+            <Text style={styles.groupLabel}>{t('profile.legal_group.groupLabel')}</Text>
             <Pressable
               style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
               onPress={() => setLegalScreen('cgu')}
               accessibilityRole="button"
-              accessibilityLabel="Conditions générales d'utilisation"
+              accessibilityLabel={t('profile.legal_group.cguA11y')}
             >
               <View style={[styles.menuItemIcon, { backgroundColor: Colors.infoBg }]}>
                 <Ionicons name="document-text-outline" size={20} color={Colors.blue} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Conditions d'utilisation</Text>
-                <Text style={styles.menuItemDesc}>CGU CamWallet</Text>
+                <Text style={styles.menuItemLabel}>{t('profile.legal_group.cguLabel')}</Text>
+                <Text style={styles.menuItemDesc}>{t('profile.legal_group.cguDesc')}</Text>
               </View>
               <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
             </Pressable>
@@ -643,14 +643,14 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
               style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}
               onPress={() => setLegalScreen('privacy')}
               accessibilityRole="button"
-              accessibilityLabel="Politique de confidentialité"
+              accessibilityLabel={t('profile.legal_group.privacyA11y')}
             >
               <View style={[styles.menuItemIcon, { backgroundColor: Colors.infoBg }]}>
                 <Ionicons name="shield-checkmark-outline" size={20} color={Colors.blue} />
               </View>
               <View style={styles.menuItemInfo}>
-                <Text style={styles.menuItemLabel}>Politique de confidentialité</Text>
-                <Text style={styles.menuItemDesc}>Vos données personnelles</Text>
+                <Text style={styles.menuItemLabel}>{t('profile.legal_group.privacyLabel')}</Text>
+                <Text style={styles.menuItemDesc}>{t('profile.legal_group.privacyDesc')}</Text>
               </View>
               <Ionicons name="arrow-forward" size={18} color={Colors.textMuted} />
             </Pressable>
@@ -663,10 +663,10 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
         onPress={handleLogout}
         accessibilityRole="button"
-        accessibilityLabel="Se déconnecter"
+        accessibilityLabel={t('profile.btnLogoutA11y')}
       >
         <Ionicons name="log-out-outline" size={18} color={Colors.red} />
-        <Text style={styles.logoutText}>Se déconnecter</Text>
+        <Text style={styles.logoutText}>{t('profile.btnLogout')}</Text>
       </Pressable>
 
       {/* Suppression de compte */}
@@ -674,13 +674,13 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
         onPress={() => setDeleteStep('confirm')}
         accessibilityRole="button"
-        accessibilityLabel="Supprimer le compte"
+        accessibilityLabel={t('profile.btnDeleteA11y')}
       >
         <Ionicons name="trash-outline" size={16} color={Colors.red} />
-        <Text style={styles.deleteText}>Supprimer mon compte</Text>
+        <Text style={styles.deleteText}>{t('profile.btnDeleteAccount')}</Text>
       </Pressable>
 
-      <Text style={styles.version}>CamWallet v2.7.3 · Marché Cameroun</Text>
+      <Text style={styles.version}>{t('profile.versionText')}</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
@@ -692,13 +692,13 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       <View style={styles.deleteOverlay}>
         <View style={[styles.deleteModalCard, { gap: Spacing.md }]}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.primary} />
-          <Text style={styles.deleteModalTitle}>Changer le PIN</Text>
+          <Text style={styles.deleteModalTitle}>{t('profile.pinModal.title')}</Text>
 
           {pinStep === 'current' ? (
             <>
-              <Text style={styles.deleteModalDesc}>Étape 1/2 · Confirmez votre PIN actuel.</Text>
+              <Text style={styles.deleteModalDesc}>{t('profile.pinModal.step1Desc')}</Text>
               <View style={{ width: '100%' }}>
-                <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>PIN actuel</Text>
+                <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>{t('profile.pinModal.step1PinLabel')}</Text>
                 <TextInput
                   style={styles.pinInput}
                   value={pinForm.current}
@@ -709,7 +709,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                   secureTextEntry
                   maxLength={6}
                   autoFocus
-                  accessibilityLabel="PIN actuel"
+                  accessibilityLabel={t('profile.pinModal.step1PinLabel')}
                 />
               </View>
               {pinError && <Text style={{ color: Colors.red, fontSize: Typography.xs, textAlign: 'center' }}>{pinError}</Text>}
@@ -718,15 +718,15 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 onPress={handleVerifyCurrentPin}
                 disabled={pinVerifying}
               >
-                <Text style={styles.deleteProceedText}>{pinVerifying ? 'Vérification…' : 'Continuer'}</Text>
+                <Text style={styles.deleteProceedText}>{pinVerifying ? t('profile.pinModal.step1BtnVerifying') : t('profile.pinModal.step1BtnContinue')}</Text>
               </TouchableOpacity>
             </>
           ) : (
             <>
-              <Text style={styles.deleteModalDesc}>Étape 2/2 · Choisissez votre nouveau PIN.</Text>
+              <Text style={styles.deleteModalDesc}>{t('profile.pinModal.step2Desc')}</Text>
               {([
-                { key: 'next', label: 'Nouveau PIN' },
-                { key: 'confirm', label: 'Confirmer le nouveau PIN' },
+                { key: 'next', label: t('profile.pinModal.newPinLabel') },
+                { key: 'confirm', label: t('profile.pinModal.confirmNewPinLabel') },
               ] as const).map(({ key, label }) => (
                 <View key={key} style={{ width: '100%' }}>
                   <Text style={[styles.deleteModalDesc, { textAlign: 'left', marginBottom: 4 }]}>{label}</Text>
@@ -750,13 +750,13 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 onPress={handleChangePin}
                 disabled={pinSaving}
               >
-                <Text style={styles.deleteProceedText}>{pinSaving ? 'Modification…' : 'Confirmer'}</Text>
+                <Text style={styles.deleteProceedText}>{pinSaving ? t('profile.pinModal.step2BtnSaving') : t('profile.pinModal.step2BtnConfirm')}</Text>
               </TouchableOpacity>
             </>
           )}
 
           <TouchableOpacity onPress={() => setPinModalOpen(false)}>
-            <Text style={styles.deleteCancelText}>Annuler</Text>
+            <Text style={styles.deleteCancelText}>{t('profile.pinModal.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -768,49 +768,32 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       <SafeAreaView style={{ flex: 1, backgroundColor: Colors.surface }} edges={['top']}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
           <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold }}>
-            {legalScreen === 'cgu' ? "Conditions d'utilisation" : 'Politique de confidentialité'}
+            {legalScreen === 'cgu' ? t('profile.legalModal.cguTitle') : t('profile.legalModal.privacyTitle')}
           </Text>
-          <Pressable onPress={() => setLegalScreen(null)} accessibilityRole="button" accessibilityLabel="Fermer">
+          <Pressable onPress={() => setLegalScreen(null)} accessibilityRole="button" accessibilityLabel={t('profile.legalModal.closeBtnA11y')}>
             <Ionicons name="close" size={24} color={Colors.text} />
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: Spacing.xl, paddingBottom: 80 }}>
           {legalScreen === 'cgu' ? (
             <>
-              <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold, marginBottom: Spacing.md }}>Conditions Générales d'Utilisation</Text>
-              <Text style={{ color: Colors.textMuted, fontSize: Typography.xs, marginBottom: Spacing.xl }}>Dernière mise à jour : juin 2026</Text>
-              {[
-                ['1. Objet', "CamWallet est un service de paiement par QR-code destiné au marché camerounais. Le Crédit QR est un solde interne prépayé, distinct d'un compte bancaire."],
-                ['2. Conditions d\'accès', "L'accès est réservé aux personnes physiques résidant au Cameroun, majeures ou munies d'une autorisation parentale. L'inscription requiert un numéro de téléphone valide (+237)."],
-                ['3. Utilisation du service', "Le service permet le transfert P2P, le paiement QR chez les commerçants partenaires, la recharge et le retrait via Orange Money ou MTN Mobile Money."],
-                ['4. Sécurité', "Vous êtes responsable de la confidentialité de votre PIN à 6 chiffres. En cas de perte de téléphone, contactez immédiatement le support pour bloquer votre compte."],
-                ['5. Limites financières', "Limites par transaction : 500 000 FCFA. Limites journalières définies par les opérateurs partenaires. CamWallet se réserve le droit de modifier ces limites."],
-                ['6. Responsabilité', "CamWallet ne peut être tenu responsable des interruptions de service des opérateurs tiers (Orange Money, MTN MoMo) ou de force majeure."],
-                ['7. Résiliation', "Vous pouvez supprimer votre compte depuis l'onglet Profil. Le solde restant sera perdu si non retiré préalablement."],
-                ['8. Contact', "Support : support@camwallet.cm · WhatsApp : +237 600 000 000"],
-              ].map(([title, body]) => (
-                <View key={title as string} style={{ marginBottom: Spacing.xl }}>
-                  <Text style={{ color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold, marginBottom: Spacing.sm }}>{title}</Text>
-                  <Text style={{ color: Colors.textSoft, fontSize: Typography.sm, lineHeight: 22 }}>{body}</Text>
+              <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold, marginBottom: Spacing.md }}>{t('profile.cgu.title')}</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: Typography.xs, marginBottom: Spacing.xl }}>{t('profile.cgu.lastUpdate')}</Text>
+              {(['s1','s2','s3','s4','s5','s6','s7','s8'] as const).map((key) => (
+                <View key={key} style={{ marginBottom: Spacing.xl }}>
+                  <Text style={{ color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold, marginBottom: Spacing.sm }}>{t(`profile.cgu.${key}.title`)}</Text>
+                  <Text style={{ color: Colors.textSoft, fontSize: Typography.sm, lineHeight: 22 }}>{t(`profile.cgu.${key}.body`)}</Text>
                 </View>
               ))}
             </>
           ) : (
             <>
-              <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold, marginBottom: Spacing.md }}>Politique de confidentialité</Text>
-              <Text style={{ color: Colors.textMuted, fontSize: Typography.xs, marginBottom: Spacing.xl }}>Dernière mise à jour : juin 2026</Text>
-              {[
-                ['Données collectées', "Nom complet, numéro de téléphone, date de naissance, ville, adresse e-mail (optionnelle), photo de profil, documents KYC (CNI recto-verso + selfie)."],
-                ['Finalité', "Vérification d'identité (KYC), prévention de la fraude, conformité ANIF/COBAC, fourniture du service de paiement, notifications transactionnelles."],
-                ['Conservation', "Vos données sont conservées 5 ans après la clôture du compte, conformément aux obligations légales camerounaises."],
-                ['Partage', "Nous ne vendons jamais vos données. Elles peuvent être partagées avec les autorités réglementaires (ANIF) en cas d'obligation légale."],
-                ['Vos droits', "Accès, rectification, suppression de vos données : envoyez votre demande à privacy@camwallet.cm. Délai de réponse : 30 jours."],
-                ['Sécurité', "Données chiffrées en transit (TLS 1.3) et au repos. PIN stocké sous forme de hash bcrypt (coût 12). Tokens JWT avec expiration courte."],
-                ['Contact DPO', "Délégué à la Protection des Données : dpo@camwallet.cm"],
-              ].map(([title, body]) => (
-                <View key={title as string} style={{ marginBottom: Spacing.xl }}>
-                  <Text style={{ color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold, marginBottom: Spacing.sm }}>{title}</Text>
-                  <Text style={{ color: Colors.textSoft, fontSize: Typography.sm, lineHeight: 22 }}>{body}</Text>
+              <Text style={{ color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold, marginBottom: Spacing.md }}>{t('profile.privacyPolicy.title')}</Text>
+              <Text style={{ color: Colors.textMuted, fontSize: Typography.xs, marginBottom: Spacing.xl }}>{t('profile.privacyPolicy.lastUpdate')}</Text>
+              {(['s1','s2','s3','s4','s5','s6','s7'] as const).map((key) => (
+                <View key={key} style={{ marginBottom: Spacing.xl }}>
+                  <Text style={{ color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold, marginBottom: Spacing.sm }}>{t(`profile.privacyPolicy.${key}.title`)}</Text>
+                  <Text style={{ color: Colors.textSoft, fontSize: Typography.sm, lineHeight: 22 }}>{t(`profile.privacyPolicy.${key}.body`)}</Text>
                 </View>
               ))}
             </>
@@ -824,15 +807,13 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       <View style={styles.deleteOverlay}>
         <View style={styles.deleteModalCard}>
           <Ionicons name="warning-outline" size={36} color={Colors.red} />
-          <Text style={styles.deleteModalTitle}>Supprimer le compte ?</Text>
-          <Text style={styles.deleteModalDesc}>
-            Cette action est irréversible. Toutes vos données seront désactivées. Votre solde restant sera perdu.
-          </Text>
+          <Text style={styles.deleteModalTitle}>{t('profile.deleteModal1.title')}</Text>
+          <Text style={styles.deleteModalDesc}>{t('profile.deleteModal1.desc')}</Text>
           <TouchableOpacity style={styles.deleteProceedBtn} onPress={() => setDeleteStep('pin')}>
-            <Text style={styles.deleteProceedText}>Oui, continuer</Text>
+            <Text style={styles.deleteProceedText}>{t('profile.deleteModal1.btnContinue')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setDeleteStep('idle')}>
-            <Text style={styles.deleteCancelText}>Annuler</Text>
+            <Text style={styles.deleteCancelText}>{t('profile.deleteModal1.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -844,8 +825,8 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       <View style={styles.deleteOverlay}>
         <View style={styles.deleteModalCard}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.red} />
-          <Text style={styles.deleteModalTitle}>Confirmez avec votre PIN</Text>
-          <Text style={styles.deleteModalDesc}>Saisissez votre PIN à 6 chiffres pour confirmer la suppression définitive.</Text>
+          <Text style={styles.deleteModalTitle}>{t('profile.deleteModal2.title')}</Text>
+          <Text style={styles.deleteModalDesc}>{t('profile.deleteModal2.desc')}</Text>
           <TextInput
             style={styles.pinInput}
             value={deletePin}
@@ -856,17 +837,17 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
             secureTextEntry
             maxLength={6}
             autoFocus
-            accessibilityLabel="PIN de confirmation suppression"
+            accessibilityLabel={t('profile.deleteModal2.pinA11y')}
           />
           <TouchableOpacity
             style={[styles.deleteProceedBtn, deleting && { opacity: 0.6 }]}
             onPress={handleDeleteAccount}
             disabled={deleting}
           >
-            <Text style={styles.deleteProceedText}>{deleting ? 'Suppression…' : 'Supprimer définitivement'}</Text>
+            <Text style={styles.deleteProceedText}>{deleting ? t('profile.deleteModal2.btnDeleting') : t('profile.deleteModal2.btnConfirm')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { setDeleteStep('idle'); setDeletePin(''); }}>
-            <Text style={styles.deleteCancelText}>Annuler</Text>
+            <Text style={styles.deleteCancelText}>{t('profile.deleteModal2.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
       </View>

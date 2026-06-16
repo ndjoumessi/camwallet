@@ -17,39 +17,13 @@ import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../cons
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 import { walletApi, MobileOperator } from '../../../src/lib/api';
+import { useTranslation } from 'react-i18next';
 
 interface RechargeModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: (msg: string) => void;
 }
-
-const METHODS = [
-  {
-    id: 'mtn',
-    icon: 'phone-portrait-outline' as const,
-    label: 'MTN Mobile Money',
-    desc: 'Recharge via MoMo',
-    color: Colors.mtn,
-    ussd: '*126#',
-  },
-  {
-    id: 'orange',
-    icon: 'ellipse' as const,
-    label: 'Orange Money',
-    desc: 'Recharge via OM',
-    color: Colors.orange,
-    ussd: '*144#',
-  },
-  {
-    id: 'agent',
-    icon: 'storefront-outline' as const,
-    label: 'Agent partenaire',
-    desc: 'Près de chez vous',
-    color: Colors.blue,
-    ussd: null,
-  },
-];
 
 const toCentimes = (fcfa: number) => Math.round(fcfa * 100);
 
@@ -58,7 +32,14 @@ const QUICK_AMOUNTS = IS_SANDBOX ? [5, 10, 15, 25] : [5000, 10000, 25000, 50000]
 
 export default function RechargeModal({ visible, onClose, onSuccess }: RechargeModalProps) {
   const { user, fetchBalance } = useStore();
+  const { t } = useTranslation();
   const fetchBalanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const METHODS = [
+    { id: 'mtn', icon: 'phone-portrait-outline' as const, label: t('recharge.method.mtnLabel'), desc: t('recharge.method.mtnDesc'), color: Colors.mtn, ussd: '*126#' },
+    { id: 'orange', icon: 'ellipse' as const, label: t('recharge.method.orangeLabel'), desc: t('recharge.method.orangeDesc'), color: Colors.orange, ussd: '*144#' },
+    { id: 'agent', icon: 'storefront-outline' as const, label: t('recharge.method.agentLabel'), desc: t('recharge.method.agentDesc'), color: Colors.blue, ussd: null },
+  ];
 
   useEffect(() => {
     return () => {
@@ -110,9 +91,9 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
       setStep('pending');
       // Le crédit arrivera via webhook — on rafraîchit le solde dans quelques secondes
       fetchBalanceTimerRef.current = setTimeout(() => fetchBalance(), 5000);
-      onSuccess(`Recharge de ${amt.toLocaleString('fr-FR')} FCFA initiée !`);
+      onSuccess(t('recharge.toastSuccess', { amount: amt.toLocaleString('fr-FR') }));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la recharge';
+      const msg = e?.response?.data?.message ?? e?.message ?? t('recharge.errorFallback');
       setError(Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
       setLoading(false);
@@ -127,8 +108,8 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <Animated.View style={[styles.flex, animStyle]}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Recharger mon compte</Text>
-            <IconButton icon="close" onPress={handleClose} accessibilityLabel="Fermer" />
+            <Text style={styles.headerTitle}>{t('recharge.headerTitle')}</Text>
+            <IconButton icon="close" onPress={handleClose} accessibilityLabel={t('recharge.closeBtnA11y')} />
           </View>
 
           {step === 'amount' && (
@@ -136,17 +117,17 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
               <IconButton
                 icon="arrow-back"
                 onPress={() => setStep('method')}
-                accessibilityLabel="Retour"
+                accessibilityLabel={t('recharge.backA11y')}
                 size={20}
               />
-              <Text style={styles.backLabel}>Retour</Text>
+              <Text style={styles.backLabel}>{t('recharge.backLabel')}</Text>
             </View>
           )}
 
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {step === 'method' && (
             <>
-              <Text style={styles.sectionLabel}>Choisir la méthode</Text>
+              <Text style={styles.sectionLabel}>{t('recharge.method.sectionLabel')}</Text>
               {METHODS.map((m) => (
                 <TouchableOpacity
                   key={m.id}
@@ -170,9 +151,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
 
               <View style={styles.infoBox}>
                 <Ionicons name="information-circle-outline" size={16} color={Colors.blue} style={{ marginTop: 1 }} />
-                <Text style={styles.infoText}>
-                  Votre argent reste chez l'opérateur. CamWallet crédite votre solde QR instantanément après confirmation.
-                </Text>
+                <Text style={styles.infoText}>{t('recharge.infoBox')}</Text>
               </View>
             </>
           )}
@@ -192,7 +171,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                     style={styles.phoneInput}
                     value={phone}
                     onChangeText={setPhone}
-                    placeholder="+237 6XX XXX XXX"
+                    placeholder={t('recharge.amount.phonePlaceholder')}
                     placeholderTextColor={Colors.textMuted}
                     keyboardType="phone-pad"
                     autoCorrect={false}
@@ -203,7 +182,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
               )}
 
               <View style={styles.amountWrap}>
-                <Text style={styles.amountLabel}>Montant à recharger</Text>
+                <Text style={styles.amountLabel}>{t('recharge.amount.amountLabel')}</Text>
                 <TextInput
                   style={[styles.amountInput, { color: method.color }]}
                   value={amount}
@@ -213,13 +192,13 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                   keyboardType="numeric"
                   autoFocus
                 />
-                <Text style={styles.amountCurrency}>FCFA</Text>
+                <Text style={styles.amountCurrency}>{t('common.currency')}</Text>
               </View>
 
               {IS_SANDBOX && (
                 <View style={styles.sandboxBanner}>
                   <Ionicons name="flask-outline" size={14} color={Colors.yellow} />
-                  <Text style={styles.sandboxText}>Mode sandbox — max 25 XAF</Text>
+                  <Text style={styles.sandboxText}>{t('recharge.sandbox.banner')}</Text>
                 </View>
               )}
 
@@ -242,14 +221,14 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
 
               <View style={styles.limitNote}>
                 <Text style={styles.limitText}>
-                  {IS_SANDBOX ? 'Min: 1 FCFA · Max: 25 FCFA (sandbox)' : 'Min: 500 FCFA · Max: 500 000 FCFA'}
+                  {IS_SANDBOX ? t('recharge.limitNote.sandbox') : t('recharge.limitNote.prod')}
                 </Text>
               </View>
 
               {error && <Text style={styles.errorText}>{error}</Text>}
 
               <Button
-                label={`Recharger${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
+                label={amt ? t('recharge.btnRechargeWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('recharge.btnRecharge')}
                 onPress={handleRecharge}
                 loading={loading}
                 disabled={loading || (IS_SANDBOX ? (amt < 1 || amt > 25) : (amt < 500))}
@@ -263,12 +242,11 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
               <View style={styles.pendingIcon}>
                 <Ionicons name="hourglass-outline" size={40} color={Colors.yellow} />
               </View>
-              <Text style={styles.pendingTitle}>Recharge en cours</Text>
+              <Text style={styles.pendingTitle}>{t('recharge.pending.title')}</Text>
               <Text style={styles.pendingText}>
-                Votre compte sera crédité dès confirmation par {method?.label ?? 'l\'opérateur'}.
-                {'\n\n'}Cela prend généralement quelques secondes.
+                {t('recharge.pending.text', { operator: method?.label ?? '' })}
               </Text>
-              <Button label="Fermer" onPress={handleClose} fullWidth style={{ marginTop: Spacing.xl }} />
+              <Button label={t('recharge.pending.btnClose')} onPress={handleClose} fullWidth style={{ marginTop: Spacing.xl }} />
             </View>
           )}
           </ScrollView>

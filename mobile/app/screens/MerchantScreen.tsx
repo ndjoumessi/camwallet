@@ -18,11 +18,12 @@ import QRCode from 'react-native-qrcode-svg';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import QRLib from 'qrcode';
+import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Skeleton } from '../components/ui';
 import { merchantApi, MerchantStatsResponse, MerchantTransaction } from '../../src/lib/api';
 
-const BAR_DAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+const BAR_DAYS_COUNT = 7;
 const BAR_FACTORS = [0.6, 0.8, 0.7, 1.0, 0.9, 1.2, 0.5];
 const BAR_MAX_H = 60;
 
@@ -51,6 +52,8 @@ const StatCard = ({
 );
 
 export default function MerchantScreen({ onBack }: MerchantScreenProps) {
+  const { t } = useTranslation();
+  const BAR_DAYS = t('merchant.chart.days').split(',');
   const [stats, setStats] = useState<MerchantStatsResponse | null>(null);
   const [txs, setTxs] = useState<MerchantTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +63,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
   const [qrValue, setQrValue] = useState<string | null>(null);
 
   // Barres du graphique — ratio 0→1, nativeDriver:true (scaleY+translateY, pas height)
-  const barAnims = useRef(BAR_DAYS.map(() => new Animated.Value(0))).current;
+  const barAnims = useRef(Array.from({ length: BAR_DAYS_COUNT }, () => new Animated.Value(0))).current;
   const reduceMotionRef = useRef(false);
 
   React.useEffect(() => {
@@ -105,12 +108,12 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([merchantApi.getStats(), merchantApi.getTransactions(1, 10)])
-      .then(([s, t]) => {
+      .then(([s, txRes]) => {
         setStats(s);
-        setTxs(t.data);
+        setTxs(txRes.data);
         setError(null);
       })
-      .catch((e) => setError(e?.response?.data?.message ?? 'Erreur de chargement'))
+      .catch((e) => setError(e?.response?.data?.message ?? t('common.error')))
       .finally(() => setLoading(false));
   }, []);
 
@@ -120,7 +123,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
   const generateQr = () => {
     const amount = parseInt(qrAmount.replace(/\D/g, ''), 10);
     if (!amount || amount <= 0) {
-      Alert.alert('Montant invalide', 'Saisissez un montant en FCFA supérieur à 0.');
+      Alert.alert(t('merchant.alertInvalidAmountTitle'), t('merchant.alertInvalidAmountMsg'));
       return;
     }
     // Encode: type:MERCHANT_QR, amount en centimes
@@ -129,17 +132,17 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
 
   const handleShareQr = async () => {
     if (!qrValue) {
-      Alert.alert('Générez d\'abord un QR', 'Saisissez un montant et générez le QR avant de partager.');
+      Alert.alert(t('merchant.alertNoQrTitle'), t('merchant.alertNoQrMsg'));
       return;
     }
     try {
       await Share.share({
-        message: 'Payez-moi via CamWallet : ' + qrValue,
-        title: 'Mon QR CamWallet',
+        message: t('merchant.shareMessage') + ' ' + qrValue,
+        title: t('merchant.shareTitle'),
       });
     } catch (e: any) {
       if (e?.message !== 'User did not share') {
-        Alert.alert('Erreur', e?.message ?? 'Impossible de partager');
+        Alert.alert(t('merchant.alertShareError'), e?.message ?? '');
       }
     }
   };
@@ -165,24 +168,24 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
           .footer { color: #64748B; font-size: 12px; margin-top: 24px; text-align: center; }
         </style></head>
         <body>
-          <h1>CamWallet — QR de paiement</h1>
+          <h1>${t('merchant.pdf.title')}</h1>
           <div class="amount">${amountFcfa.toLocaleString('fr-FR')} FCFA</div>
           <div class="qr-container">
             <img src="${qrDataUri}" />
           </div>
-          <p class="footer">Scannez ce QR avec l'application CamWallet pour payer</p>
+          <p class="footer">${t('merchant.pdf.footer')}</p>
         </body>
         </html>
       `;
 
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: 'Partager le QR de paiement' });
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: t('merchant.pdf.dialogTitle') });
       } else {
         await Print.printAsync({ uri });
       }
     } catch (e) {
-      Alert.alert('Erreur', 'Impossible de générer le PDF');
+      Alert.alert(t('merchant.alertShareError'), t('merchant.alertPdfError') ?? '');
     }
   };
 
@@ -190,11 +193,11 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
     <View style={styles.root}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Retour">
+        <TouchableOpacity onPress={onBack} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={t('merchant.a11yBack')}>
           <Ionicons name="arrow-back" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Tableau de bord marchand</Text>
-        <TouchableOpacity onPress={load} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Actualiser">
+        <Text style={styles.headerTitle}>{t('merchant.headerTitle')}</Text>
+        <TouchableOpacity onPress={load} style={styles.backBtn} accessibilityRole="button" accessibilityLabel={t('merchant.a11yRefresh')}>
           <Ionicons name="refresh-outline" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
       </View>
@@ -203,9 +206,9 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
         {error && (
           <View style={styles.errorWrap}>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={load} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel="Réessayer">
+            <TouchableOpacity onPress={load} style={styles.retryBtn} accessibilityRole="button" accessibilityLabel={t('merchant.a11yRetry')}>
               <Ionicons name="refresh-outline" size={14} color={Colors.red} />
-              <Text style={styles.retryText}>Réessayer</Text>
+              <Text style={styles.retryText}>{t('merchant.retryText')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -226,32 +229,32 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
             <View style={styles.balanceCard}>
               <View style={styles.balanceBadge}>
                 <Ionicons name="storefront-outline" size={14} color={Colors.primary} />
-                <Text style={styles.balanceBadgeText}>Marchand</Text>
+                <Text style={styles.balanceBadgeText}>{t('merchant.balance_badge')}</Text>
               </View>
-              <Text style={styles.balanceLabel}>Solde du compte marchand</Text>
+              <Text style={styles.balanceLabel}>{t('merchant.balance_label')}</Text>
               <Text style={styles.balanceValue}>
                 {stats ? fcfa(stats.balance) : '—'} <Text style={styles.balanceCurrency}>FCFA</Text>
               </Text>
             </View>
 
             {/* Stats */}
-            <Text style={styles.sectionTitle}>Chiffre d'affaires</Text>
+            <Text style={styles.sectionTitle}>{t('merchant.stats.title')}</Text>
             <View style={styles.statsGrid}>
               <StatCard
-                label="Aujourd'hui"
+                label={t('merchant.stats.today')}
                 value={stats ? `${fcfa(stats.day.amount)} FCFA` : '—'}
-                sub={stats ? `${stats.day.count} opération${stats.day.count !== 1 ? 's' : ''}` : undefined}
+                sub={stats ? `${stats.day.count} ${stats.day.count !== 1 ? t('merchant.stats.operationPlural') : t('merchant.stats.operationSingular')}` : undefined}
               />
               <StatCard
-                label="Cette semaine"
+                label={t('merchant.stats.week')}
                 value={stats ? `${fcfa(stats.week.amount)} FCFA` : '—'}
-                sub={stats ? `${stats.week.count} opérations` : undefined}
+                sub={stats ? `${stats.week.count} ${t('merchant.stats.operationPlural')}` : undefined}
                 color={Colors.blue}
               />
               <StatCard
-                label="Ce mois"
+                label={t('merchant.stats.month')}
                 value={stats ? `${fcfa(stats.month.amount)} FCFA` : '—'}
-                sub={stats ? `${stats.month.count} opérations` : undefined}
+                sub={stats ? `${stats.month.count} ${t('merchant.stats.operationPlural')}` : undefined}
                 color={Colors.yellow}
               />
             </View>
@@ -261,7 +264,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
               <View style={styles.lowBalanceAlert}>
                 <Ionicons name="warning-outline" size={18} color={Colors.yellow} />
                 <Text style={styles.lowBalanceText}>
-                  Solde bas : {fcfa(stats.balance)} FCFA — Pensez à recharger votre compte.
+                  {t('merchant.lowBalance', { amount: `${fcfa(stats.balance)} FCFA` })}
                 </Text>
               </View>
             )}
@@ -269,8 +272,8 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
             {/* Graphique tendance 7 jours (mini-barres) */}
             {stats && (
               <>
-                <Text style={styles.sectionTitle}>Tendance (simulation 7 j.)</Text>
-                <View style={styles.chartCard} accessibilityLabel="Graphique de tendance sur 7 jours" accessibilityRole="none">
+                <Text style={styles.sectionTitle}>{t('merchant.chart.title')}</Text>
+                <View style={styles.chartCard} accessibilityLabel={t('merchant.chart.a11y')} accessibilityRole="none">
                   <View style={styles.chartBars}>
                     {BAR_DAYS.map((day, i) => (
                       <View key={i} style={styles.chartBarWrap}>
@@ -295,15 +298,15 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                       </View>
                     ))}
                   </View>
-                  <Text style={styles.chartNote}>Basé sur le CA de la semaine · Aujourd'hui en vert</Text>
+                  <Text style={styles.chartNote}>{t('merchant.chart.note')}</Text>
                 </View>
               </>
             )}
 
             {/* QR dynamique */}
-            <Text style={styles.sectionTitle}>QR code par montant</Text>
+            <Text style={styles.sectionTitle}>{t('merchant.qr.title')}</Text>
             <View style={styles.qrCard}>
-              <Text style={styles.qrHint}>Générez un QR pré-rempli avec le montant exact de la transaction.</Text>
+              <Text style={styles.qrHint}>{t('merchant.qr.hint')}</Text>
               <View style={styles.qrRow}>
                 <TextInput
                   style={styles.qrInput}
@@ -312,14 +315,14 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                     setQrAmount(v.replace(/\D/g, ''));
                     setQrValue(null);
                   }}
-                  placeholder="Montant en FCFA"
+                  placeholder={t('merchant.qr.placeholder')}
                   placeholderTextColor={Colors.textMuted}
                   keyboardType="numeric"
-                  accessibilityLabel="Montant en FCFA pour le QR"
+                  accessibilityLabel={t('merchant.qr.placeholder')}
                 />
-                <TouchableOpacity style={styles.qrGenBtn} onPress={generateQr} accessibilityRole="button" accessibilityLabel="Générer le QR">
+                <TouchableOpacity style={styles.qrGenBtn} onPress={generateQr} accessibilityRole="button" accessibilityLabel={t('merchant.qr.btnGenerate')}>
                   <Ionicons name="qr-code-outline" size={18} color="#fff" />
-                  <Text style={styles.qrGenBtnText}>Générer</Text>
+                  <Text style={styles.qrGenBtnText}>{t('merchant.qr.btnGenerate')}</Text>
                 </TouchableOpacity>
               </View>
               {qrValue && (
@@ -330,37 +333,37 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                   <Text style={styles.qrAmountLabel}>
                     {parseInt(qrAmount, 10).toLocaleString('fr-FR')} FCFA
                   </Text>
-                  <Text style={styles.qrSub}>Faites scanner par le client</Text>
+                  <Text style={styles.qrSub}>{t('merchant.qr.sub')}</Text>
                   <TouchableOpacity
                     style={styles.shareQrBtn}
                     onPress={handleShareQr}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel="Partager mon QR"
+                    accessibilityLabel={t('merchant.qr.btnShare')}
                   >
                     <Ionicons name="share-outline" size={18} color={Colors.blue} />
-                    <Text style={styles.shareQrBtnText}>Partager mon QR</Text>
+                    <Text style={styles.shareQrBtnText}>{t('merchant.qr.btnShare')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.printQrBtn}
                     onPress={handlePrintQr}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel="Imprimer ou partager en PDF"
+                    accessibilityLabel={t('merchant.qr.btnPrint')}
                   >
                     <Ionicons name="print-outline" size={18} color={Colors.primary} />
-                    <Text style={styles.printQrBtnText}>Imprimer / Partager PDF</Text>
+                    <Text style={styles.printQrBtnText}>{t('merchant.qr.btnPrint')}</Text>
                   </TouchableOpacity>
                 </Animated.View>
               )}
             </View>
 
             {/* Dernières transactions */}
-            <Text style={styles.sectionTitle}>Dernières transactions reçues</Text>
+            <Text style={styles.sectionTitle}>{t('merchant.txList.title')}</Text>
             {txs.length === 0 ? (
               <View style={styles.emptyWrap}>
                 <Ionicons name="receipt-outline" size={40} color={Colors.textMuted} />
-                <Text style={styles.emptyText}>Aucune transaction pour l'instant</Text>
+                <Text style={styles.emptyText}>{t('merchant.txList.empty')}</Text>
               </View>
             ) : (
               <View style={styles.txList}>
@@ -384,7 +387,7 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
                       ? styles.txStatusOk : styles.txStatusPending]}>
                       <Text style={[styles.txStatusText, tx.status === 'COMPLETED'
                         ? styles.txStatusTextOk : styles.txStatusTextPending]}>
-                        {tx.status === 'COMPLETED' ? 'Reçu' : 'En attente'}
+                        {tx.status === 'COMPLETED' ? t('merchant.txStatus.completed') : t('merchant.txStatus.pending')}
                       </Text>
                     </View>
                   </View>

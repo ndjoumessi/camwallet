@@ -9,7 +9,125 @@
     "back": "Back",
     "send": "Send",
     "amount": "Amount",
-    "currency": "XAF"
+    "currency": "XAF",
+    "close": "Close",
+    "continue": "Continue",
+    "finish": "Done",
+    "error_title": "Error"
+  },
+  "splash": {
+    "tagline": "Your digital wallet"
+  },
+  "onboarding": {
+    "slides": [
+      {
+        "title": "Instant payments",
+        "desc": "Scan a QR Code and pay in 3 seconds, anywhere in Cameroon."
+      },
+      {
+        "title": "Secure & reliable",
+        "desc": "Military-grade encryption, 6-digit PIN and real-time SMS alerts."
+      },
+      {
+        "title": "Top up easily",
+        "desc": "Via MTN MoMo, Orange Money or partner agents near you."
+      }
+    ],
+    "btn": {
+      "next": "Next",
+      "createAccount": "Create my account",
+      "skip": "Skip"
+    },
+    "a11y": {
+      "skipIntro": "Skip the intro and create an account",
+      "dotsTablist": "Step {{current}} of {{total}}"
+    },
+    "phone": {
+      "title": "Your number",
+      "desc": "We'll send you a verification SMS",
+      "label": "Phone number",
+      "placeholder": "6XX XX XX XX",
+      "a11yLabel": "Phone number without country code",
+      "a11yHint": "9 digits, starting with 6 or 2",
+      "btnSendSms": "Send SMS code",
+      "terms": "By continuing, you agree to our",
+      "termsLink": "Terms of use",
+      "errorAlreadyRegistered": "This number is already registered. Sign in from the home screen.",
+      "errorTooManyAttempts": "Too many attempts. Try again in a few minutes.",
+      "errorInvalidNumber": "Invalid number.",
+      "errorSendFailed": "Could not send the SMS. Check your connection.",
+      "errorResendFailed": "Could not resend the SMS. Check your connection."
+    },
+    "otp": {
+      "title": "Verification code",
+      "desc": "Code sent to +237 {{phone}}",
+      "label": "6-digit code",
+      "a11yLabel": "6-digit verification code received by SMS",
+      "btnVerify": "Verify",
+      "btnResendCooldown": "Resend code ({{seconds}}s)",
+      "btnResend": "Resend code",
+      "a11yResendCooldown": "Resend code available in {{seconds}} seconds",
+      "a11yResend": "Resend code by SMS",
+      "btnChangeNumber": "Change number",
+      "a11yChangeNumber": "Change phone number",
+      "errorWrongCode": "Wrong code. Check the SMS and try again.",
+      "errorExpiredCode": "This code has expired. Request a new one.",
+      "errorTooMany": "Too many attempts. Request a new code.",
+      "errorVerification": "Verification error. Please try again."
+    },
+    "pin": {
+      "titleCreate": "Create your PIN",
+      "titleConfirm": "Confirm your PIN",
+      "descCreate": "Choose a 6-digit PIN code",
+      "descConfirm": "Enter your PIN again to confirm",
+      "a11yDots": "{{count}} digit(s) entered out of 6",
+      "a11yDelete": "Delete last digit",
+      "a11yDigit": "Digit {{digit}}",
+      "errorMismatch": "PINs do not match.",
+      "errorTooManyAttempts": "Too many attempts. Wait a few minutes.",
+      "errorFinalizeError": "Could not complete registration. Please try again.",
+      "btnRestart": "Start over",
+      "a11yRestart": "Start PIN entry over"
+    }
+  },
+  "auth": {
+    "login": "Sign in",
+    "phone": "Phone number",
+    "pin": "PIN code",
+    "loginBtn": "Sign in",
+    "biometric": "Sign in with Face ID / Fingerprint",
+    "forgotPin": "Forgot PIN?",
+    "register": "Create account",
+    "logout": "Sign out",
+    "login_screen": {
+      "subtitle": "Sign in to continue",
+      "bioBtn": {
+        "loading": "Verifying…",
+        "label": "Sign in with Face ID / Fingerprint",
+        "a11y": "Sign in with biometrics"
+      },
+      "divider": "or with PIN",
+      "phoneLabel": "Phone number",
+      "phonePlaceholder": "+237 6XX XXX XXX",
+      "phoneA11y": "Phone number",
+      "pinLabel": "PIN code",
+      "pinA11y": "6-digit PIN code",
+      "btnSubmit": "Sign in",
+      "noAccount": "Don't have an account?",
+      "createAccount": "Create account",
+      "createAccountA11y": "Create account",
+      "alertSessionExpiredTitle": "Session expired",
+      "alertSessionExpiredMsg": "Please sign in again with your PIN."
+    },
+    "biometric_prompt": {
+      "promptMessage": "Confirm your identity",
+      "cancelLabel": "Cancel",
+      "fallbackLabel": "Use PIN",
+      "promptTitle": "Enable biometric login?",
+      "promptDesc": "Sign in quickly with Face ID or your fingerprint on your next visit.",
+      "btnEnable": "Enable",
+      "btnLater": "Later"
+    }
   },
   "home": {
     "greeting": "Hello 👋",
@@ -22,17 +140,59 @@
       "recharge": "Top up",
       "withdraw": "Withdraw",
       "scan": "Scan"
-    }
+    },
+    "balanceBadgeVerified": "Verified account",
+    "loyaltyBanner": "{{points}} loyalty points  ·  Next tier: {{nextReward}} pts",
+    "recentContacts": "Recent contacts",
+    "a11yContactSend": "Send to {{name}}",
+    "a11yTxDetail": "Detail: {{type}} {{name}}, {{amount}}",
+    "a11yShowBalance": "Show balance",
+    "a11yHideBalance": "Hide balance"
   },
-  "auth": {
-    "login": "Sign in",
-    "phone": "Phone number",
-    "pin": "PIN code",
-    "loginBtn": "Sign in",
-    "biometric": "Sign in with Face ID / Fingerprint",
-    "forgotPin": "Forgot PIN?",
-    "register": "Create account",
-    "logout": "Sign out"
+  "history": {
+    "title": "History",
+    "noHistory": "No transactions",
+    "loadMore": "Load more",
+    "allLoaded": "All transactions loaded",
+    "filters": {
+      "all": "All",
+      "sent": "Sent",
+      "received": "Received",
+      "recharge": "Top-ups",
+      "withdrawals": "Withdrawals"
+    },
+    "search": {
+      "placeholder": "Search a transaction…",
+      "a11yLabel": "Search a transaction",
+      "a11yClear": "Clear search"
+    },
+    "export": {
+      "a11y": "Export to PDF"
+    },
+    "filterA11y": "Filter: {{filter}}",
+    "emptyText": "No transaction found",
+    "footerAllLoaded": "All transactions loaded",
+    "alertNoTxTitle": "No transactions",
+    "alertNoTxMsg": "No transactions to export for this filter.",
+    "alertPdfTitle": "PDF generated",
+    "alertPdfMsg": "File saved: {{uri}}",
+    "alertErrorTitle": "Error",
+    "alertErrorMsg": "Could not generate PDF",
+    "a11yTxRow": "{{type}} {{name}}, {{amount}}",
+    "pdf": {
+      "dialogTitle": "Export CamWallet statement",
+      "statementTitle": "Transaction statement",
+      "filterLabel": "Filter:",
+      "searchLabel": "Search:",
+      "generatedOn": "Generated on {{date}}",
+      "colDate": "Date",
+      "colOperation": "Operation",
+      "colType": "Type",
+      "colAmount": "Amount",
+      "noName": "(no name)",
+      "netTotal": "Net total:",
+      "footer": "CamWallet · Auto-generated document · Not contractual"
+    }
   },
   "profile": {
     "title": "My profile",
@@ -47,18 +207,170 @@
     "language": "Language",
     "cgu": "Terms of use",
     "privacy": "Privacy policy",
-    "version": "Version"
-  },
-  "history": {
-    "title": "History",
-    "noHistory": "No transactions",
-    "loadMore": "Load more",
-    "allLoaded": "All transactions loaded",
-    "filters": {
-      "all": "All",
-      "sent": "Sent",
-      "received": "Received",
-      "recharge": "Top-ups"
+    "version": "Version",
+    "kycBadge": {
+      "approved": "Verified",
+      "pending": "Pending",
+      "submitted": "Under review",
+      "rejected": "Rejected"
+    },
+    "a11yChangeAvatar": "Change profile photo",
+    "badgeMerchant": "Merchant",
+    "errorRetry": "Retry",
+    "btnEditProfile": "Edit profile",
+    "btnEditA11y": "Edit profile",
+    "kycBtnVerify": "Verify my identity (KYC)",
+    "kycBtnResubmit": "Resubmit my KYC",
+    "kycBtnInReview": "KYC under review — resubmit",
+    "kycBtnA11y": "Verify my identity",
+    "edit": {
+      "phoneLabel": "Phone",
+      "phoneLockA11y": "Why this field is locked",
+      "phoneReadonlyNote": "Cannot be changed for security reasons",
+      "phoneSupportNote": "To change your number, contact support",
+      "kycStatusLabel": "KYC status",
+      "currencyLabel": "Currency",
+      "currencyValue": "XAF — CFA Franc",
+      "fullNameLabel": "Full name",
+      "fullNamePlaceholder": "John Doe",
+      "emailLabel": "Email",
+      "emailPlaceholder": "john@example.cm",
+      "cityLabel": "City",
+      "cityPlaceholder": "Douala",
+      "dobLabel": "Date of birth",
+      "dobPlaceholder": "DD/MM/YYYY",
+      "dobReadonlyNote": "Date of birth cannot be changed after KYC verification",
+      "btnCancel": "Cancel",
+      "btnCancelA11y": "Cancel changes",
+      "btnSave": "Save",
+      "btnSaveA11y": "Save changes"
+    },
+    "stats": {
+      "balance": "Balance (XAF)",
+      "transactions": "Transactions",
+      "memberSince": "Member since"
+    },
+    "merchant": {
+      "groupLabel": "Merchant space",
+      "dashboardLabel": "Merchant dashboard",
+      "dashboardDesc": "Stats, transactions and dynamic QR",
+      "dashboardA11y": "Merchant dashboard"
+    },
+    "security_group": {
+      "groupLabel": "Security",
+      "changePinLabel": "Change PIN",
+      "changePinDesc": "Current PIN required",
+      "changePinA11y": "Change PIN",
+      "biometricLabel": "Biometric login",
+      "biometricDesc": "Face ID / fingerprint",
+      "biometricA11y": "Enable biometric login",
+      "themeDark": "Dark mode",
+      "themeLight": "Light mode",
+      "themeDesc": "App appearance",
+      "themeA11y": "Toggle dark mode",
+      "pushLabel": "Push notifications",
+      "pushDesc": "Real-time transaction alerts",
+      "pushA11y": "Enable push notifications",
+      "langLabel": "Language",
+      "langDescFr": "Français",
+      "langDescEn": "English",
+      "langA11y": "Toggle language FR / EN"
+    },
+    "legal_group": {
+      "groupLabel": "Legal",
+      "cguLabel": "Terms of use",
+      "cguDesc": "CamWallet T&C",
+      "cguA11y": "Terms and conditions",
+      "privacyLabel": "Privacy policy",
+      "privacyDesc": "Your personal data",
+      "privacyA11y": "Privacy policy"
+    },
+    "btnLogout": "Sign out",
+    "btnLogoutA11y": "Sign out",
+    "btnDeleteAccount": "Delete my account",
+    "btnDeleteA11y": "Delete account",
+    "versionText": "CamWallet · Cameroon Market",
+    "alertLogoutTitle": "Sign out",
+    "alertLogoutMsg": "Are you sure you want to sign out?",
+    "alertLogoutCancel": "Cancel",
+    "alertLogoutConfirm": "Sign out",
+    "alertValidationTitle": "Validation",
+    "alertValidationNameError": "Full name must be at least 2 characters.",
+    "alertValidationEmailError": "Invalid email format.",
+    "alertValidationDobError": "Date of birth: expected DD/MM/YYYY format.",
+    "alertUpdateError": "Update failed",
+    "alertPermissionTitle": "Permission required",
+    "alertPermissionMsg": "Allow access to the gallery to change your photo.",
+    "alertUploadError": "Upload failed",
+    "alertBioUnavailableTitle": "Unavailable",
+    "alertBioUnavailableMsg": "No biometrics configured on this device.",
+    "biometricPromptMessage": "Enable biometrics",
+    "pinModal": {
+      "title": "Change PIN",
+      "step1Desc": "Step 1/2 · Confirm your current PIN.",
+      "step1PinLabel": "Current PIN",
+      "step1BtnVerifying": "Verifying…",
+      "step1BtnContinue": "Continue",
+      "step2Desc": "Step 2/2 · Choose your new PIN.",
+      "newPinLabel": "New PIN",
+      "confirmNewPinLabel": "Confirm new PIN",
+      "step2BtnSaving": "Saving…",
+      "step2BtnConfirm": "Confirm",
+      "btnCancel": "Cancel",
+      "errorCurrentPinLength": "Current PIN must be 6 digits.",
+      "errorCurrentPinFallback": "Current PIN incorrect",
+      "errorNewPinLength": "New PIN must be 6 digits.",
+      "errorNewPinMismatch": "The two new PINs do not match.",
+      "errorUnknown": "Unknown error",
+      "alertChangedTitle": "PIN changed",
+      "alertChangedMsg": "Your PIN has been changed. Please sign in again."
+    },
+    "deleteModal1": {
+      "title": "Delete account?",
+      "desc": "This action is irreversible. All your data will be deactivated. Your remaining balance will be lost.",
+      "btnContinue": "Yes, continue",
+      "btnCancel": "Cancel"
+    },
+    "deleteModal2": {
+      "title": "Confirm with your PIN",
+      "desc": "Enter your 6-digit PIN to confirm permanent deletion.",
+      "pinA11y": "Deletion confirmation PIN",
+      "btnDeleting": "Deleting…",
+      "btnConfirm": "Delete permanently",
+      "btnCancel": "Cancel"
+    },
+    "alertDeleteInvalidPin": "Invalid PIN",
+    "alertDeleteInvalidPinMsg": "Enter your 6-digit PIN.",
+    "alertDeletePinWrongTitle": "Wrong PIN",
+    "alertDeletePinWrongMsg": "The code entered does not match your PIN.",
+    "alertDeleteErrorMsg": "Deletion error",
+    "legalModal": {
+      "closeBtnA11y": "Close",
+      "cguTitle": "Terms of use",
+      "privacyTitle": "Privacy policy"
+    },
+    "cgu": {
+      "title": "Terms and Conditions",
+      "lastUpdate": "Last updated: June 2026",
+      "s1": { "title": "1. Purpose", "body": "CamWallet is a QR-code payment service for the Cameroon market. QR Credit is an internal prepaid balance, separate from a bank account." },
+      "s2": { "title": "2. Access conditions", "body": "Access is reserved for individuals residing in Cameroon, of legal age or with parental consent. Registration requires a valid phone number (+237)." },
+      "s3": { "title": "3. Use of service", "body": "The service enables P2P transfers, QR payments at partner merchants, top-ups and withdrawals via Orange Money or MTN Mobile Money." },
+      "s4": { "title": "4. Security", "body": "You are responsible for keeping your 6-digit PIN confidential. If your phone is lost, contact support immediately to block your account." },
+      "s5": { "title": "5. Financial limits", "body": "Per-transaction limit: 500,000 XAF. Daily limits set by partner operators. CamWallet reserves the right to modify these limits." },
+      "s6": { "title": "6. Liability", "body": "CamWallet cannot be held liable for service interruptions from third-party operators (Orange Money, MTN MoMo) or force majeure." },
+      "s7": { "title": "7. Termination", "body": "You can delete your account from the Profile tab. The remaining balance will be lost if not withdrawn beforehand." },
+      "s8": { "title": "8. Contact", "body": "Support: support@camwallet.cm · WhatsApp: +237 600 000 000" }
+    },
+    "privacyPolicy": {
+      "title": "Privacy Policy",
+      "lastUpdate": "Last updated: June 2026",
+      "s1": { "title": "Data collected", "body": "Full name, phone number, date of birth, city, email address (optional), profile photo, KYC documents (ID front/back + selfie)." },
+      "s2": { "title": "Purpose", "body": "Identity verification (KYC), fraud prevention, ANIF/COBAC compliance, payment service provision, transactional notifications." },
+      "s3": { "title": "Retention", "body": "Your data is kept for 5 years after account closure, in accordance with Cameroonian legal obligations." },
+      "s4": { "title": "Sharing", "body": "We never sell your data. It may be shared with regulatory authorities (ANIF) when legally required." },
+      "s5": { "title": "Your rights", "body": "Access, rectification, deletion of your data: send your request to privacy@camwallet.cm. Response time: 30 days." },
+      "s6": { "title": "Security", "body": "Data encrypted in transit (TLS 1.3) and at rest. PIN stored as bcrypt hash (cost 12). Short-lived JWT tokens." },
+      "s7": { "title": "DPO contact", "body": "Data Protection Officer: dpo@camwallet.cm" }
     }
   },
   "merchant": {
@@ -72,6 +384,294 @@
     "printQr": "Print / Share PDF",
     "shareQr": "Share my QR",
     "lastTransactions": "Latest received transactions",
-    "lowBalance": "Low balance — consider topping up your account"
+    "lowBalance": "Low balance: {{amount}} XAF — Consider topping up your account.",
+    "headerTitle": "Merchant dashboard",
+    "a11yBack": "Back",
+    "a11yRefresh": "Refresh",
+    "a11yRetry": "Retry",
+    "retryText": "Retry",
+    "balance_badge": "Merchant",
+    "balance_label": "Merchant account balance",
+    "stats": {
+      "title": "Revenue",
+      "today": "Today",
+      "week": "This week",
+      "month": "This month",
+      "operationSingular": "operation",
+      "operationPlural": "operations"
+    },
+    "chart": {
+      "title": "Trend (7-day simulation)",
+      "note": "Based on weekly revenue · Today in green",
+      "a11y": "7-day trend chart",
+      "days": "M,T,W,T,F,S,S"
+    },
+    "qr": {
+      "title": "QR code by amount",
+      "hint": "Generate a pre-filled QR with the exact transaction amount.",
+      "placeholder": "Amount in XAF",
+      "inputA11y": "Amount in XAF for the QR",
+      "btnGenerate": "Generate",
+      "btnGenerateA11y": "Generate QR",
+      "sub": "Have the customer scan this",
+      "btnShare": "Share my QR",
+      "btnShareA11y": "Share my QR",
+      "btnPrint": "Print / Share PDF",
+      "btnPrintA11y": "Print or share as PDF"
+    },
+    "txList": {
+      "title": "Latest received transactions",
+      "empty": "No transactions yet"
+    },
+    "txStatus": {
+      "completed": "Received",
+      "pending": "Pending"
+    },
+    "alertInvalidAmountTitle": "Invalid amount",
+    "alertInvalidAmountMsg": "Enter an amount in XAF greater than 0.",
+    "alertNoQrTitle": "Generate a QR first",
+    "alertNoQrMsg": "Enter an amount and generate the QR before sharing.",
+    "shareMessage": "Pay me via CamWallet:",
+    "shareTitle": "My CamWallet QR",
+    "alertShareError": "Cannot share",
+    "alertPdfError": "Cannot generate PDF",
+    "pdf": {
+      "dialogTitle": "Share payment QR",
+      "title": "CamWallet — Payment QR",
+      "footer": "Scan this QR with the CamWallet app to pay"
+    }
+  },
+  "txDetail": {
+    "headerTitle": "Transaction detail",
+    "closeBtnA11y": "Close",
+    "timelineTitle": "Tracking",
+    "timeline": {
+      "created": "Transaction created",
+      "processing": "Processing",
+      "failed": "Failed",
+      "inProgress": "Being processed",
+      "completed": "Completed"
+    },
+    "party": {
+      "operator": "Mobile Money Operator",
+      "me": "You"
+    },
+    "infoRow": {
+      "reference": "Reference",
+      "amount": "Amount",
+      "fees": "Fees",
+      "sender": "Sender",
+      "recipient": "Recipient",
+      "date": "Date",
+      "status": "Status",
+      "reason": "Reason"
+    },
+    "statusLabel": {
+      "success": "Completed",
+      "pending": "Pending",
+      "failed": "Failed"
+    },
+    "disputedNote": "Refund requested — under review",
+    "btnRefund": "Request a refund",
+    "btnRefundA11y": "Request a refund"
+  },
+  "send": {
+    "headerContact": "Send money",
+    "headerAmount": "Amount",
+    "headerPin": "Confirm",
+    "headerDone": "Success",
+    "closeBtnA11y": "Close",
+    "backLabel": "Back",
+    "backA11y": "Back",
+    "contact": {
+      "sectionLabel": "Enter a number",
+      "phonePlaceholder": "+237 6XX XXX XXX",
+      "phoneA11y": "Recipient's number",
+      "continueBtnA11y": "Continue",
+      "recentSection": "Recent contacts",
+      "contactA11y": "{{name}}, {{phone}}"
+    },
+    "amount": {
+      "amountLabel": "Amount",
+      "amountA11y": "Amount in XAF",
+      "motifPlaceholder": "Reason (optional)",
+      "motifA11y": "Transfer reason (optional)",
+      "feeLabel": "Amount",
+      "feesLabel": "Fees",
+      "totalLabel": "Total debited",
+      "btnContinue": "Continue"
+    },
+    "pin": {
+      "title": "Enter your PIN",
+      "subtitle": "Sending {{amount}} XAF to {{name}}",
+      "defaultError": "Wrong PIN",
+      "deleteA11y": "Delete"
+    },
+    "done": {
+      "title": "Transfer successful!",
+      "subtitle": "{{amount}} XAF sent to {{name}}",
+      "receiptFrom": "From",
+      "receiptTo": "To",
+      "receiptAmount": "Amount",
+      "receiptFees": "Fees",
+      "receiptTotal": "Total debited",
+      "receiptReason": "Reason",
+      "receiptRef": "Reference",
+      "receiptDate": "Date",
+      "btnWhatsApp": "Share via WhatsApp",
+      "btnWhatsAppA11y": "Share via WhatsApp",
+      "btnFinish": "Done",
+      "toastSuccess": "{{amount}} XAF sent!",
+      "waReceipt": {
+        "title": "CAMWALLET RECEIPT",
+        "success": "Transfer successful",
+        "amount": "Amount:",
+        "fees": "Fees:",
+        "total": "Total debited:",
+        "reason": "Reason:",
+        "ref": "Ref:",
+        "date": "Date:",
+        "footer": "CamWallet — Cameroon"
+      }
+    },
+    "errorSend": "Error sending transfer"
+  },
+  "receive": {
+    "headerTitle": "Receive money",
+    "closeBtnA11y": "Close",
+    "tabStatic": "Static QR",
+    "tabDynamic": "Dynamic QR",
+    "infoNote": "This QR code is permanent. Share it freely.",
+    "dynamic": {
+      "label": "Specific amount (optional)",
+      "inputA11y": "Amount to encode in the QR code",
+      "note": "The dynamic QR expires in 15 minutes and includes the exact amount."
+    },
+    "btnShare": "Share my QR Code",
+    "btnClose": "Close",
+    "shareMessage": "Pay me via CamWallet\n{{phone}}\nReference: {{rawPhone}}",
+    "shareTitle": "CamWallet — My payment QR"
+  },
+  "recharge": {
+    "headerTitle": "Top up my account",
+    "closeBtnA11y": "Close",
+    "backLabel": "Back",
+    "backA11y": "Back",
+    "method": {
+      "mtnLabel": "MTN Mobile Money",
+      "mtnDesc": "Top up via MoMo",
+      "orangeLabel": "Orange Money",
+      "orangeDesc": "Top up via OM",
+      "agentLabel": "Partner agent",
+      "agentDesc": "Near you",
+      "sectionLabel": "Choose method"
+    },
+    "infoBox": "Your money stays with the operator. CamWallet credits your QR balance instantly after confirmation.",
+    "amount": {
+      "phonePlaceholder": "+237 6XX XXX XXX",
+      "amountLabel": "Amount to top up"
+    },
+    "sandbox": {
+      "banner": "Sandbox mode — max 25 XAF"
+    },
+    "limitNote": {
+      "sandbox": "Min: 1 XAF · Max: 25 XAF (sandbox)",
+      "prod": "Min: 500 XAF · Max: 500,000 XAF"
+    },
+    "btnRecharge": "Top up",
+    "btnRechargeWithAmount": "Top up {{amount}} XAF",
+    "pending": {
+      "title": "Top-up in progress",
+      "text": "Your account will be credited once confirmed by {{operator}}.\n\nThis usually takes a few seconds.",
+      "btnClose": "Close"
+    },
+    "toastSuccess": "Top-up of {{amount}} XAF initiated!",
+    "errorFallback": "Error during top-up"
+  },
+  "withdraw": {
+    "headerTitle": "Mobile Money Withdrawal",
+    "closeBtnA11y": "Close",
+    "backLabel": "Back",
+    "backA11y": "Back",
+    "operator": {
+      "mtnLabel": "MTN Mobile Money",
+      "orangeLabel": "Orange Money",
+      "sectionLabel": "Choose operator"
+    },
+    "infoBox": "Funds are debited from your CamWallet balance and sent to your Mobile Money account.",
+    "amount": {
+      "phoneLabel": "Receiving number",
+      "phonePlaceholder": "+237 6XX XXX XXX",
+      "amountLabel": "Amount to withdraw",
+      "amountA11y": "Amount to withdraw in XAF"
+    },
+    "limitNote": "Min: 500 XAF · Max: 500,000 XAF",
+    "dailyLimit": "Daily limit: {{amount}} XAF",
+    "btnWithdraw": "Withdraw",
+    "btnWithdrawWithAmount": "Withdraw {{amount}} XAF",
+    "pending": {
+      "title": "Withdrawal initiated",
+      "text": "Your withdrawal is being processed.\n\nFunds will be available on your {{operator}} account in a few moments.",
+      "btnClose": "Close"
+    },
+    "toastSuccess": "Withdrawal of {{amount}} XAF initiated!",
+    "errorFallback": "Error during withdrawal"
+  },
+  "scan": {
+    "headerTitle": "Scan a QR Code",
+    "closeBtnA11y": "Close",
+    "hintDetected": "QR Code detected!",
+    "hintNotRecognized": "QR Code not recognised",
+    "hintAim": "Point the camera at the QR Code",
+    "cameraPermissionDenied": "Camera access denied.\nEnable it in settings.",
+    "cameraPermissionRequired": "Camera permission required",
+    "btnAllowCamera": "Allow camera",
+    "resultDefaultName": "Recipient",
+    "resultAmount": "Amount: {{amount}} XAF",
+    "btnSend": "Send money",
+    "btnScanning": "Scanning...",
+    "btnCancel": "Cancel",
+    "btnCancelA11y": "Cancel"
+  },
+  "kyc": {
+    "headerTitle": "Identity verification",
+    "closeBtnA11y": "Close",
+    "step": {
+      "idFront": { "title": "ID — Front", "hint": "Frame the front of your ID card" },
+      "idBack": { "title": "ID — Back", "hint": "Frame the back of your ID card" },
+      "selfie": { "title": "Selfie", "hint": "Place your face in the frame" }
+    },
+    "cameraPermissionRequired": "Camera permission required",
+    "btnAllowCamera": "Allow camera",
+    "btnRetake": "Retake this photo",
+    "btnRetakeA11y": "Retake this photo",
+    "btnCapture": "Capture",
+    "btnSubmitting": "Sending…",
+    "btnSubmit": "Submit KYC",
+    "alertSuccessTitle": "KYC submitted",
+    "alertSuccessMsg": "Your documents have been submitted and are being reviewed.",
+    "alertErrorTitle": "Error",
+    "alertErrorFallback": "KYC submission failed"
+  },
+  "dispute": {
+    "title": "Refund request",
+    "desc": "Explain in a few words the reason for your dispute. Our team will review it within 48h.",
+    "inputPlaceholder": "E.g.: Payment made by mistake…",
+    "inputA11y": "Refund reason",
+    "inputA11yHint": "Minimum {{min}} characters required",
+    "counterHint": "Minimum {{min}} characters",
+    "btnSubmitting": "Sending…",
+    "btnSubmit": "Send request",
+    "btnSubmitA11y": "Send refund request",
+    "noTx": "No transaction selected.",
+    "btnCancel": "Cancel",
+    "btnCancelA11y": "Cancel",
+    "alertTooShortTitle": "Reason too short",
+    "alertTooShortMsg": "Describe the issue in at least {{min}} characters.",
+    "toastSuccess": "Refund request sent",
+    "alertSentTitle": "Request sent",
+    "alertSentMsg": "Your refund request has been recorded. We will get back to you within 48h.",
+    "alertErrorTitle": "Error",
+    "alertErrorFallback": "Error submitting request"
   }
 }

@@ -21,6 +21,7 @@ import { Avatar, Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 import { authApi } from '../../../src/lib/api';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 
 interface SendModalProps {
   visible: boolean;
@@ -31,7 +32,7 @@ interface SendModalProps {
 }
 
 const FRAIS = 0; // Les frais P2P sont calculés côté backend
-const WHATSAPP_GREEN = WHATSAPP_GREEN;
+const WHATSAPP_GREEN = '#25D366';
 
 const normalizePhone = (phone: string): string => {
   const digits = phone.replace(/\D/g, '');
@@ -48,6 +49,7 @@ const fmtPhone = (phone: string): string => {
 
 export default function SendModal({ visible, onClose, onSuccess, initialContact, initialRecipient }: SendModalProps) {
   const { user, balance, recentContacts, sendMoney } = useStore();
+  const { t } = useTranslation();
   const [step, setStep] = useState<'contact' | 'amount' | 'pin' | 'done'>('contact');
   const [selectedContact, setSelectedContact] = useState<{ id: number; name: string; phone: string; avatar: string; color: string } | null>(null);
   const [manualPhone, setManualPhone] = useState('');
@@ -55,7 +57,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const [motif, setMotif] = useState('');
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState(false);
-  const [pinErrMsg, setPinErrMsg] = useState('PIN incorrect');
+  const [pinErrMsg, setPinErrMsg] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [txRef, setTxRef] = useState('');
@@ -87,7 +89,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     setMotif('');
     setPin('');
     setPinError(false);
-    setPinErrMsg('PIN incorrect');
+    setPinErrMsg('');
     setSending(false);
     setSendError(null);
     setTxRef('');
@@ -147,13 +149,13 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
     } catch (e: any) {
       setSending(false);
       const msg: string =
-        e?.response?.data?.message ?? e?.message ?? 'PIN incorrect';
-      setPinErrMsg(msg.length < 60 ? msg : 'PIN incorrect');
+        e?.response?.data?.message ?? e?.message ?? t('send.pin.defaultError');
+      setPinErrMsg(msg.length < 60 ? msg : t('send.pin.defaultError'));
       setPinError(true);
       setPin('');
       triggerShake();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      pinErrTimer.current = setTimeout(() => { setPinError(false); setPinErrMsg('PIN incorrect'); }, 2000);
+      pinErrTimer.current = setTimeout(() => { setPinError(false); setPinErrMsg(''); }, 2000);
       return;
     }
 
@@ -170,7 +172,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       const msg: string =
-        e?.response?.data?.message ?? e?.message ?? 'Erreur lors de l\'envoi';
+        e?.response?.data?.message ?? e?.message ?? t('send.errorSend');
       setSendError(Array.isArray(msg) ? (msg as string[]).join(', ') : msg);
       setPin('');
       triggerShake();
@@ -184,13 +186,13 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const canSend = amt >= 100 && amt <= balance - FRAIS;
 
   const waText = useMemo(() => encodeURIComponent(
-    `🧾 *REÇU CAMWALLET*\n━━━━━━━━━━━━━━━━━━\n✅ *Transfert réussi*\n\n` +
-    `💰 *Montant :* ${amt.toLocaleString('fr-FR')} FCFA\n` +
-    `💳 *Frais :* ${FRAIS} FCFA\n` +
-    `💵 *Total débité :* ${(amt + FRAIS).toLocaleString('fr-FR')} FCFA\n` +
-    `${motif ? `📝 *Motif :* ${motif}\n` : ''}` +
-    `🔖 *Réf :* ${txRef}\n📅 *Date :* ${txDate}\n━━━━━━━━━━━━━━━━━━\n_CamWallet — Cameroun_`
-  ), [amt, motif, txRef, txDate]);
+    `🧾 *${t('send.done.waReceipt.title')}*\n━━━━━━━━━━━━━━━━━━\n✅ *${t('send.done.waReceipt.success')}*\n\n` +
+    `💰 *${t('send.done.waReceipt.amount')}* ${amt.toLocaleString('fr-FR')} FCFA\n` +
+    `💳 *${t('send.done.waReceipt.fees')}* ${FRAIS} FCFA\n` +
+    `💵 *${t('send.done.waReceipt.total')}* ${(amt + FRAIS).toLocaleString('fr-FR')} FCFA\n` +
+    `${motif ? `📝 *${t('send.done.waReceipt.reason')}* ${motif}\n` : ''}` +
+    `🔖 *${t('send.done.waReceipt.ref')}* ${txRef}\n📅 *${t('send.done.waReceipt.date')}* ${txDate}\n━━━━━━━━━━━━━━━━━━\n_${t('send.done.waReceipt.footer')}_`
+  ), [amt, motif, txRef, txDate, t]);
 
   const renderStep = () => {
     switch (step) {
@@ -199,16 +201,16 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
         return (
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             {/* Saisie manuelle d'un numéro */}
-            <Text style={styles.sectionLabel}>Entrer un numéro</Text>
+            <Text style={styles.sectionLabel}>{t('send.contact.sectionLabel')}</Text>
             <View style={styles.phoneInputRow}>
               <TextInput
                 style={styles.phoneInput}
                 value={manualPhone}
                 onChangeText={(v) => setManualPhone(v.replace(/[^\d\s+]/g, ''))}
-                placeholder="+237 6XX XXX XXX"
+                placeholder={t('send.contact.phonePlaceholder')}
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="phone-pad"
-                accessibilityLabel="Numéro du destinataire"
+                accessibilityLabel={t('send.contact.phoneA11y')}
               />
               <TouchableOpacity
                 style={[styles.phoneInputBtn, !canUseManual && styles.phoneInputBtnDisabled]}
@@ -220,7 +222,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 }}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Continuer"
+                accessibilityLabel={t('send.contact.continueBtnA11y')}
               >
                 <Ionicons name="arrow-forward" size={18} color={Colors.white} />
               </TouchableOpacity>
@@ -229,7 +231,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
             {/* Contacts récents (dérivés de l'historique) */}
             {recentContacts.length > 0 && (
               <>
-                <Text style={[styles.sectionLabel, { marginTop: Spacing.xl }]}>Contacts récents</Text>
+                <Text style={[styles.sectionLabel, { marginTop: Spacing.xl }]}>{t('send.contact.recentSection')}</Text>
                 {recentContacts.map((c) => (
                   <TouchableOpacity
                     key={c.phone}
@@ -272,7 +274,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
 
             {/* Amount */}
             <View style={styles.amountWrap}>
-              <Text style={styles.amountLabel}>Montant</Text>
+              <Text style={styles.amountLabel}>{t('send.amount.amountLabel')}</Text>
               <TextInput
                 style={styles.amountInput}
                 value={amount}
@@ -281,9 +283,9 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="numeric"
                 autoFocus
-                accessibilityLabel="Montant en FCFA"
+                accessibilityLabel={t('send.amount.amountA11y')}
               />
-              <Text style={styles.amountCurrency}>FCFA</Text>
+              <Text style={styles.amountCurrency}>{t('common.currency')}</Text>
             </View>
 
             {/* Quick amounts */}
@@ -310,11 +312,11 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 style={styles.motifInput}
                 value={motif}
                 onChangeText={(v) => setMotif(v.slice(0, 60))}
-                placeholder="Motif (optionnel)"
+                placeholder={t('send.amount.motifPlaceholder')}
                 placeholderTextColor={Colors.textMuted}
                 maxLength={60}
                 returnKeyType="done"
-                accessibilityLabel="Motif du transfert (optionnel)"
+                accessibilityLabel={t('send.amount.motifA11y')}
               />
               <Text style={styles.motifCount}>{motif.length}/60</Text>
             </View>
@@ -323,32 +325,32 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
             {amt > 0 && (
               <View style={styles.feeBox}>
                 <View style={styles.feeRow}>
-                  <Text style={styles.feeLabel}>Montant</Text>
-                  <Text style={styles.feeVal}>{amt.toLocaleString('fr-FR')} FCFA</Text>
+                  <Text style={styles.feeLabel}>{t('send.amount.feeLabel')}</Text>
+                  <Text style={styles.feeVal}>{amt.toLocaleString('fr-FR')} {t('common.currency')}</Text>
                 </View>
                 <View style={styles.feeRow}>
-                  <Text style={styles.feeLabel}>Frais</Text>
-                  <Text style={styles.feeVal}>{FRAIS} FCFA</Text>
+                  <Text style={styles.feeLabel}>{t('send.amount.feesLabel')}</Text>
+                  <Text style={styles.feeVal}>{FRAIS} {t('common.currency')}</Text>
                 </View>
                 <View style={[styles.feeRow, { borderTopWidth: 1, borderTopColor: Colors.yellow + '30', marginTop: 4, paddingTop: 8 }]}>
-                  <Text style={[styles.feeLabel, { color: Colors.text }]}>Total débité</Text>
+                  <Text style={[styles.feeLabel, { color: Colors.text }]}>{t('send.amount.totalLabel')}</Text>
                   <Text style={[styles.feeVal, { color: Colors.yellow, fontWeight: Typography.bold }]}>
-                    {(amt + FRAIS).toLocaleString('fr-FR')} FCFA
+                    {(amt + FRAIS).toLocaleString('fr-FR')} {t('common.currency')}
                   </Text>
                 </View>
               </View>
             )}
 
-            <Button label="Continuer" icon="arrow-forward" onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setStep('pin'); }} disabled={!canSend} fullWidth />
+            <Button label={t('send.amount.btnContinue')} icon="arrow-forward" onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setStep('pin'); }} disabled={!canSend} fullWidth />
           </ScrollView>
         );
 
       case 'pin':
         return (
           <View style={styles.pinContainer}>
-            <Text style={styles.pinTitle}>Entrez votre PIN</Text>
+            <Text style={styles.pinTitle}>{t('send.pin.title')}</Text>
             <Text style={styles.pinSubtitle}>
-              Envoi de {amt.toLocaleString('fr-FR')} FCFA à {selectedContact?.name}
+              {t('send.pin.subtitle', { amount: amt.toLocaleString('fr-FR'), name: selectedContact?.name })}
             </Text>
 
             {(pinError || sendError) && (
@@ -386,7 +388,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                     disabled={k === '' || sending}
                     activeOpacity={0.7}
                     accessibilityRole={k === '' ? undefined : 'button'}
-                    accessibilityLabel={k === '' ? undefined : isBackspace ? 'Supprimer' : k}
+                    accessibilityLabel={k === '' ? undefined : isBackspace ? t('send.pin.deleteA11y') : k}
                   >
                     {isBackspace ? (
                       <Ionicons name="backspace-outline" size={24} color={Colors.text} />
@@ -406,26 +408,26 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
             <View style={styles.successIcon}>
               <Ionicons name="checkmark-circle" size={48} color={Colors.primary} />
             </View>
-            <Text style={styles.doneTitle}>Transfert réussi !</Text>
+            <Text style={styles.doneTitle}>{t('send.done.title')}</Text>
             <Text style={styles.doneSubtitle}>
-              {amt.toLocaleString('fr-FR')} FCFA envoyés à {selectedContact?.name}
+              {t('send.done.subtitle', { amount: amt.toLocaleString('fr-FR'), name: selectedContact?.name })}
             </Text>
 
             {/* Receipt */}
             <View style={styles.receipt}>
               {[
-                ['De', user.name],
-                ['À', selectedContact?.name ?? ''],
-                ['Montant', `${amt.toLocaleString('fr-FR')} FCFA`],
-                ['Frais', `${FRAIS} FCFA`],
-                ['Total débité', `${(amt + FRAIS).toLocaleString('fr-FR')} FCFA`],
-                ...(motif ? [['Motif', motif]] : []),
-                ['Référence', txRef],
-                ['Date', txDate],
-              ].map(([label, value], i) => (
-                <View key={i} style={styles.receiptRow}>
+                { id: 'from', label: t('send.done.receiptFrom'), value: user.name },
+                { id: 'to', label: t('send.done.receiptTo'), value: selectedContact?.name ?? '' },
+                { id: 'amount', label: t('send.done.receiptAmount'), value: `${amt.toLocaleString('fr-FR')} ${t('common.currency')}` },
+                { id: 'fees', label: t('send.done.receiptFees'), value: `${FRAIS} ${t('common.currency')}` },
+                { id: 'total', label: t('send.done.receiptTotal'), value: `${(amt + FRAIS).toLocaleString('fr-FR')} ${t('common.currency')}` },
+                ...(motif ? [{ id: 'reason', label: t('send.done.receiptReason'), value: motif }] : []),
+                { id: 'ref', label: t('send.done.receiptRef'), value: txRef },
+                { id: 'date', label: t('send.done.receiptDate'), value: txDate },
+              ].map(({ id, label, value }) => (
+                <View key={id} style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>{label}</Text>
-                  <Text style={[styles.receiptValue, label === 'Total débité' && { color: Colors.yellow }]}>
+                  <Text style={[styles.receiptValue, id === 'total' && { color: Colors.yellow }]}>
                     {value}
                   </Text>
                 </View>
@@ -437,13 +439,13 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               onPress={() => Linking.openURL(`https://wa.me/?text=${waText}`)}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel="Partager via WhatsApp"
+              accessibilityLabel={t('send.done.btnWhatsAppA11y')}
             >
               <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
-              <Text style={styles.waBtnText}>Partager via WhatsApp</Text>
+              <Text style={styles.waBtnText}>{t('send.done.btnWhatsApp')}</Text>
             </TouchableOpacity>
 
-            <Button label="Terminer" icon="checkmark-circle" onPress={() => { onSuccess(`${amt.toLocaleString('fr-FR')} FCFA envoyés !`); handleClose(); }} fullWidth style={{ marginTop: Spacing.md }} />
+            <Button label={t('send.done.btnFinish')} icon="checkmark-circle" onPress={() => { onSuccess(t('send.done.toastSuccess', { amount: amt.toLocaleString('fr-FR') })); handleClose(); }} fullWidth style={{ marginTop: Spacing.md }} />
           </View>
         );
     }
@@ -456,12 +458,12 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
-              {step === 'contact' ? 'Envoyer de l\'argent'
-                : step === 'amount' ? 'Montant'
-                : step === 'pin' ? 'Confirmer'
-                : 'Succès'}
+              {step === 'contact' ? t('send.headerContact')
+                : step === 'amount' ? t('send.headerAmount')
+                : step === 'pin' ? t('send.headerPin')
+                : t('send.headerDone')}
             </Text>
-            <IconButton icon="close" onPress={handleClose} accessibilityLabel="Fermer" />
+            <IconButton icon="close" onPress={handleClose} accessibilityLabel={t('send.closeBtnA11y')} />
           </View>
 
           {/* Back button */}
@@ -470,10 +472,10 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               <IconButton
                 icon="arrow-back"
                 onPress={() => step === 'amount' ? setStep('contact') : setStep('amount')}
-                accessibilityLabel="Retour"
+                accessibilityLabel={t('send.backA11y')}
                 size={20}
               />
-              <Text style={styles.backLabel}>Retour</Text>
+              <Text style={styles.backLabel}>{t('send.backLabel')}</Text>
             </View>
           )}
 

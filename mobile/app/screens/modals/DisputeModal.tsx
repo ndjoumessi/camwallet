@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { disputeApi } from '../../../src/lib/api';
 import { useStore, Transaction } from '../../store/useStore';
+import { useTranslation } from 'react-i18next';
 
 const MAX_REASON = 60;
 const MIN_REASON = 5;
@@ -27,6 +28,7 @@ interface DisputeModalProps {
 }
 
 export default function DisputeModal({ visible, transaction, onClose, onSuccess }: DisputeModalProps) {
+  const { t } = useTranslation();
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const markDisputed = useStore((s) => s.markDisputed);
@@ -37,7 +39,7 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
   const submit = async () => {
     const trimmed = reason.trim();
     if (!trimmed || trimmed.length < MIN_REASON) {
-      Alert.alert('Motif trop court', `Décrivez le problème en au moins ${MIN_REASON} caractères.`);
+      Alert.alert(t('dispute.alertTooShortTitle'), t('dispute.alertTooShortMsg', { min: MIN_REASON }));
       return;
     }
     if (!transaction) return;
@@ -48,15 +50,12 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       reset();
       onClose();
-      onSuccess?.('Demande de remboursement envoyée');
-      Alert.alert(
-        'Demande envoyée',
-        'Votre demande de remboursement a été enregistrée. Nous reviendrons vers vous sous 48h.',
-      );
+      onSuccess?.(t('dispute.toastSuccess'));
+      Alert.alert(t('dispute.alertSentTitle'), t('dispute.alertSentMsg'));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors de la demande';
+      const msg = e?.response?.data?.message ?? e?.message ?? t('dispute.alertErrorFallback');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Erreur', Array.isArray(msg) ? msg.join(', ') : msg);
+      Alert.alert(t('dispute.alertErrorTitle'), Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
       setLoading(false);
     }
@@ -72,7 +71,7 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
           <View style={styles.iconWrap}>
             <Ionicons name="return-up-back-outline" size={28} color={Colors.yellow} />
           </View>
-          <Text style={styles.title}>Demande de remboursement</Text>
+          <Text style={styles.title}>{t('dispute.title')}</Text>
 
           {transaction ? (
             <View style={styles.txContext}>
@@ -81,9 +80,7 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
             </View>
           ) : null}
 
-          <Text style={styles.desc}>
-            Expliquez en quelques mots la raison de votre contestation. Notre équipe l'examinera sous 48h.
-          </Text>
+          <Text style={styles.desc}>{t('dispute.desc')}</Text>
 
           {transaction ? (
             <>
@@ -92,19 +89,19 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
                   style={styles.input}
                   value={reason}
                   onChangeText={(v) => setReason(v.slice(0, MAX_REASON))}
-                  placeholder="Ex : Paiement effectué par erreur…"
+                  placeholder={t('dispute.inputPlaceholder')}
                   placeholderTextColor={Colors.textMuted}
                   multiline
                   numberOfLines={3}
                   maxLength={MAX_REASON}
                   autoFocus
                   editable={!loading}
-                  accessibilityLabel="Motif du remboursement"
-                  accessibilityHint={`Minimum ${MIN_REASON} caractères requis`}
+                  accessibilityLabel={t('dispute.inputA11y')}
+                  accessibilityHint={t('dispute.inputA11yHint', { min: MIN_REASON })}
                 />
                 <View style={styles.counterRow}>
                   {trimmedLen > 0 && trimmedLen < MIN_REASON && (
-                    <Text style={styles.counterHint}>Minimum {MIN_REASON} caractères</Text>
+                    <Text style={styles.counterHint}>{t('dispute.counterHint', { min: MIN_REASON })}</Text>
                   )}
                   <Text style={[styles.counter, trimmedLen === MAX_REASON && { color: Colors.red }]}>
                     {reason.length}/{MAX_REASON}
@@ -117,17 +114,17 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
                 onPress={submit}
                 disabled={!canSubmit}
                 accessibilityRole="button"
-                accessibilityLabel="Envoyer la demande de remboursement"
+                accessibilityLabel={t('dispute.btnSubmitA11y')}
               >
-                <Text style={styles.submitText}>{loading ? 'Envoi…' : 'Envoyer la demande'}</Text>
+                <Text style={styles.submitText}>{loading ? t('dispute.btnSubmitting') : t('dispute.btnSubmit')}</Text>
               </TouchableOpacity>
             </>
           ) : (
-            <Text style={styles.noTxText}>Aucune transaction sélectionnée.</Text>
+            <Text style={styles.noTxText}>{t('dispute.noTx')}</Text>
           )}
 
-          <TouchableOpacity onPress={close} disabled={loading} accessibilityRole="button" accessibilityLabel="Annuler">
-            <Text style={styles.cancelText}>Annuler</Text>
+          <TouchableOpacity onPress={close} disabled={loading} accessibilityRole="button" accessibilityLabel={t('dispute.btnCancelA11y')}>
+            <Text style={styles.cancelText}>{t('dispute.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
       </View>

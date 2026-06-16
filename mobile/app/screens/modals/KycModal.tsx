@@ -15,13 +15,9 @@ import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { kycApi } from '../../../src/lib/api';
+import { useTranslation } from 'react-i18next';
 
 type StepKey = 'idFront' | 'idBack' | 'selfie';
-const STEPS: { key: StepKey; title: string; hint: string; facing: CameraType }[] = [
-  { key: 'idFront', title: 'CNI — Recto', hint: 'Cadrez le recto de votre carte', facing: 'back' },
-  { key: 'idBack', title: 'CNI — Verso', hint: 'Cadrez le verso de votre carte', facing: 'back' },
-  { key: 'selfie', title: 'Selfie', hint: 'Placez votre visage dans le cadre', facing: 'front' },
-];
 
 interface KycModalProps {
   visible: boolean;
@@ -30,8 +26,15 @@ interface KycModalProps {
 }
 
 export default function KycModal({ visible, onClose, onSubmitted }: KycModalProps) {
+  const { t } = useTranslation();
   const [permission, requestPermission] = useCameraPermissions();
   const [stepIndex, setStepIndex] = useState(0);
+
+  const STEPS: { key: StepKey; title: string; hint: string; facing: CameraType }[] = [
+    { key: 'idFront', title: t('kyc.step.idFront.title'), hint: t('kyc.step.idFront.hint'), facing: 'back' },
+    { key: 'idBack', title: t('kyc.step.idBack.title'), hint: t('kyc.step.idBack.hint'), facing: 'back' },
+    { key: 'selfie', title: t('kyc.step.selfie.title'), hint: t('kyc.step.selfie.hint'), facing: 'front' },
+  ];
   const [shots, setShots] = useState<Partial<Record<StepKey, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const camRef = useRef<CameraView>(null);
@@ -58,12 +61,12 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
         idBack: shots.idBack!,
         selfie: shots.selfie!,
       });
-      Alert.alert('KYC envoyé', 'Vos documents ont été soumis et sont en cours de vérification.');
+      Alert.alert(t('kyc.alertSuccessTitle'), t('kyc.alertSuccessMsg'));
       reset();
       onSubmitted();
       onClose();
     } catch (e: any) {
-      Alert.alert('Erreur', e?.response?.data?.message ?? "Échec de l'envoi du KYC");
+      Alert.alert(t('kyc.alertErrorTitle'), e?.response?.data?.message ?? t('kyc.alertErrorFallback'));
     } finally {
       setSubmitting(false);
     }
@@ -95,8 +98,8 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
       <SafeAreaView style={styles.sheet} edges={['top']}>
         <Animated.View style={[styles.flex, animStyle]}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Vérification d'identité</Text>
-          <IconButton icon="close" onPress={close} accessibilityLabel="Fermer" />
+          <Text style={styles.headerTitle}>{t('kyc.headerTitle')}</Text>
+          <IconButton icon="close" onPress={close} accessibilityLabel={t('kyc.closeBtnA11y')} />
         </View>
 
         {/* Progression */}
@@ -115,7 +118,7 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
             {!granted ? (
               <View style={styles.placeholder}>
                 <Ionicons name="camera" size={36} color={Colors.textMuted} />
-                <Text style={styles.placeholderText}>Autorisation caméra requise</Text>
+                <Text style={styles.placeholderText}>{t('kyc.cameraPermissionRequired')}</Text>
               </View>
             ) : shots[step.key] ? (
               <Image source={{ uri: shots[step.key] }} style={StyleSheet.absoluteFill as any} resizeMode="cover" />
@@ -126,7 +129,7 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
 
           {!granted ? (
             <View style={{ width: '100%', paddingHorizontal: Spacing.xl }}>
-              <Button label="Autoriser la caméra" icon="camera" onPress={requestPermission} fullWidth />
+              <Button label={t('kyc.btnAllowCamera')} icon="camera" onPress={requestPermission} fullWidth />
             </View>
           ) : (
             <View style={{ width: '100%', paddingHorizontal: Spacing.xl, gap: Spacing.sm }}>
@@ -136,13 +139,13 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
                   onPress={() => setShots((p) => ({ ...p, [step.key]: undefined }))}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityLabel="Reprendre cette photo"
+                  accessibilityLabel={t('kyc.btnRetakeA11y')}
                 >
                   <Ionicons name="refresh" size={16} color={Colors.yellow} />
-                  <Text style={styles.retakeText}>Reprendre cette photo</Text>
+                  <Text style={styles.retakeText}>{t('kyc.btnRetake')}</Text>
                 </TouchableOpacity>
               ) : (
-                <Button label="Capturer" icon="camera" onPress={capture} fullWidth />
+                <Button label={t('kyc.btnCapture')} icon="camera" onPress={capture} fullWidth />
               )}
             </View>
           )}
@@ -169,7 +172,7 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
 
           <View style={{ width: '100%', paddingHorizontal: Spacing.xl, marginTop: Spacing.md }}>
             <Button
-              label={submitting ? 'Envoi…' : 'Soumettre le KYC'}
+              label={submitting ? t('kyc.btnSubmitting') : t('kyc.btnSubmit')}
               icon="shield-checkmark-outline"
               onPress={submit}
               loading={submitting}

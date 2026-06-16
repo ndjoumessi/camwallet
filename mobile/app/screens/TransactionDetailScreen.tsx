@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { txMeta } from '../constants/txMeta';
 import { Badge, IconButton } from '../components/ui';
@@ -21,44 +22,6 @@ const REFUND_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
 
 const fmt = (n: number) => Math.abs(n).toLocaleString('fr-FR') + ' FCFA';
 
-const STATUS_LABEL: Record<Transaction['status'], string> = {
-  success: 'Effectuée',
-  pending: 'En cours',
-  failed: 'Échouée',
-};
-
-// Étapes de la timeline selon le statut. `state` : done | active | failed | future.
-function timelineSteps(status: Transaction['status']) {
-  if (status === 'failed') {
-    return [
-      { label: 'Transaction créée', state: 'done' as const },
-      { label: 'Traitement', state: 'done' as const },
-      { label: 'Échouée', state: 'failed' as const },
-    ];
-  }
-  if (status === 'pending') {
-    return [
-      { label: 'Transaction créée', state: 'done' as const },
-      { label: 'En cours de traitement', state: 'active' as const },
-      { label: 'Complétée', state: 'future' as const },
-    ];
-  }
-  return [
-    { label: 'Transaction créée', state: 'done' as const },
-    { label: 'Traitement', state: 'done' as const },
-    { label: 'Complétée', state: 'done' as const },
-  ];
-}
-
-// Libellés émetteur / destinataire selon le sens et le type.
-function parties(tx: Transaction): { from: string; to: string } {
-  const operator = 'Opérateur Mobile Money';
-  const me = 'Vous';
-  const other = tx.counterpartyName || tx.counterpartyPhone || '—';
-  if (tx.rawType === 'RECHARGE') return { from: operator, to: me };
-  if (tx.rawType === 'WITHDRAWAL') return { from: me, to: operator };
-  return tx.direction === 'out' ? { from: me, to: other } : { from: other, to: me };
-}
 
 interface TransactionDetailScreenProps {
   transaction: Transaction | null;
@@ -69,8 +32,46 @@ interface TransactionDetailScreenProps {
 // un deep-link de notification. Affiche une timeline, les informations
 // complètes, et propose un remboursement pour un P2P complété de moins de 24h.
 export default function TransactionDetailScreen({ transaction, onClose }: TransactionDetailScreenProps) {
+  const { t } = useTranslation();
   const [disputeOpen, setDisputeOpen] = useState(false);
   const disputedTxIds = useStore((s) => s.disputedTxIds);
+
+  const STATUS_LABEL: Record<Transaction['status'], string> = {
+    success: t('txDetail.statusLabel.success'),
+    pending: t('txDetail.statusLabel.pending'),
+    failed: t('txDetail.statusLabel.failed'),
+  };
+
+  const getTimelineSteps = (status: Transaction['status']) => {
+    if (status === 'failed') {
+      return [
+        { label: t('txDetail.timeline.created'), state: 'done' as const },
+        { label: t('txDetail.timeline.processing'), state: 'done' as const },
+        { label: t('txDetail.timeline.failed'), state: 'failed' as const },
+      ];
+    }
+    if (status === 'pending') {
+      return [
+        { label: t('txDetail.timeline.created'), state: 'done' as const },
+        { label: t('txDetail.timeline.inProgress'), state: 'active' as const },
+        { label: t('txDetail.timeline.completed'), state: 'future' as const },
+      ];
+    }
+    return [
+      { label: t('txDetail.timeline.created'), state: 'done' as const },
+      { label: t('txDetail.timeline.processing'), state: 'done' as const },
+      { label: t('txDetail.timeline.completed'), state: 'done' as const },
+    ];
+  };
+
+  const getParties = (tx: Transaction): { from: string; to: string } => {
+    const operator = t('txDetail.party.operator');
+    const me = t('txDetail.party.me');
+    const other = tx.counterpartyName || tx.counterpartyPhone || '—';
+    if (tx.rawType === 'RECHARGE') return { from: operator, to: me };
+    if (tx.rawType === 'WITHDRAWAL') return { from: me, to: operator };
+    return tx.direction === 'out' ? { from: me, to: other } : { from: other, to: me };
+  };
 
   const tx = transaction;
   const meta = tx ? txMeta(tx.type) : null;
@@ -82,17 +83,17 @@ export default function TransactionDetailScreen({ transaction, onClose }: Transa
     tx.status === 'success' &&
     Date.now() - new Date(tx.createdAt).getTime() < REFUND_WINDOW_MS;
 
-  const party = tx ? parties(tx) : { from: '—', to: '—' };
+  const party = tx ? getParties(tx) : { from: '—', to: '—' };
 
   const rows = tx
     ? [
-        { label: 'Référence', value: tx.ref || '—' },
-        { label: 'Montant', value: `${tx.amount > 0 ? '+' : ''}${fmt(tx.amount)}` },
-        ...(tx.fee > 0 ? [{ label: 'Frais', value: fmt(tx.fee) }] : []),
-        { label: 'Émetteur', value: party.from },
-        { label: 'Destinataire', value: party.to },
-        { label: 'Date', value: tx.date },
-        { label: 'Statut', value: STATUS_LABEL[tx.status] },
+        { label: t('txDetail.infoRow.reference'), value: tx.ref || '—' },
+        { label: t('txDetail.infoRow.amount'), value: `${tx.amount > 0 ? '+' : ''}${fmt(tx.amount)}` },
+        ...(tx.fee > 0 ? [{ label: t('txDetail.infoRow.fees'), value: fmt(tx.fee) }] : []),
+        { label: t('txDetail.infoRow.sender'), value: party.from },
+        { label: t('txDetail.infoRow.recipient'), value: party.to },
+        { label: t('txDetail.infoRow.date'), value: tx.date },
+        { label: t('txDetail.infoRow.status'), value: STATUS_LABEL[tx.status] },
       ]
     : [];
 
@@ -106,8 +107,8 @@ export default function TransactionDetailScreen({ transaction, onClose }: Transa
       {tx && meta && (
         <SafeAreaView style={styles.sheet} edges={['top']}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Détail transaction</Text>
-            <IconButton icon="close" onPress={onClose} accessibilityLabel="Fermer" />
+            <Text style={styles.headerTitle}>{t('txDetail.headerTitle')}</Text>
+            <IconButton icon="close" onPress={onClose} accessibilityLabel={t('txDetail.closeBtnA11y')} />
           </View>
 
           <ScrollView contentContainerStyle={styles.body}>
@@ -124,8 +125,8 @@ export default function TransactionDetailScreen({ transaction, onClose }: Transa
 
             {/* Timeline */}
             <View style={styles.timeline}>
-              <Text style={styles.sectionTitle}>Suivi</Text>
-              {timelineSteps(tx.status).map((step, i, arr) => {
+              <Text style={styles.sectionTitle}>{t('txDetail.timelineTitle')}</Text>
+              {getTimelineSteps(tx.status).map((step, i, arr) => {
                 const color =
                   step.state === 'failed' ? Colors.red
                   : step.state === 'future' ? Colors.textMuted
@@ -164,7 +165,7 @@ export default function TransactionDetailScreen({ transaction, onClose }: Transa
             {/* Motif éventuel */}
             {tx.motif ? (
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Motif</Text>
+                <Text style={styles.infoLabel}>{t('txDetail.infoRow.reason')}</Text>
                 <Text style={styles.infoValue} selectable>{tx.motif}</Text>
               </View>
             ) : null}
@@ -173,7 +174,7 @@ export default function TransactionDetailScreen({ transaction, onClose }: Transa
             {alreadyDisputed ? (
               <View style={styles.disputedNote}>
                 <Ionicons name="hourglass-outline" size={16} color={Colors.yellow} />
-                <Text style={styles.disputedNoteText}>Remboursement demandé — en cours d'examen</Text>
+                <Text style={styles.disputedNoteText}>{t('txDetail.disputedNote')}</Text>
               </View>
             ) : refundEligible ? (
               <TouchableOpacity
@@ -181,10 +182,10 @@ export default function TransactionDetailScreen({ transaction, onClose }: Transa
                 onPress={() => setDisputeOpen(true)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Demander un remboursement"
+                accessibilityLabel={t('txDetail.btnRefundA11y')}
               >
                 <Ionicons name="return-up-back-outline" size={18} color={Colors.yellow} />
-                <Text style={styles.refundBtnText}>Demander un remboursement</Text>
+                <Text style={styles.refundBtnText}>{t('txDetail.btnRefund')}</Text>
               </TouchableOpacity>
             ) : null}
 

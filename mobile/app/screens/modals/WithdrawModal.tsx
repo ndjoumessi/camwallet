@@ -17,6 +17,7 @@ import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../cons
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 import { walletApi, MobileOperator } from '../../../src/lib/api';
+import { useTranslation } from 'react-i18next';
 
 interface WithdrawModalProps {
   visible: boolean;
@@ -24,27 +25,17 @@ interface WithdrawModalProps {
   onSuccess: (msg: string) => void;
 }
 
-const OPERATORS = [
-  {
-    id: 'mtn',
-    icon: 'phone-portrait-outline' as const,
-    label: 'MTN Mobile Money',
-    color: Colors.mtn,
-    ussd: '*126#',
-  },
-  {
-    id: 'orange',
-    icon: 'ellipse' as const,
-    label: 'Orange Money',
-    color: Colors.orange,
-    ussd: '*144#',
-  },
-];
-
 const toCentimes = (fcfa: number) => Math.round(fcfa * 100);
 
 export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawModalProps) {
   const { user, fetchBalance, dailyLimit } = useStore();
+  const { t } = useTranslation();
+
+  const OPERATORS = [
+    { id: 'mtn', icon: 'phone-portrait-outline' as const, label: t('withdraw.operator.mtnLabel'), color: Colors.mtn, ussd: '*126#' },
+    { id: 'orange', icon: 'ellipse' as const, label: t('withdraw.operator.orangeLabel'), color: Colors.orange, ussd: '*144#' },
+  ];
+
   const [step, setStep] = useState<'operator' | 'amount' | 'pending'>('operator');
   const [operator, setOperator] = useState<typeof OPERATORS[0] | null>(null);
   const [phone, setPhone] = useState('');
@@ -93,9 +84,9 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
       await walletApi.withdraw(toCentimes(amt), op, phone || undefined);
       await fetchBalance(); // le solde est débité immédiatement
       setStep('pending');
-      onSuccess(`Retrait de ${amt.toLocaleString('fr-FR')} FCFA initié !`);
+      onSuccess(t('withdraw.toastSuccess', { amount: amt.toLocaleString('fr-FR') }));
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? 'Erreur lors du retrait';
+      const msg = e?.response?.data?.message ?? e?.message ?? t('withdraw.errorFallback');
       setError(Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
       setLoading(false);
@@ -110,8 +101,8 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
         <Animated.View style={[styles.flex, animStyle]}>
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Retrait Mobile Money</Text>
-            <IconButton icon="close" onPress={handleClose} accessibilityLabel="Fermer" />
+            <Text style={styles.headerTitle}>{t('withdraw.headerTitle')}</Text>
+            <IconButton icon="close" onPress={handleClose} accessibilityLabel={t('withdraw.closeBtnA11y')} />
           </View>
 
           {step !== 'operator' && step !== 'pending' && (
@@ -119,17 +110,17 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
               <IconButton
                 icon="arrow-back"
                 onPress={() => setStep('operator')}
-                accessibilityLabel="Retour"
+                accessibilityLabel={t('withdraw.backA11y')}
                 size={20}
               />
-              <Text style={styles.backLabel}>Retour</Text>
+              <Text style={styles.backLabel}>{t('withdraw.backLabel')}</Text>
             </View>
           )}
 
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {step === 'operator' && (
               <>
-                <Text style={styles.sectionLabel}>Choisir l'opérateur</Text>
+                <Text style={styles.sectionLabel}>{t('withdraw.operator.sectionLabel')}</Text>
                 {OPERATORS.map((op) => (
                   <TouchableOpacity
                     key={op.id}
@@ -152,9 +143,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
 
                 <View style={styles.infoBox}>
                   <Ionicons name="information-circle-outline" size={16} color={Colors.blue} style={{ marginTop: 1 }} />
-                  <Text style={styles.infoText}>
-                    Les fonds sont débités de votre solde CamWallet et envoyés sur votre compte Mobile Money.
-                  </Text>
+                  <Text style={styles.infoText}>{t('withdraw.infoBox')}</Text>
                 </View>
               </>
             )}
@@ -168,23 +157,23 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
 
                 {/* Numéro de réception */}
                 <View style={styles.phoneRow}>
-                  <Text style={styles.phoneLabel}>Numéro de réception</Text>
+                  <Text style={styles.phoneLabel}>{t('withdraw.amount.phoneLabel')}</Text>
                   <TextInput
                     style={styles.phoneInput}
                     value={phone}
                     onChangeText={setPhone}
-                    placeholder="+237 6XX XXX XXX"
+                    placeholder={t('withdraw.amount.phonePlaceholder')}
                     placeholderTextColor={Colors.textMuted}
                     keyboardType="phone-pad"
                     autoCorrect={false}
                     autoCapitalize="none"
-                    accessibilityLabel={`Numéro de réception ${operator?.label ?? ''}`}
+                    accessibilityLabel={`${t('withdraw.amount.phoneLabel')} ${operator?.label ?? ''}`}
                   />
                 </View>
 
                 {/* Montant */}
                 <View style={styles.amountWrap}>
-                  <Text style={styles.amountLabel}>Montant à retirer</Text>
+                  <Text style={styles.amountLabel}>{t('withdraw.amount.amountLabel')}</Text>
                   <TextInput
                     style={[styles.amountInput, { color: operator.color }]}
                     value={amount}
@@ -193,9 +182,9 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                     placeholderTextColor={Colors.textMuted}
                     keyboardType="numeric"
                     autoFocus
-                    accessibilityLabel="Montant à retirer en FCFA"
+                    accessibilityLabel={t('withdraw.amount.amountA11y')}
                   />
-                  <Text style={styles.amountCurrency}>FCFA</Text>
+                  <Text style={styles.amountCurrency}>{t('common.currency')}</Text>
                 </View>
 
                 {/* Montants rapides */}
@@ -218,10 +207,10 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
 
 
                 <View style={styles.limitNote}>
-                  <Text style={styles.limitText}>Min: 500 FCFA · Max: 500 000 FCFA</Text>
+                  <Text style={styles.limitText}>{t('withdraw.limitNote')}</Text>
                   {dailyLimit > 0 && (
                     <Text style={styles.limitText}>
-                      Limite journalière : {dailyLimit.toLocaleString('fr-FR')} FCFA
+                      {t('withdraw.dailyLimit', { amount: dailyLimit.toLocaleString('fr-FR') })}
                     </Text>
                   )}
                 </View>
@@ -229,7 +218,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                 {error && <Text style={styles.errorText}>{error}</Text>}
 
                 <Button
-                  label={`Retirer${amt ? ' ' + amt.toLocaleString('fr-FR') + ' FCFA' : ''}`}
+                  label={amt ? t('withdraw.btnWithdrawWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('withdraw.btnWithdraw')}
                   onPress={handleWithdraw}
                   loading={loading}
                   disabled={loading || amt < 500}
@@ -243,12 +232,11 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                 <View style={styles.pendingIcon}>
                   <Ionicons name="checkmark-circle-outline" size={40} color={Colors.primary} />
                 </View>
-                <Text style={styles.pendingTitle}>Retrait initié</Text>
+                <Text style={styles.pendingTitle}>{t('withdraw.pending.title')}</Text>
                 <Text style={styles.pendingText}>
-                  Votre retrait est en cours de traitement.{'\n\n'}
-                  Les fonds seront disponibles sur votre compte {operator?.label ?? 'Mobile Money'} dans quelques instants.
+                  {t('withdraw.pending.text', { operator: operator?.label ?? '' })}
                 </Text>
-                <Button label="Fermer" onPress={handleClose} fullWidth style={{ marginTop: Spacing.xl }} />
+                <Button label={t('withdraw.pending.btnClose')} onPress={handleClose} fullWidth style={{ marginTop: Spacing.xl }} />
               </View>
             )}
           </ScrollView>

@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
+import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { Button } from '../components/ui';
 import { useStore } from '../store/useStore';
@@ -26,6 +27,7 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps) {
+  const { t } = useTranslation();
   const login = useStore((s) => s.login);
   const restoreSession = useStore((s) => s.restoreSession);
   const loading = useStore((s) => s.loading);
@@ -75,16 +77,16 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
     setBioLoading(true);
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Confirmez votre identité',
-        cancelLabel: 'Annuler',
-        fallbackLabel: 'Utiliser le PIN',
+        promptMessage: t('auth.biometric_prompt.promptMessage'),
+        cancelLabel: t('auth.biometric_prompt.cancelLabel'),
+        fallbackLabel: t('auth.biometric_prompt.fallbackLabel'),
       });
       if (result.success) {
         const ok = await restoreSession();
         if (ok) {
           onSuccess();
         } else {
-          Alert.alert('Session expirée', 'Veuillez vous reconnecter avec votre PIN.');
+          Alert.alert(t('auth.login_screen.alertSessionExpiredTitle'), t('auth.login_screen.alertSessionExpiredMsg'));
         }
       }
     } catch {
@@ -126,13 +128,11 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
           </View>
           <View style={styles.bioPromptCard}>
             <Text style={styles.bioPromptIcon}>🔑</Text>
-            <Text style={styles.bioPromptTitle}>Activer la connexion biométrique ?</Text>
-            <Text style={styles.bioPromptDesc}>
-              Connectez-vous rapidement avec Face ID ou votre empreinte digitale lors des prochaines ouvertures.
-            </Text>
-            <Button label="Activer" onPress={handleEnableBio} style={{ marginTop: Spacing.md }} />
+            <Text style={styles.bioPromptTitle}>{t('auth.biometric_prompt.promptTitle')}</Text>
+            <Text style={styles.bioPromptDesc}>{t('auth.biometric_prompt.promptDesc')}</Text>
+            <Button label={t('auth.biometric_prompt.btnEnable')} onPress={handleEnableBio} style={{ marginTop: Spacing.md }} />
             <Pressable onPress={handleSkipBio} style={styles.skipLink}>
-              <Text style={styles.skipText}>Plus tard</Text>
+              <Text style={styles.skipText}>{t('auth.biometric_prompt.btnLater')}</Text>
             </Pressable>
           </View>
         </View>
@@ -156,7 +156,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
             <Text style={styles.title}>
               Cam<Text style={styles.titleGreen}>Wallet</Text>
             </Text>
-            <Text style={styles.subtitle}>Connectez-vous pour continuer</Text>
+            <Text style={styles.subtitle}>{t('auth.login_screen.subtitle')}</Text>
           </View>
 
           {/* Bouton biométrique (si activé) */}
@@ -166,14 +166,14 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               onPress={handleBioLogin}
               disabled={bioLoading || loading}
               accessibilityRole="button"
-              accessibilityLabel="Se connecter avec la biométrie"
+              accessibilityLabel={t('auth.login_screen.bioBtn.a11y')}
             >
               {bioLoading
                 ? <ActivityIndicator size="small" color={Colors.primary} />
                 : <Text style={styles.bioBtnIcon}>🔑</Text>
               }
               <Text style={styles.bioBtnText}>
-                {bioLoading ? 'Vérification…' : 'Se connecter avec Face ID / Empreinte'}
+                {bioLoading ? t('auth.login_screen.bioBtn.loading') : t('auth.login_screen.bioBtn.label')}
               </Text>
             </Pressable>
           )}
@@ -182,24 +182,24 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
           {bioEnabled && (
             <View style={styles.dividerRow}>
               <View style={styles.divider} />
-              <Text style={styles.dividerText}>ou avec le PIN</Text>
+              <Text style={styles.dividerText}>{t('auth.login_screen.divider')}</Text>
               <View style={styles.divider} />
             </View>
           )}
 
           {/* Téléphone */}
           <View style={styles.field}>
-            <Text style={styles.label}>Numéro de téléphone</Text>
+            <Text style={styles.label}>{t('auth.login_screen.phoneLabel')}</Text>
             <TextInput
               style={styles.input}
               value={phone}
               onChangeText={setPhone}
-              placeholder="+237 6XX XXX XXX"
+              placeholder={t('auth.login_screen.phonePlaceholder')}
               placeholderTextColor={Colors.textMuted}
               keyboardType="phone-pad"
               autoCapitalize="none"
               autoCorrect={false}
-              accessibilityLabel="Numéro de téléphone"
+              accessibilityLabel={t('auth.login_screen.phoneA11y')}
               editable={!loading}
               returnKeyType="next"
               onSubmitEditing={() => pinRef.current?.focus()}
@@ -209,18 +209,18 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
 
           {/* PIN */}
           <View style={styles.field}>
-            <Text style={styles.label}>Code PIN</Text>
+            <Text style={styles.label}>{t('auth.login_screen.pinLabel')}</Text>
             <TextInput
               ref={pinRef}
               style={styles.input}
               value={pin}
-              onChangeText={(t) => setPin(t.replace(/\D/g, '').slice(0, 6))}
+              onChangeText={(v) => setPin(v.replace(/\D/g, '').slice(0, 6))}
               placeholder="••••••"
               placeholderTextColor={Colors.textMuted}
               keyboardType="number-pad"
               secureTextEntry
               maxLength={6}
-              accessibilityLabel="Code PIN à 6 chiffres"
+              accessibilityLabel={t('auth.login_screen.pinA11y')}
               editable={!loading}
               returnKeyType="done"
               onSubmitEditing={() => { if (canSubmit) handleLogin(); }}
@@ -238,7 +238,7 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
           {error ? <Text style={styles.error} numberOfLines={3}>{error}</Text> : null}
 
           <Button
-            label="Se connecter"
+            label={t('auth.login_screen.btnSubmit')}
             onPress={handleLogin}
             loading={loading}
             disabled={!canSubmit}
@@ -250,11 +250,11 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
               onPress={onRegister}
               style={({ pressed }) => [styles.registerLink, pressed && styles.pressed]}
               accessibilityRole="button"
-              accessibilityLabel="Créer un compte"
+              accessibilityLabel={t('auth.login_screen.createAccount')}
             >
               <Text style={styles.registerText}>
-                Pas encore de compte ?{' '}
-                <Text style={styles.registerTextGreen}>Créer un compte</Text>
+                {t('auth.login_screen.noAccount')}{' '}
+                <Text style={styles.registerTextGreen}>{t('auth.login_screen.createAccount')}</Text>
               </Text>
             </Pressable>
           ) : null}
