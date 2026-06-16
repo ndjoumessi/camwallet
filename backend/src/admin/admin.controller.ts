@@ -27,6 +27,7 @@ import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
 import { SetAdminRoleDto } from './dto/set-admin-role.dto';
+import { SetAdminPasswordDto } from './dto/set-admin-password.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -244,6 +245,16 @@ export class AdminController {
     @Body() body: SetAdminRoleDto,
   ) {
     return this.adminService.setAdminRole(req.user.id, userId, body.adminRole);
+  }
+
+  @Patch('team/:userId/password')
+  @ApiOperation({ summary: 'Définir le mot de passe de connexion d\'un admin' })
+  setAdminPassword(
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Body() body: SetAdminPasswordDto,
+  ) {
+    return this.adminService.setAdminPassword(req.user.id, userId, body.password);
   }
 
   // ─── Export CSV ──────────────────────────────────────────────────────────

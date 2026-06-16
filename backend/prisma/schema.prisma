@@ -49,7 +49,8 @@ model User {
   city            String?
 
   // Admin étendu
-  adminRole       String?  // SUPER_ADMIN | ANALYST | SUPPORT | null
+  adminRole       String?  // SUPER_ADMIN | ADMIN | COMPLIANCE_OFFICER | SUPPORT_OPERATOR | FINANCE_OFFICER | null
+  passwordHash    String?  // Mot de passe admin (login par-utilisateur), bcrypt — null = pas de login direct
   totpSecret      String?
   totpEnabled     Boolean  @default(false)
 
