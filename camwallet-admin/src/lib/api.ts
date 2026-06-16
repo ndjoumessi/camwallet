@@ -165,18 +165,21 @@ export interface AdminKycEntry {
   fullName: string | null
   kycStatus: string
   createdAt: string
+  complianceScore: number
   kycDocument: {
     status: string
     submittedAt: string
-    idFrontUrl: string
-    idBackUrl: string
-    selfieUrl: string
+    idFrontUrl: string | null
+    idBackUrl: string | null
+    selfieUrl: string | null
+    reviewNote: string | null
+    reviewedAt: string | null
   } | null
 }
 
 export interface AdminKyc {
-  pending: AdminKycEntry[]
-  counts: { pending: number; approved30: number; rejected30: number }
+  queue: AdminKycEntry[]
+  counts: { pending: number; approvedToday: number; rejectedToday: number; resubmitRequired: number; approvalRate: number }
 }
 
 export interface AdminAlert {
@@ -304,10 +307,10 @@ export interface OperatorRate { name: string; total: number; completed: number; 
 export interface OperatorRatesResponse { operators: OperatorRate[]; period: string }
 export const getOperatorRates = () => request<OperatorRatesResponse>('/admin/stats/operator-rates')
 
-export function reviewKyc(userId: string, decision: 'APPROVED' | 'REJECTED', note?: string) {
+export function reviewKyc(userId: string, decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED', comment?: string) {
   return request(`/admin/kyc/${userId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ decision, note }),
+    body: JSON.stringify({ decision, comment }),
   })
 }
 

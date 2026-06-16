@@ -11,7 +11,7 @@ import {
   FileText, Siren, Info, Lock, ArrowUpRight, ArrowDownRight, ArrowRight,
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
-  Settings, Shield, Loader2, Plus, Pencil,
+  Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -71,7 +71,13 @@ const USER_STATUS_FILTER: Record<string, string> = {
   verified: 'ACTIVE', suspended: 'SUSPENDED', blocked: 'LOCKED',
 }
 const KYC_STATUS_BADGE: Record<string, string> = {
-  PENDING: 'pending', SUBMITTED: 'review', APPROVED: 'approved', REJECTED: 'rejected',
+  PENDING: 'pending', SUBMITTED: 'review', APPROVED: 'approved', REJECTED: 'rejected', RESUBMIT_REQUIRED: 'flagged',
+}
+const KYC_STATUS_COLOR: Record<string, string> = {
+  PENDING: C.textMuted, SUBMITTED: C.yellow, APPROVED: C.green, REJECTED: C.red, RESUBMIT_REQUIRED: C.purple,
+}
+const KYC_STATUS_LABEL: Record<string, string> = {
+  PENDING: 'En attente', SUBMITTED: 'À réviser', APPROVED: 'Approuvé', REJECTED: 'Rejeté', RESUBMIT_REQUIRED: 'Nouveau doc requis',
 }
 const TX_STATUS_BADGE: Record<string, string> = {
   COMPLETED: 'success', PENDING: 'pending', PROCESSING: 'pending',
@@ -1228,105 +1234,311 @@ function UsersPage() {
   )
 }
 
-function KYCPage() {
-  const { data, loading, error, refetch } = useFetch(() => getKyc(), [])
-  const queue = data?.pending ?? []
-  const counts = data?.counts ?? { pending: 0, approved30: 0, rejected30: 0 }
+// ── Lightbox plein écran pour les photos KYC ───────────────
+function KYCLightbox({ url, alt, onClose }: { url: string; alt: string; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onClose])
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <button onClick={onClose} style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', display: 'flex', padding: 6 }}><X size={24} /></button>
+      <img src={url} alt={alt} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '88vh', borderRadius: 12, objectFit: 'contain', boxShadow: '0 24px 80px rgba(0,0,0,.7)' }} />
+    </div>
+  )
+}
+
+// ── Modal détail KYC ────────────────────────────────────────
+function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; onClose: () => void; onDecision: () => void }) {
+  const [comment, setComment] = useState('')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [acting, setActing] = useState<string | null>(null)
   const toast = useToast()
 
-  const decide = async (userId: string, decision: 'APPROVED' | 'REJECTED') => {
-    setActing(userId)
-    try {
-      await reviewKyc(userId, decision)
-      refetch()
-      toast(decision === 'APPROVED' ? 'KYC approuvé' : 'KYC rejeté', 'success')
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
-    } finally {
-      setActing(null)
+  const decide = async (decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED') => {
+    if (decision !== 'APPROVED' && !comment.trim()) {
+      toast('Un commentaire est requis pour rejeter ou demander un nouveau document', 'error')
+      return
     }
+    setActing(decision)
+    try {
+      await reviewKyc(entry.id, decision, comment.trim() || undefined)
+      const msg =
+        decision === 'APPROVED' ? `KYC approuvé pour ${entry.fullName ?? entry.phone}` :
+        decision === 'REJECTED' ? `KYC rejeté — ${comment}` :
+        `Nouveau document demandé à ${entry.fullName ?? entry.phone}`
+      toast(msg, 'success')
+      onDecision()
+      onClose()
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+    } finally { setActing(null) }
   }
 
-  const stats: { label: string; value: number; color: string; icon: LucideIcon }[] = [
+  const doc = entry.kycDocument
+  const score = entry.complianceScore ?? 0
+  const scoreColor = score >= 80 ? C.green : score >= 50 ? C.yellow : C.red
+  const statusColor = KYC_STATUS_COLOR[entry.kycStatus] ?? C.textMuted
+
+  const photos: { key: 'idFrontUrl' | 'idBackUrl' | 'selfieUrl'; label: string }[] = [
+    { key: 'idFrontUrl', label: 'CNI Recto' },
+    { key: 'idBackUrl', label: 'CNI Verso' },
+    { key: 'selfieUrl', label: 'Selfie' },
+  ]
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 660, maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, padding: 28 }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{ width: 46, height: 46, borderRadius: 23, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 900, background: statusColor + '22', color: statusColor }}>{initials(entry.fullName)}</span>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 900, color: C.text }}>{entry.fullName ?? '—'}</div>
+              <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{entry.phone} · Inscrit le {fmtDate(entry.createdAt)}</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                <StatusBadge status={KYC_STATUS_BADGE[entry.kycStatus] ?? entry.kycStatus} />
+                {doc?.submittedAt && <span style={{ fontSize: 11, color: C.textMuted }}>Soumis le {fmtDate(doc.submittedAt)}</span>}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex', padding: 4 }}><X size={20} /></button>
+        </div>
+
+        {/* Photos */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Documents</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            {photos.map(({ key, label }) => {
+              const url = doc?.[key]
+              return (
+                <div key={key}>
+                  {url ? (
+                    <button onClick={() => setLightboxUrl(url)} title="Agrandir" style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', cursor: 'zoom-in', background: 'none', padding: 0, display: 'block' }}>
+                      <img src={url} alt={label} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
+                    </button>
+                  ) : (
+                    <div style={{ height: 130, border: `1px dashed ${C.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: C.textMuted, fontSize: 12 }}>
+                      <FileText size={22} opacity={0.4} /><span>Manquant</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 11, fontWeight: 700, color: url ? C.green : C.red }}>
+                    {url ? <Check size={12} /> : <X size={12} />} {label}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Score conformité */}
+        <div style={{ background: C.surface, borderRadius: 12, padding: '14px 16px', marginBottom: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Score de conformité</span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: scoreColor }}>{score}%</span>
+          </div>
+          <div style={{ height: 7, background: C.border, borderRadius: 4, overflow: 'hidden', marginBottom: 10 }}>
+            <div style={{ height: '100%', width: `${score}%`, background: scoreColor, borderRadius: 4, transition: 'width .4s ease' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            {photos.map(({ key, label }) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: doc?.[key] ? C.green : C.textMuted, fontWeight: 600 }}>
+                {doc?.[key] ? <Check size={12} /> : <X size={12} opacity={0.5} />} {label}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Note précédente */}
+        {doc?.reviewNote && (
+          <div style={{ background: C.yellow + '0F', border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.yellow, marginBottom: 4 }}>
+              Note précédente{doc.reviewedAt ? ` · ${fmtDate(doc.reviewedAt)}` : ''}
+            </div>
+            <div style={{ fontSize: 13, color: C.text }}>{doc.reviewNote}</div>
+          </div>
+        )}
+
+        {/* Commentaire */}
+        <div style={{ marginBottom: 22 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
+            Commentaire <span style={{ color: C.textMuted, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(requis pour Rejeter ou Nouveau doc)</span>
+          </label>
+          <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3}
+            placeholder="Motif de la décision (qualité image insuffisante, document expiré…)"
+            style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 10, padding: '10px 12px', fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          <button onClick={() => decide('APPROVED')} disabled={!!acting}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 8px', borderRadius: 10, border: 'none', background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
+            <Check size={15} /> {acting === 'APPROVED' ? 'En cours…' : 'Approuver'}
+          </button>
+          <button onClick={() => decide('REJECTED')} disabled={!!acting}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 8px', borderRadius: 10, border: `1px solid ${C.red}40`, background: C.red + '15', color: C.red, fontWeight: 700, fontSize: 13, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
+            <X size={15} /> {acting === 'REJECTED' ? 'En cours…' : 'Rejeter'}
+          </button>
+          <button onClick={() => decide('RESUBMIT_REQUIRED')} disabled={!!acting}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 8px', borderRadius: 10, border: `1px solid ${C.purple}40`, background: C.purple + '15', color: C.purple, fontWeight: 700, fontSize: 13, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
+            <RotateCcw size={14} /> {acting === 'RESUBMIT_REQUIRED' ? 'En cours…' : 'Nouveau doc'}
+          </button>
+        </div>
+      </div>
+      {lightboxUrl && <KYCLightbox url={lightboxUrl} alt="Document KYC" onClose={() => setLightboxUrl(null)} />}
+    </div>
+  )
+}
+
+function KYCPage() {
+  const { data, loading, error, refetch } = useFetch(() => getKyc(), [])
+  const queue = data?.queue ?? []
+  const counts = data?.counts ?? { pending: 0, approvedToday: 0, rejectedToday: 0, resubmitRequired: 0, approvalRate: 0 }
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<AdminKycEntry | null>(null)
+
+  const filtered = queue.filter((k) => {
+    if (filterStatus !== 'all' && k.kycStatus !== filterStatus) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!(k.fullName?.toLowerCase().includes(q) || k.phone?.includes(q))) return false
+    }
+    return true
+  })
+
+  const stats: { label: string; value: string | number; color: string; icon: LucideIcon }[] = [
     { label: 'En attente', value: counts.pending, color: C.yellow, icon: Clock },
-    { label: 'Approuvés (30j)', value: counts.approved30, color: C.green, icon: CheckCircle2 },
-    { label: 'Rejetés (30j)', value: counts.rejected30, color: C.red, icon: XCircle },
+    { label: "Approuvés aujourd'hui", value: counts.approvedToday, color: C.green, icon: CheckCircle2 },
+    { label: "Rejetés aujourd'hui", value: counts.rejectedToday, color: C.red, icon: XCircle },
+    { label: "Taux d'approbation", value: counts.approvalRate + ' %', color: C.blue, icon: TrendingUp },
+  ]
+
+  const STATUS_FILTERS = [
+    { label: 'Tous', value: 'all' },
+    { label: 'À réviser', value: 'SUBMITTED' },
+    { label: 'Approuvés', value: 'APPROVED' },
+    { label: 'Rejetés', value: 'REJECTED' },
+    { label: 'Nouveau doc requis', value: 'RESUBMIT_REQUIRED' },
   ]
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ marginBottom: 24 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 22 }}>
         <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vérification KYC</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{counts.pending} demande(s) en attente</p>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{counts.pending} demande(s) en attente de révision</p>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
 
-      {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 24 }}>
-        {stats.map(s => {
-          const Icon = s.icon
-          return (
-          <div key={s.label} className="cw-card" style={{ background: `linear-gradient(140deg, ${s.color}12 0%, ${C.card} 55%)`, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px' }}>
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 22 }}>
+        {stats.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
-              <span style={{ display: 'inline-flex', width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center', background: s.color + '1F', color: s.color }}><Icon size={16} /></span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
             </div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: s.color }}>{s.value}</div>
           </div>
-          )
-        })}
+        )})}
       </div>
 
-      {/* Queue */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {queue.map(k => (
-          <div key={k.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                <div style={{ width: 48, height: 48, borderRadius: 24, background: C.blue + '20', border: `2px solid ${C.blue}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: C.blue }}>
-                  {initials(k.fullName)}
-                </div>
-                <div>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 15, marginBottom: 3 }}>{k.fullName ?? 'Sans nom'}</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>{k.phone} · Inscrit le {fmtDate(k.createdAt)}</div>
-                  {k.kycDocument && <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: C.blue, fontSize: 12, marginTop: 3, fontWeight: 600 }}><FileText size={13} /> Document soumis le {fmtDate(k.kycDocument.submittedAt)}</div>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <StatusBadge status={KYC_STATUS_BADGE[k.kycStatus] ?? k.kycStatus} />
-                <button className="cw-btn" onClick={() => decide(k.id, 'APPROVED')} disabled={acting === k.id}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
-                  <Check size={14} /> Approuver
-                </button>
-                <button className="cw-btn" onClick={() => decide(k.id, 'REJECTED')} disabled={acting === k.id}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: acting === k.id ? 'wait' : 'pointer', fontWeight: 700 }}>
-                  <X size={14} /> Rejeter
-                </button>
-              </div>
-            </div>
+      {/* Filtres */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {STATUS_FILTERS.map((f) => (
+            <button key={f.value} onClick={() => setFilterStatus(f.value)}
+              style={{ padding: '6px 14px', borderRadius: 20, border: `1px solid ${filterStatus === f.value ? C.blue : C.border}`, background: filterStatus === f.value ? C.blue + '15' : C.surface, color: filterStatus === f.value ? C.blue : C.textSoft, fontWeight: filterStatus === f.value ? 700 : 500, fontSize: 12, cursor: 'pointer' }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.textMuted, pointerEvents: 'none' }} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom ou téléphone…"
+            style={{ paddingLeft: 30, paddingRight: 12, paddingTop: 7, paddingBottom: 7, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, fontSize: 12, outline: 'none', width: 210 }} />
+        </div>
+      </div>
 
-            {/* Prévisualisation des photos KYC */}
-            {k.kycDocument ? (
-              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-                {([['idFrontUrl', 'CNI recto'], ['idBackUrl', 'CNI verso'], ['selfieUrl', 'Selfie']] as const).map(([key, cap]) => (
-                  <a key={key} href={k.kycDocument![key]} target="_blank" rel="noreferrer" style={{ flex: 1 }}>
-                    <img src={k.kycDocument![key]} alt={cap}
-                      style={{ width: '100%', height: 96, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
-                    <div style={{ fontSize: 10, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
-                  </a>
+      {/* Table */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        <div className="cw-tablewrap">
+          <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: C.surface }}>
+              <tr>
+                {['Utilisateur', 'Date soumission', 'Statut', 'Score conformité', 'Documents', 'Actions'].map((h) => (
+                  <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
-              </div>
-            ) : (
-              <div style={{ color: C.textMuted, fontSize: 12, marginTop: 10 }}>Aucun document soumis</div>
-            )}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((k) => {
+                const doc = k.kycDocument
+                const score = k.complianceScore ?? 0
+                const scoreColor = score >= 80 ? C.green : score >= 50 ? C.yellow : C.red
+                const statusColor = KYC_STATUS_COLOR[k.kycStatus] ?? C.textMuted
+                return (
+                  <tr key={k.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                    <td style={{ padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ width: 34, height: 34, borderRadius: 17, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, background: statusColor + '20', color: statusColor }}>{initials(k.fullName)}</span>
+                        <div>
+                          <div style={{ fontWeight: 700, color: C.text }}>{k.fullName ?? '—'}</div>
+                          <div style={{ fontSize: 11, color: C.textMuted }}>{k.phone}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{doc?.submittedAt ? fmtDate(doc.submittedAt) : '—'}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: statusColor + '20', color: statusColor }}>
+                        <span style={{ width: 5, height: 5, borderRadius: 3, background: statusColor, flexShrink: 0 }} />
+                        {KYC_STATUS_LABEL[k.kycStatus] ?? k.kycStatus}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 14px', minWidth: 130 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${score}%`, background: scoreColor, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: scoreColor, minWidth: 32 }}>{score} %</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        {(['idFrontUrl', 'idBackUrl', 'selfieUrl'] as const).map((key, i) => (
+                          <span key={key} title={['CNI Recto', 'CNI Verso', 'Selfie'][i]}
+                            style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center', background: doc?.[key] ? C.green + '20' : C.border + '80', color: doc?.[key] ? C.green : C.textMuted }}>
+                            {doc?.[key] ? <Check size={11} /> : <X size={10} />}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <button onClick={() => setSelected(k)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: C.blue, background: C.blue + '15', border: `1px solid ${C.blue}30`, borderRadius: 7, padding: '6px 12px', cursor: 'pointer' }}>
+                        <Eye size={13} /> Voir détail
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!loading && !error && filtered.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>
+            {search || filterStatus !== 'all' ? 'Aucun résultat pour ces filtres' : 'Aucune demande KYC'}
           </div>
-        ))}
-        {!loading && !error && queue.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucune demande KYC en attente</div>
         )}
       </div>
+
+      {selected && (
+        <KYCDetailModal entry={selected} onClose={() => setSelected(null)} onDecision={() => { setSelected(null); refetch() }} />
+      )}
     </div>
   )
 }
