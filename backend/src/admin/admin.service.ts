@@ -10,6 +10,8 @@ import {
 } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
 import { ADMIN_ROLES } from './dto/set-admin-role.dto';
+import { CreateAdminOperatorDto } from './dto/create-admin-operator.dto';
+import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 
 const ANIF_RISK_HIGH = 50_000_000n;  // 500 000 FCFA en centimes
@@ -1168,11 +1170,14 @@ export class AdminService {
   async getAdminTeam() {
     return this.prisma.user.findMany({
       where: { role: 'ADMIN', deletedAt: null },
+      orderBy: { createdAt: 'asc' },
       select: {
         id: true,
         fullName: true,
         email: true,
         adminRole: true,
+        status: true,
+        lastLoginAt: true,
         createdAt: true,
         totpEnabled: true,
       },
@@ -1237,6 +1242,65 @@ export class AdminService {
       },
     });
     return { ok: true };
+  }
+
+  // Vérifie que l'acteur est SUPER_ADMIN (autorité sur l'équipe).
+  private async assertSuperAdmin(actorId: string, message: string) {
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { adminRole: true } });
+    if (actor?.adminRole !== 'SUPER_ADMIN') throw new ForbiddenException(message);
+  }
+
+  // Crée un opérateur admin (login par-utilisateur). SUPER_ADMIN uniquement.
+  async createAdminOperator(actorId: string, dto: CreateAdminOperatorDto) {
+    await this.assertSuperAdmin(actorId, 'Seul un SUPER_ADMIN peut créer un opérateur');
+    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (existing) throw new BadRequestException('Cet email est déjà utilisé');
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const created = await this.prisma.user.create({
+      data: {
+        phone: `op-${randomUUID()}`, // téléphone synthétique (admin = login email)
+        fullName: dto.fullName,
+        email: dto.email,
+        pinHash: '',
+        passwordHash,
+        role: 'ADMIN',
+        adminRole: dto.adminRole,
+        status: 'ACTIVE',
+        kycStatus: 'APPROVED',
+        wallet: { create: {} },
+      },
+      select: { id: true, fullName: true, email: true, adminRole: true, status: true, lastLoginAt: true, createdAt: true },
+    });
+    void this.prisma.auditLog.create({
+      data: { userId: actorId, action: 'ADMIN_CREATE', metadata: { targetId: created.id, email: dto.email, role: dto.adminRole } as any },
+    });
+    return created;
+  }
+
+  // Supprime (soft delete) un opérateur admin. SUPER_ADMIN uniquement.
+  async deleteAdmin(actorId: string, userId: string) {
+    await this.assertSuperAdmin(actorId, 'Seul un SUPER_ADMIN peut supprimer un opérateur');
+    if (actorId === userId) throw new ForbiddenException('Un admin ne peut pas se supprimer lui-même');
+    const target = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (target?.role !== 'ADMIN') throw new BadRequestException('La cible n\'est pas un compte administrateur');
+
+    await this.prisma.user.update({ where: { id: userId }, data: { deletedAt: new Date(), status: 'DELETED' } });
+    void this.prisma.auditLog.create({ data: { userId: actorId, action: 'ADMIN_DELETE', metadata: { targetId: userId } as any } });
+    return { ok: true };
+  }
+
+  // Active / désactive un opérateur admin. SUPER_ADMIN uniquement.
+  async setAdminStatus(actorId: string, userId: string, active: boolean) {
+    await this.assertSuperAdmin(actorId, 'Seul un SUPER_ADMIN peut modifier le statut');
+    if (actorId === userId) throw new ForbiddenException('Un admin ne peut pas se désactiver lui-même');
+    const target = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (target?.role !== 'ADMIN') throw new BadRequestException('La cible n\'est pas un compte administrateur');
+
+    const status = active ? 'ACTIVE' : 'SUSPENDED';
+    await this.prisma.user.update({ where: { id: userId }, data: { status } });
+    void this.prisma.auditLog.create({ data: { userId: actorId, action: active ? 'ADMIN_ACTIVATE' : 'ADMIN_DEACTIVATE', metadata: { targetId: userId } as any } });
+    return { ok: true, status };
   }
 
   // ─── Export CSV ──────────────────────────────────────────────────────────

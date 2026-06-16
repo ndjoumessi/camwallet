@@ -227,6 +227,11 @@ export class AuthService {
       }
     }
 
+    // Tracer la dernière connexion de l'admin configuré (affichée dans Équipe).
+    if (adminUser) {
+      void this.prisma.user.update({ where: { id: adminUser.id }, data: { lastLoginAt: new Date() } });
+    }
+
     // Enregistrer la date de premier login admin si non définie (rotation 90j).
     void this.prisma.systemSettings.upsert({
       where: { key: 'admin_password_changed_at' },
@@ -256,6 +261,11 @@ export class AuthService {
       },
     });
     if (!user) return null;
+
+    // Compte admin désactivé par un SUPER_ADMIN → connexion refusée.
+    if (user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Compte administrateur désactivé');
+    }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);

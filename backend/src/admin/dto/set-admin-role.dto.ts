@@ -6,12 +6,14 @@ import { IsIn } from 'class-validator';
 //   COMPLIANCE_OFFICER — Conformité ANIF + Journal Audit uniquement
 //   SUPPORT_OPERATOR   — Utilisateurs + Transactions uniquement (lecture seule)
 //   FINANCE_OFFICER    — Finances + Recharges & Retraits uniquement
+//   KYC_OFFICER        — Vérification KYC uniquement
 export const ADMIN_ROLES = [
   'SUPER_ADMIN',
   'ADMIN',
   'COMPLIANCE_OFFICER',
   'SUPPORT_OPERATOR',
   'FINANCE_OFFICER',
+  'KYC_OFFICER',
 ] as const;
 
 export type AdminRole = (typeof ADMIN_ROLES)[number];
