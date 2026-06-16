@@ -1367,6 +1367,17 @@ export class AdminService {
     p2p_fee_rate:            '0',
     session_duration_minutes: '15',
     anif_threshold_fcfa:     '500000',
+    // Règles de détection ANIF (activées/désactivées + seuils)
+    anif_rule_highvalue:     'on',     // alerte transaction > seuil
+    anif_rule_smurfing:      'on',     // fractionnement (>10 tx <50k, total >300k / 24h)
+    anif_rule_frequency:     'on',     // fréquence anormale (>10 tx / 24h)
+    anif_frequency_max:      '10',     // seuil fréquence tx/24h
+    // Sécurité
+    require_2fa:             'off',    // 2FA obligatoire pour les admins
+    // Notifications (événements déclenchant alertes email/SMS)
+    notify_kyc_submitted:    'on',
+    notify_high_value:       'on',
+    notify_failed_payment:   'off',
   };
 
   async getSettings(): Promise<Record<string, string>> {

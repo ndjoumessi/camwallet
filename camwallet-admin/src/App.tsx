@@ -21,7 +21,7 @@ import {
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
   getKyc, getAlerts, getAlertsTimeline, getAudit, getAuditStats, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
-  getAnifAlerts, openAnifCase, closeAnifCase,
+  getAnifAlerts, openAnifCase, closeAnifCase, assignAnifCase, getAnifStats,
   getOperations, retryOperation, WebhookEvent, AdminOperation, resolveTransaction,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
@@ -2787,203 +2787,332 @@ function OperationsPage() {
 }
 
 // ── Page : Conformité ANIF ────────────────────────────────
+// Score de risque (0-100) d'une transaction suspecte selon le type d'alerte.
+function anifRiskScore(kind: 'highvalue' | 'unusual' | 'smurfing' | 'frequency', amountFcfa: number, thresholdFcfa: number): number {
+  if (kind === 'smurfing') return 88
+  if (kind === 'frequency') return 64
+  if (kind === 'unusual') return 74 // juste sous le seuil = évasion probable
+  // highvalue : croît avec le multiple du seuil
+  const ratio = thresholdFcfa > 0 ? amountFcfa / thresholdFcfa : 1
+  return Math.min(100, Math.round(45 + ratio * 18))
+}
+const riskBand = (s: number) => (s >= 80 ? { key: 'critique', label: 'Critique', color: C.red } : s >= 50 ? { key: 'eleve', label: 'Élevé', color: '#FB923C' } : { key: 'moyen', label: 'Moyen', color: C.yellow })
+
 function ANIFPage() {
   const { data, loading, error, refetch } = useFetch(getAnifAlerts, [])
-  const showToast = useContext(ToastContext)
-  const [openingCase, setOpeningCase] = useState<string | null>(null)
-  const [caseReason, setCaseReason] = useState('')
-  const [closingId, setClosingId] = useState<string | null>(null)
-  const [resolutionText, setResolutionText] = useState('')
-  // Seuil de déclaration configurable directement sur la page (filtrage client).
-  const [thresholdFcfa, setThresholdFcfa] = useState(500_000)
+  const { data: anifStats } = useFetch(getAnifStats, [])
+  const { data: settings, refetch: refetchSettings } = useFetch(getSettings, [])
+  const { data: team } = useFetch(getAdminTeam, [])
+  const toast = useToast()
+  const [riskFilter, setRiskFilter] = useState('')
+  const [period, setPeriod] = useState<'7d' | '30d'>('30d')
+  const [caseStatusFilter, setCaseStatusFilter] = useState('')
+  const [caseInput, setCaseInput] = useState<{ txId: string; reason: string } | null>(null)
+  const [closing, setClosing] = useState<{ id: string; resolution: string; report: string } | null>(null)
 
-  const handleOpenCase = async (txId: string) => {
-    if (!caseReason.trim()) {
-      showToast('Saisissez un motif', 'error')
-      return
-    }
-    try {
-      await openAnifCase(txId, caseReason)
-      showToast('Dossier ANIF ouvert')
-      setOpeningCase(null)
-      setCaseReason('')
-      refetch()
-    } catch {
-      showToast('Échec ouverture dossier', 'error')
-    }
-  }
+  const thresholdFcfa = Number(settings?.anif_threshold_fcfa ?? 500000)
+  const freqMax = Number(settings?.anif_frequency_max ?? 10)
 
-  const handleCloseCase = async (caseId: string) => {
-    if (!resolutionText.trim()) {
-      showToast('Saisissez une résolution', 'error')
-      return
-    }
-    try {
-      await closeAnifCase(caseId, resolutionText)
-      showToast('Dossier clôturé')
-      setClosingId(null)
-      setResolutionText('')
-      refetch()
-    } catch {
-      showToast('Échec clôture dossier', 'error')
-    }
-  }
+  // Liste unifiée des transactions suspectes (montant élevé + sous-seuil) avec score.
+  const periodCut = Date.now() - (period === '7d' ? 7 : 30) * 86400000
+  const suspects = useMemo(() => {
+    const hv = (data?.highValue ?? []).map((tx) => ({ tx, kind: 'highvalue' as const }))
+    const un = (data?.unusualAmounts ?? []).map((tx) => ({ tx, kind: 'unusual' as const }))
+    return [...hv, ...un]
+      .filter((s) => new Date(s.tx.createdAt).getTime() >= periodCut)
+      .map((s) => ({ ...s, score: anifRiskScore(s.kind, toFcfa(s.tx.amount), thresholdFcfa) }))
+      .sort((a, b) => b.score - a.score)
+  }, [data, period, thresholdFcfa, periodCut])
+  const filteredSuspects = riskFilter ? suspects.filter((s) => riskBand(s.score).key === riskFilter) : suspects
 
   const frequent = data?.frequentSenders ?? []
-  const cases = data?.cases ?? []
-  // Liste filtrée selon le seuil configuré sur la page.
-  const highValue = (data?.highValue ?? []).filter((tx) => toFcfa(tx.amount) >= thresholdFcfa)
+  const smurfing = data?.smurfing ?? []
+  const allCases = data?.cases ?? []
+  // Dossiers : on présente les ouvertures, statut dérivé des clôtures.
+  const closedRefs = new Set(allCases.filter((c) => c.action === 'ANIF_CASE_CLOSE').map((c) => c.resource).filter(Boolean))
+  const openCases = allCases.filter((c) => c.action === 'ANIF_CASE_OPEN').map((c) => ({
+    ...c,
+    status: closedRefs.has(`AuditLog:${c.id}`) ? 'Clôturé' : 'Ouvert',
+  }))
+  const visibleCases = caseStatusFilter ? openCases.filter((c) => c.status === caseStatusFilter) : openCases
+
+  // Donut : répartition par type d'alerte.
+  const donut = [
+    { name: 'Montant élevé', value: data?.highValue?.length ?? 0, color: C.red },
+    { name: 'Fractionnement', value: smurfing.length, color: '#FB923C' },
+    { name: 'Fréquence', value: frequent.length, color: C.yellow },
+    { name: 'Sous-seuil', value: data?.unusualAmounts?.length ?? 0, color: C.purple },
+  ].filter((d) => d.value > 0)
+  const donutTotal = donut.reduce((s, d) => s + d.value, 0)
+
+  // BarChart : alertes (suspects) par jour sur 30j.
+  const byDay = useMemo(() => {
+    const m = new Map<string, number>()
+    suspects.forEach((s) => { const k = s.tx.createdAt.slice(0, 10); m.set(k, (m.get(k) ?? 0) + 1) })
+    const out = []
+    const days = period === '7d' ? 7 : 30
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10)
+      out.push({ date: d.slice(5), alerts: m.get(d) ?? 0 })
+    }
+    return out
+  }, [suspects, period])
+
+  const handleOpenCase = async () => {
+    if (!caseInput?.reason.trim()) { toast('Saisissez un motif', 'error'); return }
+    try { await openAnifCase(caseInput.txId, caseInput.reason); toast('Dossier ANIF ouvert', 'success'); setCaseInput(null); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const handleClose = async () => {
+    if (!closing?.resolution.trim()) { toast('Saisissez une résolution', 'error'); return }
+    try { await closeAnifCase(closing.id, closing.resolution, closing.report || undefined); toast('Dossier clôturé', 'success'); setClosing(null); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const handleAssign = async (caseId: string, analystId: string) => {
+    if (!analystId) return
+    try { await assignAnifCase(caseId, analystId); toast('Dossier assigné', 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const handleReport = (c: any) => {
+    const meta = c.metadata ?? {}
+    const ok = exportPdfReport(`Rapport ANIF — ${meta.caseRef ?? c.id.slice(0, 8)}`, ['Champ', 'Valeur'], [
+      ['Référence dossier', meta.caseRef ?? '—'], ['Transaction', meta.reference ?? '—'],
+      ['Montant', meta.amount ? formatFCFA(Number(meta.amount)) : '—'], ['Motif', meta.reason ?? '—'],
+      ['Ouvert le', fmtDate(c.createdAt)], ['Statut', c.status],
+    ])
+    toast(ok ? 'Rapport PDF généré' : 'Fenêtre bloquée', ok ? 'success' : 'error')
+  }
+  const toggleRule = async (key: string, on: boolean) => {
+    try { await updateSettings({ [key]: on ? 'on' : 'off' }); refetchSettings(); toast('Règle mise à jour', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const saveThreshold = async (val: string) => {
+    try { await updateSettings({ anif_threshold_fcfa: val }); refetchSettings(); toast('Seuil mis à jour', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+
+  const statCards = anifStats ? [
+    { label: 'Alertes actives', value: anifStats.activeAlerts.toLocaleString('fr-FR'), icon: Siren, color: C.red },
+    { label: 'Dossiers ouverts', value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: '#FB923C' },
+    { label: 'Tx > seuil (30j)', value: anifStats.overThreshold30d.toLocaleString('fr-FR'), icon: TrendingUp, color: C.purple },
+    { label: 'Taux de résolution', value: anifStats.resolutionRate == null ? '—' : anifStats.resolutionRate + ' %', icon: CheckCircle2, color: C.green },
+  ] : []
+
+  const RULES = [
+    { key: 'anif_rule_highvalue', label: 'Transaction au-dessus du seuil', desc: `Alerte si montant > ${groupFr(thresholdFcfa)} FCFA`, editable: 'threshold' as const },
+    { key: 'anif_rule_smurfing', label: 'Fractionnement (smurfing)', desc: '> 10 tx < 50k FCFA, total > 300k / 24h' },
+    { key: 'anif_rule_frequency', label: 'Fréquence anormale', desc: `> ${freqMax} transactions / 24h`, editable: 'freq' as const },
+  ]
+  const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
 
   return (
-    <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
-      {/* En-tête avec seuil configurable */}
-      <div style={{ background: C.red + '10', border: `1px solid ${C.red}30`, borderRadius: 12, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <ShieldAlert size={20} color={C.red} />
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Conformité ANIF — Lutte anti-blanchiment</div>
-          <div style={{ color: C.textMuted, fontSize: 12 }}>Données des 30 derniers jours</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600 }}>Seuil de déclaration</label>
-          <input
-            type="number" min={0} step={50_000} value={thresholdFcfa}
-            onChange={(e) => setThresholdFcfa(Math.max(0, Number(e.target.value) || 0))}
-            style={{ width: 130, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '7px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right' }}
-          />
-          <span style={{ fontSize: 12, color: C.textMuted }}>FCFA</span>
-        </div>
+    <div className="cw-page" style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
+          <ShieldAlert size={22} color={C.red} /> Conformité ANIF
+        </h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Lutte anti-blanchiment — surveillance & dossiers d'enquête</p>
       </div>
 
       <StateRow loading={loading} error={error} />
 
-      {/* Transactions à montant élevé */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Transactions &gt; {groupFr(thresholdFcfa)} FCFA ({highValue.length})
-        </div>
-        {highValue.length === 0 && !loading ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction au-dessus du seuil.</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                {['Date', 'Expéditeur', 'Bénéficiaire', 'Montant', 'Type', 'Statut', 'Action'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '7px 10px', color: C.textMuted, fontWeight: 600 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {highValue.map(tx => (
-                <tr key={tx.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
-                  <td style={{ padding: '8px 10px', color: C.textMuted }}>{fmtDate(tx.createdAt)}</td>
-                  <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.sender, '—')}</td>
-                  <td style={{ padding: '8px 10px', color: C.text }}>{partyLabel(tx.receiver, '—')}</td>
-                  <td style={{ padding: '8px 10px', fontWeight: 800, color: C.red }}>{formatFCFA(tx.amount)}</td>
-                  <td style={{ padding: '8px 10px', color: C.textMuted }}>{tx.type}</td>
-                  <td style={{ padding: '8px 10px' }}>
-                    <span style={{ color: tx.status === 'COMPLETED' ? C.green : C.yellow, fontWeight: 600, fontSize: 11 }}>{tx.status}</span>
-                  </td>
-                  <td style={{ padding: '8px 10px' }}>
-                    {openingCase === tx.id ? (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <input
-                          autoFocus
-                          value={caseReason}
-                          onChange={e => setCaseReason(e.target.value)}
-                          placeholder="Motif..."
-                          style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12 }}
-                        />
-                        <button onClick={() => handleOpenCase(tx.id)} style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>OK</button>
-                        <button onClick={() => setOpeningCase(null)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setOpeningCase(tx.id)}
-                        style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                      >
-                        Ouvrir un dossier d'enquête
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+          </div>
+        )})}
       </div>
 
-      {/* Émetteurs fréquents */}
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Émetteurs fréquents (&gt; 10 tx / 24h) ({frequent.length})
+      {/* Graphes : alertes/jour + répartition par type */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Alertes par jour</h2>
+            <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
+              {(['7d', '30d'] as const).map((p) => (
+                <button key={p} onClick={() => setPeriod(p)} style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: period === p ? C.green : 'transparent', color: period === p ? '#fff' : C.textSoft }}>{p === '7d' ? '7j' : '30j'}</button>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={byDay} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} minTickGap={20} />
+              <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={26} allowDecimals={false} />
+              <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
+              <Bar dataKey="alerts" name="Alertes" fill={C.red} radius={[3, 3, 0, 0]} maxBarSize={24} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
-        {frequent.length === 0 && !loading ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun comportement anormal détecté.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {frequent.map(s => (
-              <div key={s.senderId} style={{ background: C.card, border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 16 }}>
-                <AlertTriangle size={18} color={C.yellow} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: C.text, fontWeight: 700 }}>{s.fullName ?? s.phone}</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>{s.phone}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ color: C.yellow, fontWeight: 800 }}>{s.count} transactions / 24h</div>
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>Total : {formatFCFA(s.totalAmount)}</div>
-                </div>
+
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Répartition par type d'alerte</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ position: 'relative', width: 140, height: 140, flexShrink: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={donut.length ? donut : [{ name: '—', value: 1, color: C.border }]} cx="50%" cy="50%" innerRadius={46} outerRadius={68} dataKey="value" paddingAngle={donut.length > 1 ? 3 : 0} stroke="none">
+                    {(donut.length ? donut : [{ color: C.border }]).map((d, i) => <Cell key={i} fill={d.color} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 22, fontWeight: 900, color: C.text }}>{donutTotal}</span>
+                <span style={{ fontSize: 10, color: C.textMuted }}>alertes</span>
               </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>Aucune alerte</span>}
+              {donut.map((d, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12, color: C.textSoft }}>{d.name}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: C.text }}>{d.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tableau de bord alertes (transactions suspectes scorées) */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 16px', flexWrap: 'wrap' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions suspectes ({filteredSuspects.length})</h2>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => setRiskFilter('')} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === '' ? 700 : 500, background: riskFilter === '' ? C.green : C.surface, border: `1px solid ${riskFilter === '' ? C.green : C.border}`, color: riskFilter === '' ? '#fff' : C.textSoft }}>Tous</button>
+            {[{ k: 'critique', l: 'Critique', c: C.red }, { k: 'eleve', l: 'Élevé', c: '#FB923C' }, { k: 'moyen', l: 'Moyen', c: C.yellow }].map((b) => (
+              <button key={b.k} onClick={() => setRiskFilter(riskFilter === b.k ? '' : b.k)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === b.k ? 700 : 500, background: riskFilter === b.k ? b.c : b.c + '18', border: `1px solid ${b.c}40`, color: riskFilter === b.k ? '#fff' : b.c }}>{b.l}</button>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Dossiers ouverts */}
-      <div>
-        <div style={{ fontWeight: 700, color: C.text, fontSize: 14, marginBottom: 10 }}>
-          Dossiers d'enquête ouverts ({cases.length})
         </div>
-        {cases.length === 0 && !loading ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier ouvert.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', paddingLeft: 22 }}>
-            {/* Rail vertical de la timeline */}
-            <div style={{ position: 'absolute', left: 6, top: 8, bottom: 8, width: 2, background: C.border }} />
-            {cases.map(c => (
-              <div key={c.id} style={{ position: 'relative', background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
-                <span style={{ position: 'absolute', left: -22, top: 16, width: 13, height: 13, borderRadius: 7, background: C.red, border: `3px solid ${C.bg}` }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: C.text, fontWeight: 600, fontSize: 13 }}>{c.action}</div>
-                    <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{c.details}</div>
-                    {c.user && <div style={{ color: C.textSoft, fontSize: 11, marginTop: 4 }}>{c.user.fullName ?? c.user.phone}</div>}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                    <div style={{ color: C.textMuted, fontSize: 11 }}>{fmtDate(c.createdAt)}</div>
-                    {closingId === c.id ? (
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <input
-                          autoFocus
-                          value={resolutionText}
-                          onChange={e => setResolutionText(e.target.value)}
-                          placeholder="Résolution..."
-                          style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 6, padding: '4px 8px', fontSize: 12, width: 180 }}
-                        />
-                        <button onClick={() => handleCloseCase(c.id)} style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}>Confirmer</button>
-                        <button onClick={() => { setClosingId(null); setResolutionText('') }} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
+        <div className="cw-tablewrap">
+          <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: C.surface }}>
+              <tr>{['Score', 'Émetteur', 'Bénéficiaire', 'Montant', 'Type', 'Date', 'Action'].map(h => (
+                <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {filteredSuspects.map(({ tx, score, kind }) => { const band = riskBand(score); return (
+                <tr key={tx.id + kind} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <td style={{ padding: '11px 14px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ minWidth: 34, textAlign: 'center', fontSize: 12, fontWeight: 800, color: band.color, background: band.color + '20', borderRadius: 6, padding: '2px 6px' }}>{score}</span>
+                      <span style={{ fontSize: 11, color: band.color, fontWeight: 600 }}>{band.label}</span>
+                    </span>
+                  </td>
+                  <td style={{ padding: '11px 14px' }}><UserCell party={tx.sender} /></td>
+                  <td style={{ padding: '11px 14px' }}><UserCell party={tx.receiver} /></td>
+                  <td style={{ padding: '11px 14px', fontWeight: 800, color: C.red, whiteSpace: 'nowrap' }}>{formatFCFA(tx.amount)}</td>
+                  <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
+                  <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tx.createdAt)}>{relativeTime(tx.createdAt)}</td>
+                  <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}>
+                    {!isReadOnly() && (caseInput?.txId === tx.id ? (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input autoFocus value={caseInput.reason} onChange={(e) => setCaseInput({ txId: tx.id, reason: e.target.value })} placeholder="Motif…" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, width: 140 }} />
+                        <button onClick={handleOpenCase} style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontSize: 12 }}>OK</button>
+                        <button onClick={() => setCaseInput(null)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => { setClosingId(c.id); setResolutionText('') }}
-                        style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
-                      >
-                        Clôturer
-                      </button>
+                      <button onClick={() => setCaseInput({ txId: tx.id, reason: '' })} style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Ouvrir un dossier</button>
+                    ))}
+                  </td>
+                </tr>
+              )})}
+            </tbody>
+          </table>
+        </div>
+        {filteredSuspects.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 30, color: C.textMuted, fontSize: 13 }}>Aucune transaction suspecte sur la période</div>}
+      </div>
+
+      {/* Règles de détection configurables */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
+        <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Règles de détection</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {RULES.map((r) => { const on = (settings?.[r.key] ?? 'on') === 'on'; return (
+            <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 14, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{r.label}</div>
+                <div style={{ color: C.textMuted, fontSize: 12 }}>{r.desc}</div>
+              </div>
+              {r.editable === 'threshold' && (
+                <input type="number" defaultValue={thresholdFcfa} onBlur={(e) => { if (Number(e.target.value) !== thresholdFcfa) saveThreshold(String(Math.max(0, Number(e.target.value) || 0))) }} style={{ ...inputStyle, width: 110, textAlign: 'right' }} disabled={isReadOnly()} />
+              )}
+              {r.editable === 'freq' && (
+                <input type="number" defaultValue={freqMax} onBlur={(e) => { if (Number(e.target.value) !== freqMax) updateSettings({ anif_frequency_max: String(Math.max(1, Number(e.target.value) || 10)) }).then(() => refetchSettings()) }} style={{ ...inputStyle, width: 80, textAlign: 'right' }} disabled={isReadOnly()} />
+              )}
+              <button disabled={isReadOnly()} onClick={() => toggleRule(r.key, !on)} aria-label="Activer/désactiver" style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: isReadOnly() ? 'default' : 'pointer', background: on ? C.green : C.border, transition: 'background .2s', flexShrink: 0 }}>
+                <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: 9, background: '#fff', transition: 'left .2s' }} />
+              </button>
+            </div>
+          )})}
+        </div>
+      </div>
+
+      {/* Dossiers d'enquête */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Dossiers d'enquête ({visibleCases.length})</h2>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {['', 'Ouvert', 'Clôturé'].map((st) => (
+              <button key={st || 'all'} onClick={() => setCaseStatusFilter(st)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: caseStatusFilter === st ? 700 : 500, background: caseStatusFilter === st ? C.green : C.surface, border: `1px solid ${caseStatusFilter === st ? C.green : C.border}`, color: caseStatusFilter === st ? '#fff' : C.textSoft }}>{st || 'Tous'}</button>
+            ))}
+          </div>
+        </div>
+        {visibleCases.length === 0 ? (
+          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', paddingLeft: 22 }}>
+            <div style={{ position: 'absolute', left: 6, top: 8, bottom: 8, width: 2, background: C.border }} />
+            {visibleCases.map((c: any) => {
+              const meta = c.metadata ?? {}
+              const isClosed = c.status === 'Clôturé'
+              return (
+              <div key={c.id} style={{ position: 'relative', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 16px' }}>
+                <span style={{ position: 'absolute', left: -22, top: 16, width: 13, height: 13, borderRadius: 7, background: isClosed ? C.green : C.red, border: `3px solid ${C.bg}` }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{meta.caseRef ?? 'Dossier'}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: isClosed ? C.green : C.red, background: (isClosed ? C.green : C.red) + '20', borderRadius: 10, padding: '2px 8px' }}>{c.status}</span>
+                    </div>
+                    <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{meta.reason ?? c.details ?? '—'}{meta.amount ? ` · ${formatFCFA(Number(meta.amount))}` : ''}</div>
+                    <div style={{ color: C.textSoft, fontSize: 11, marginTop: 3 }}>Ouvert {relativeTime(c.createdAt)}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    {!isReadOnly() && !isClosed && (
+                      <select defaultValue="" onChange={(e) => handleAssign(c.id, e.target.value)} style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }}>
+                        <option value="">Assigner à…</option>
+                        {(team ?? []).map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
+                      </select>
                     )}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => handleReport(c)} style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>⬇ Rapport PDF</button>
+                      {!isReadOnly() && !isClosed && (closing?.id === c.id ? null : (
+                        <button onClick={() => setClosing({ id: c.id, resolution: '', report: '' })} style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+                {closing?.id === c.id && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <input autoFocus value={closing.resolution} onChange={(e) => setClosing({ ...closing, resolution: e.target.value })} placeholder="Résolution (obligatoire)…" style={{ ...inputStyle, fontSize: 12 }} />
+                    <textarea value={closing.report} onChange={(e) => setClosing({ ...closing, report: e.target.value })} placeholder="Rapport ANIF (optionnel)…" rows={2} style={{ ...inputStyle, fontSize: 12, resize: 'vertical' }} />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={handleClose} style={{ fontSize: 12, background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontWeight: 700 }}>Confirmer la clôture</button>
+                      <button onClick={() => setClosing(null)} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>Annuler</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>

@@ -402,14 +402,18 @@ export interface AnifFrequentSender {
 export interface AnifCase {
   id: string
   action: string
-  details: string | null
+  resource?: string | null
+  details?: string | null
+  metadata?: Record<string, any> | null
   createdAt: string
-  user: { fullName: string | null; phone: string } | null
+  user: { fullName: string | null; email?: string | null; phone?: string } | null
 }
 
 export interface AnifAlertsResponse {
   highValue: AnifHighValueTx[]
   frequentSenders: AnifFrequentSender[]
+  smurfing?: AnifFrequentSender[]
+  unusualAmounts?: AnifHighValueTx[]
   cases: AnifCase[]
 }
 
