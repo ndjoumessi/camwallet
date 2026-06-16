@@ -51,7 +51,7 @@ const groupFr = (n: number) => Math.round(n).toLocaleString('fr-FR').replace(/[�
 // Montant déjà en FCFA entiers → « 1 250 000 FCFA ».
 const fmt = (n: number) => groupFr(n) + ' FCFA'
 // Helper principal : montant en CENTIMES → « 1 250 000 FCFA ».
-const formatFCFA = (centimes: number) => formatFCFA(centimes)
+const formatFCFA = (centimes: number) => fmt(toFcfa(centimes))
 // Forme courte pour axes/labels compacts.
 const fmtM = (n: number) => (n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' : (n / 1000).toFixed(0) + 'k') + ' FCFA'
 // Couleur sémantique d'un montant signé (négatif = rouge, positif = vert).
