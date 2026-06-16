@@ -28,7 +28,7 @@ import {
   downloadUsersCSV, downloadTransactionsCSV,
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
-  AdminTeamMember, getAdminTeam, setAdminRole, setAdminPassword,
+  AdminTeamMember, getAdminTeam, getMemberActivity, setAdminRole, setAdminPassword,
   createAdminOperator, deleteAdmin, setAdminStatus, getAdminId,
   getSseTicket, API_ORIGIN,
 } from './lib/api'
@@ -3662,9 +3662,48 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
   )
 }
 
+// Panneau d'activité d'un opérateur (chargé à l'expansion).
+function MemberActivityPanel({ userId }: { userId: string }) {
+  const { data, loading } = useFetch(() => getMemberActivity(userId), [userId])
+  if (loading) return <div style={{ padding: '14px 18px', color: C.textMuted, fontSize: 12 }}>Chargement…</div>
+  if (!data) return null
+  return (
+    <div style={{ padding: '14px 18px', background: C.bg, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
+      {/* Connexion */}
+      <div>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Dernière connexion</div>
+        <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{data.lastLoginAt ? fmtDate(data.lastLoginAt) : 'Jamais'}</div>
+        {data.lastLoginIp && <div style={{ fontSize: 12, color: C.textMuted, fontFamily: 'monospace', marginTop: 2 }}>IP {data.lastLoginIp}</div>}
+      </div>
+      {/* Stats 30j */}
+      <div>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Statistiques (30j)</div>
+        <div style={{ display: 'flex', gap: 18 }}>
+          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{data.stats.actions30d}</div><div style={{ fontSize: 11, color: C.textMuted }}>actions</div></div>
+          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.purple }}>{data.stats.kycHandled}</div><div style={{ fontSize: 11, color: C.textMuted }}>KYC traités</div></div>
+        </div>
+      </div>
+      {/* Activité récente */}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>5 dernières actions</div>
+        {data.recent.length === 0 && <div style={{ fontSize: 12, color: C.textMuted }}>Aucune action enregistrée</div>}
+        {data.recent.map((a) => { const cat = auditCategory(a.action); return (
+          <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: cat.color, background: cat.color + '20', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap' }}>{a.action}</span>
+            <span style={{ color: C.textMuted, fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.resource ?? '—'}</span>
+            <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{relativeTime(a.createdAt)}</span>
+          </div>
+        )})}
+      </div>
+    </div>
+  )
+}
+
 function TeamPage() {
   const { t } = useTranslation()
   const { data: members, loading, error, refetch } = useFetch(getAdminTeam, [])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleExpand = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toast = useToast()
   const myId = getAdminId()
   const isSuper = (() => { const r = getAdminRole(); return !r || r === 'SUPER_ADMIN' })()
@@ -3750,10 +3789,13 @@ function TeamPage() {
                 const color = ROLE_COLORS[m.adminRole ?? ''] ?? C.textMuted
                 const active = m.status === 'ACTIVE'
                 const isSelf = m.id === myId
+                const isOpen = expanded.has(m.id)
                 return (
-                  <tr key={m.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <Fragment key={m.id}>
+                  <tr className="cw-row" onClick={() => toggleExpand(m.id)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                     <td style={{ padding: '12px 14px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {isOpen ? <ChevronUp size={14} color={C.textMuted} /> : <ChevronDown size={14} color={C.textMuted} />}
                         <span style={{ width: 32, height: 32, borderRadius: 16, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, background: color + '22', color }}>{initials(m.fullName ?? m.email)}</span>
                         <span style={{ color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}{isSelf && <span style={{ color: C.textMuted, fontWeight: 400, fontSize: 11 }}> (vous)</span>}</span>
                       </div>
@@ -3771,7 +3813,7 @@ function TeamPage() {
                         <span style={{ width: 7, height: 7, borderRadius: 4, background: active ? C.green : C.red }} />{active ? 'Actif' : 'Inactif'}
                       </span>
                     </td>
-                    <td style={{ padding: '12px 14px' }}>
+                    <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {isSuper && !isSelf && (
                           <button onClick={() => setEditTarget(m)} title="Modifier le rôle" style={iconBtn(C.blue)}><Pencil size={14} /></button>
@@ -3786,6 +3828,14 @@ function TeamPage() {
                       </div>
                     </td>
                   </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 0, borderTop: `1px solid ${C.border}` }}>
+                        <MemberActivityPanel userId={m.id} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 )
               })}
             </tbody>
