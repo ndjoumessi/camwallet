@@ -26,6 +26,7 @@ import { AdminService } from './admin.service';
 import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
+import { SetAdminRoleDto } from './dto/set-admin-role.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -240,7 +241,7 @@ export class AdminController {
   setAdminRole(
     @Request() req: any,
     @Param('userId') userId: string,
-    @Body() body: { adminRole: string | null },
+    @Body() body: SetAdminRoleDto,
   ) {
     return this.adminService.setAdminRole(req.user.id, userId, body.adminRole);
   }

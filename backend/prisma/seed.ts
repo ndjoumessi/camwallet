@@ -39,13 +39,14 @@ async function main() {
   // Admin
   const admin = await prisma.user.upsert({
     where: { phone: '+237699999999' },
-    update: {},
+    update: { adminRole: 'SUPER_ADMIN' },
     create: {
       phone: '+237699999999',
       fullName: 'Admin CamWallet',
       email: 'admin@camwallet.cm',
       pinHash,
       role: UserRole.ADMIN,
+      adminRole: 'SUPER_ADMIN',
       kycStatus: 'APPROVED',
       wallet: { create: { balance: 0n } },
     },

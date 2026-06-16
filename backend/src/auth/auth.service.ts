@@ -200,9 +200,12 @@ export class AuthService {
     // les actions admin soient traçables dans l'AuditLog. Sinon, sentinelle 'admin'.
     const adminUser = await this.prisma.user.findFirst({
       where: { email: { equals: adminEmail, mode: 'insensitive' }, role: 'ADMIN' },
-      select: { id: true, totpEnabled: true, totpSecret: true },
+      select: { id: true, totpEnabled: true, totpSecret: true, adminRole: true },
     });
     const sub = adminUser?.id ?? 'admin';
+    // Le compte admin configuré (ADMIN_EMAIL/PASSWORD) est SUPER_ADMIN par défaut.
+    // Le claim adminRole est lu côté frontend pour le RBAC du dashboard.
+    const adminRole = adminUser?.adminRole ?? 'SUPER_ADMIN';
 
     // ── Vérification 2FA TOTP (si activée sur le compte admin) ───────────────
     if (adminUser?.totpEnabled) {
@@ -230,13 +233,13 @@ export class AuthService {
       update: {},
     });
 
-    return this.generateTokens(sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
+    return this.generateTokens(sub, 'ADMIN', { adminCredHash: this.adminCredHash(), adminRole });
   }
 
   // Échange un refresh token valide contre une nouvelle paire de tokens.
   async refresh(refreshToken: string) {
     if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
-    let payload: { sub: string; role?: string; adminCredHash?: string; tv?: number };
+    let payload: { sub: string; role?: string; adminCredHash?: string; adminRole?: string; tv?: number };
     try {
       payload = this.jwtService.verify(refreshToken, {
         secret: this.config.get('JWT_REFRESH_SECRET'),
@@ -251,7 +254,7 @@ export class AuthService {
       if (!payload.adminCredHash || payload.adminCredHash !== this.adminCredHash()) {
         throw new UnauthorizedException('Session administrateur expirée');
       }
-      return this.generateTokens(payload.sub, 'ADMIN', { adminCredHash: this.adminCredHash() });
+      return this.generateTokens(payload.sub, 'ADMIN', { adminCredHash: this.adminCredHash(), adminRole: payload.adminRole ?? 'SUPER_ADMIN' });
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
