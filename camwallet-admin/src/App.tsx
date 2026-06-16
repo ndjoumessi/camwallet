@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, createContext, useContext, Fragment, type CSSProperties } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext, Fragment, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -13,6 +13,7 @@ import {
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
+  LifeBuoy, Send, MessageSquare,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -31,6 +32,8 @@ import {
   AdminTeamMember, getAdminTeam, getMemberActivity, setAdminRole, setAdminPassword,
   createAdminOperator, deleteAdmin, setAdminStatus, getAdminId,
   getSseTicket, API_ORIGIN,
+  getSupportStats, getSupportTickets, getSupportTicket, updateSupportTicket, addSupportMessage, createSupportTicket,
+  SupportTicket, SupportTicketDetail,
 } from './lib/api'
 
 // ── Design Tokens ────────────────────────────────────────
@@ -3962,12 +3965,367 @@ function TeamPage() {
   )
 }
 
+// ── Support & Tickets ─────────────────────────────────────
+const TICKET_CAT: Record<string, { label: string; color: string }> = {
+  PAYMENT: { label: 'Paiement', color: C.blue }, ACCOUNT: { label: 'Compte', color: C.purple },
+  KYC: { label: 'KYC', color: '#EC4899' }, TECHNICAL: { label: 'Technique', color: '#22D3EE' }, OTHER: { label: 'Autre', color: C.textMuted },
+}
+const TICKET_PRIO: Record<string, { label: string; color: string }> = {
+  CRITICAL: { label: 'Critique', color: C.red }, HIGH: { label: 'Élevée', color: '#FB923C' },
+  MEDIUM: { label: 'Moyenne', color: C.yellow }, LOW: { label: 'Faible', color: C.textMuted },
+}
+const TICKET_STATUS: Record<string, { label: string; color: string }> = {
+  OPEN: { label: 'Ouvert', color: C.blue }, IN_PROGRESS: { label: 'En cours', color: '#FB923C' },
+  RESOLVED: { label: 'Résolu', color: C.green }, CLOSED: { label: 'Clôturé', color: C.textMuted },
+}
+const fmtDuration = (ms: number) => {
+  const min = Math.round(ms / 60000)
+  if (min < 60) return `${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 48) return `${h}h${min % 60 ? ' ' + (min % 60) + 'min' : ''}`
+  return `${Math.floor(h / 24)}j ${h % 24}h`
+}
+function Pill({ meta }: { meta: { label: string; color: string } }) {
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: meta.color + '20', color: meta.color, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}><span style={{ width: 6, height: 6, borderRadius: 3, background: meta.color }} />{meta.label}</span>
+}
+
+function SupportPage() {
+  const [status, setStatus] = useState('')
+  const [priority, setPriority] = useState('')
+  const [category, setCategory] = useState('')
+  const [assignee, setAssignee] = useState('')
+  const [searchRaw, setSearchRaw] = useState('')
+  const search = useDebounced(searchRaw.trim(), 350)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [showNew, setShowNew] = useState(false)
+  const [viewUser, setViewUser] = useState<string | null>(null)
+
+  const { data, loading, error, refetch } = useFetch(
+    () => getSupportTickets({ limit: 50, status: status || undefined, priority: priority || undefined, category: category || undefined, assignedTo: assignee || undefined, search: search || undefined }),
+    [status, priority, category, assignee, search],
+  )
+  const { data: stats, refetch: refetchStats } = useFetch(() => getSupportStats(), [])
+  const { data: team } = useFetch(() => getAdminTeam(), [])
+  const tickets = data?.data ?? []
+  const total = data?.meta.total ?? 0
+  const refreshAll = () => { refetch(); refetchStats() }
+
+  const statCards = stats ? [
+    { label: 'Tickets ouverts', value: stats.open.toLocaleString('fr-FR'), sub: `${stats.openUnassigned} non assigné(s)`, icon: LifeBuoy, color: C.blue },
+    { label: 'En cours', value: stats.inProgress.toLocaleString('fr-FR'), sub: 'en traitement', icon: MessageSquare, color: '#FB923C' },
+    { label: "Résolus aujourd'hui", value: stats.resolvedToday.toLocaleString('fr-FR'), sub: 'clôturés ce jour', icon: CheckCircle2, color: C.green },
+    { label: 'Temps moyen résolution', value: stats.avgResolutionMs == null ? '—' : fmtDuration(stats.avgResolutionMs), sub: '100 derniers résolus', icon: Clock, color: C.purple },
+  ] : []
+  const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
+
+  return (
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}><LifeBuoy size={22} color={C.green} /> Support & Tickets</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} ticket(s) — assistance clients</p>
+        </div>
+        {!isReadOnly() && (
+          <button onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}><Plus size={16} /> Nouveau ticket</button>
+        )}
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{s.sub}</div>
+          </div>
+        )})}
+      </div>
+
+      {/* Filtres */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} style={inputStyle}>
+          <option value="">Tous statuts</option>
+          {Object.entries(TICKET_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)} style={inputStyle}>
+          <option value="">Toutes priorités</option>
+          {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>
+          <option value="">Toutes catégories</option>
+          {Object.entries(TICKET_CAT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={inputStyle}>
+          <option value="">Tous assignés</option>
+          <option value="unassigned">Non assignés</option>
+          {(team ?? []).map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
+        </select>
+        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+          <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Référence, titre, client…" style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
+        </div>
+      </div>
+
+      {/* Liste */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        <div className="cw-tablewrap">
+          <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead style={{ background: C.surface }}>
+              <tr>{['Réf.', 'Client', 'Sujet', 'Catégorie', 'Priorité', 'Statut', 'Assigné', 'Créé', 'Activité'].map(h => (
+                <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {tickets.map((tk) => (
+                <tr key={tk.id} className="cw-row" onClick={() => setSelected(tk.id)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                  <td style={{ padding: '11px 14px', fontFamily: 'monospace', fontSize: 12, color: C.textSoft, fontWeight: 700 }}>{tk.reference}</td>
+                  <td style={{ padding: '11px 14px' }}><UserCell party={tk.user ? { fullName: tk.user.fullName, phone: tk.user.phone } : null} /></td>
+                  <td style={{ padding: '11px 14px', color: C.text, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tk.title}</td>
+                  <td style={{ padding: '11px 14px' }}><Pill meta={TICKET_CAT[tk.category] ?? TICKET_CAT.OTHER} /></td>
+                  <td style={{ padding: '11px 14px' }}><Pill meta={TICKET_PRIO[tk.priority] ?? TICKET_PRIO.MEDIUM} /></td>
+                  <td style={{ padding: '11px 14px' }}><Pill meta={TICKET_STATUS[tk.status] ?? TICKET_STATUS.OPEN} /></td>
+                  <td style={{ padding: '11px 14px' }}>
+                    {tk.assignee ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={tk.assignee.fullName ?? tk.assignee.email ?? ''}>
+                        <span style={{ width: 24, height: 24, borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(tk.assignee.fullName ?? tk.assignee.email)}</span>
+                      </span>
+                    ) : <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>Non assigné</span>}
+                  </td>
+                  <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tk.createdAt)}>{relativeTime(tk.createdAt)}</td>
+                  <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tk.updatedAt)}>{relativeTime(tk.updatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!loading && !error && tickets.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun ticket</div>}
+        <StateRow loading={loading} error={error} />
+      </div>
+
+      {selected && <TicketDetailModal ticketId={selected} team={team ?? []} onClose={() => setSelected(null)} onChanged={refreshAll} onViewUser={setViewUser} />}
+      {showNew && <NewTicketModal team={team ?? []} onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); refreshAll(); setSelected(id) }} />}
+      {viewUser && <UserDetailModal userId={viewUser} onClose={() => setViewUser(null)} onChanged={() => {}} />}
+    </div>
+  )
+}
+
+// Modale détail ticket : infos client, assignation, statut/priorité, fil de messages.
+function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: { ticketId: string; team: AdminTeamMember[]; onClose: () => void; onChanged: () => void; onViewUser: (id: string) => void }) {
+  const { data: tk, loading, refetch } = useFetch(() => getSupportTicket(ticketId), [ticketId])
+  const toast = useToast()
+  const [reply, setReply] = useState('')
+  const [internal, setInternal] = useState(false)
+  const [sending, setSending] = useState(false)
+  const myId = getAdminId()
+  const threadRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey); return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+  useEffect(() => { if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight }, [tk?.messages?.length])
+
+  const patch = async (dto: { status?: string; priority?: string; assignedTo?: string | null }, msg: string) => {
+    try { await updateSupportTicket(ticketId, dto); toast(msg, 'success'); refetch(); onChanged() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+  }
+  const send = async () => {
+    if (!reply.trim()) return
+    setSending(true)
+    try { await addSupportMessage(ticketId, reply.trim(), internal); setReply(''); setInternal(false); refetch(); onChanged() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    finally { setSending(false) }
+  }
+
+  const overlay: CSSProperties = { position: 'fixed', inset: 0, background: '#000A', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }
+  const panel: CSSProperties = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, width: 'min(760px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }
+  const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 10px', fontSize: 13 }
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={panel} onClick={(e) => e.stopPropagation()}>
+        {loading || !tk ? <div style={{ padding: 30 }}><StateRow loading={loading} error={null} /></div> : (
+          <>
+            {/* Header */}
+            <div style={{ padding: '18px 20px', borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: C.green }}>{tk.reference}</span>
+                    <Pill meta={TICKET_STATUS[tk.status] ?? TICKET_STATUS.OPEN} />
+                    <Pill meta={TICKET_PRIO[tk.priority] ?? TICKET_PRIO.MEDIUM} />
+                    <Pill meta={TICKET_CAT[tk.category] ?? TICKET_CAT.OTHER} />
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{tk.title}</div>
+                </div>
+                <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 4 }}><X size={20} /></button>
+              </div>
+              {/* Client + assignation + actions */}
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginTop: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 30, height: 30, borderRadius: 15, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(tk.user?.fullName ?? tk.user?.phone)}</span>
+                  <div>
+                    <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{tk.user?.fullName ?? tk.user?.phone}</div>
+                    <button onClick={() => onViewUser(tk.userId)} style={{ fontSize: 11, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Voir la fiche client →</button>
+                  </div>
+                </div>
+                <div style={{ flex: 1 }} />
+                {!isReadOnly() && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <select value={tk.assignedTo ?? ''} onChange={(e) => patch({ assignedTo: e.target.value || null }, 'Assignation mise à jour')} style={inputStyle}>
+                      <option value="">Non assigné</option>
+                      {team.map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
+                    </select>
+                    {tk.assignedTo !== myId && <button onClick={() => patch({ assignedTo: myId }, 'Ticket pris en charge')} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>S'assigner</button>}
+                  </div>
+                )}
+              </div>
+              {!isReadOnly() && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, 'Pris en charge')} style={{ fontSize: 12, color: '#FB923C', background: '#FB923C18', border: '1px solid #FB923C40', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Prendre en charge</button>}
+                  {tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'RESOLVED' }, 'Ticket résolu')} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Résoudre</button>}
+                  {tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket clôturé')} style={{ fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>}
+                  <span style={{ width: 1, height: 22, background: C.border }} />
+                  <span style={{ fontSize: 11, color: C.textMuted }}>Priorité</span>
+                  <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
+                    {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Fil de messages (chat) */}
+            <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 200 }}>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color: C.textSoft }}>{tk.description}</div>
+              {tk.messages.map((m) => {
+                const mine = m.authorRole === 'ADMIN'
+                const bg = m.internal ? C.yellowLight : mine ? C.greenLight : C.surface
+                const border = m.internal ? C.yellow + '50' : mine ? C.green + '40' : C.border
+                return (
+                  <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '78%', background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '9px 13px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: mine ? C.green : C.text }}>{m.author?.fullName ?? m.author?.email ?? (mine ? 'Support' : 'Client')}</span>
+                        <span style={{ fontSize: 10, color: C.textMuted }}>{mine ? (m.author?.adminRole ? ROLE_LABELS[m.author.adminRole] ?? 'Admin' : 'Admin') : 'Client'}</span>
+                        {m.internal && <span style={{ fontSize: 9, fontWeight: 800, color: '#B89000', background: C.yellow + '25', borderRadius: 5, padding: '1px 6px' }}>NOTE INTERNE</span>}
+                      </div>
+                      <div style={{ fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
+                      <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, textAlign: 'right' }} title={fmtDate(m.createdAt)}>{relativeTime(m.createdAt)}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Zone de réponse */}
+            {!isReadOnly() && (
+              <div style={{ borderTop: `1px solid ${C.border}`, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={internal ? 'Note interne (visible admins uniquement)…' : 'Répondre au client…'} rows={2}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
+                  style={{ ...inputStyle, width: '100%', resize: 'vertical', background: internal ? C.yellowLight : C.surface }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button onClick={() => setInternal((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: internal ? '#B89000' : C.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                    <span style={{ position: 'relative', width: 34, height: 18, borderRadius: 9, background: internal ? C.yellow : C.border }}><span style={{ position: 'absolute', top: 2, left: internal ? 18 : 2, width: 14, height: 14, borderRadius: 7, background: '#fff', transition: 'left .15s' }} /></span>
+                    Note interne
+                  </button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={send} disabled={sending || !reply.trim()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#fff', background: reply.trim() ? C.green : C.border, border: 'none', borderRadius: 8, padding: '8px 18px', cursor: reply.trim() ? 'pointer' : 'default', fontWeight: 700 }}><Send size={14} /> {sending ? 'Envoi…' : 'Envoyer'}</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Modale de création d'un ticket.
+function NewTicketModal({ team, onClose, onCreated }: { team: AdminTeamMember[]; onClose: () => void; onCreated: (id: string) => void }) {
+  const toast = useToast()
+  const [clientSearch, setClientSearch] = useState('')
+  const debSearch = useDebounced(clientSearch.trim(), 350)
+  const { data: clientResults } = useFetch(() => (debSearch ? getUsers({ limit: 6, search: debSearch }) : Promise.resolve(null)), [debSearch])
+  const [client, setClient] = useState<{ id: string; fullName: string | null; phone: string } | null>(null)
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('OTHER')
+  const [priority, setPriority] = useState('MEDIUM')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!client) { toast('Sélectionnez un client', 'error'); return }
+    if (!title.trim() || !description.trim()) { toast('Titre et description requis', 'error'); return }
+    setSaving(true)
+    try {
+      const t = await createSupportTicket({ userId: client.id, title: title.trim(), description: description.trim(), category, priority, assignedTo: assignedTo || undefined })
+      toast('Ticket créé', 'success'); onCreated((t as any).id)
+    } catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    finally { setSaving(false) }
+  }
+  const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 13, width: '100%' }
+  const label = (s: string) => <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>{s}</label>
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#000A', zIndex: 70, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, width: 'min(540px, 100%)', padding: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Nouveau ticket</h2>
+          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}><X size={20} /></button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            {label('Client')}
+            {client ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 12px' }}>
+                <span style={{ width: 26, height: 26, borderRadius: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(client.fullName ?? client.phone)}</span>
+                <span style={{ flex: 1, fontSize: 13, color: C.text }}>{client.fullName ?? client.phone}<span style={{ color: C.textMuted, fontSize: 11 }}> · {client.phone}</span></span>
+                <button onClick={() => setClient(null)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}><X size={14} /></button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <input value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} placeholder="Rechercher un client (nom/téléphone)…" style={inputStyle} />
+                {(clientResults?.data?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 4, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, maxHeight: 180, overflowY: 'auto' }}>
+                    {clientResults!.data.map((u) => (
+                      <button key={u.id} onClick={() => { setClient({ id: u.id, fullName: u.fullName, phone: u.phone }); setClientSearch('') }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, padding: '8px 12px', cursor: 'pointer' }}>
+                        <span style={{ width: 24, height: 24, borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(u.fullName ?? u.phone)}</span>
+                        <span style={{ fontSize: 13, color: C.text }}>{u.fullName ?? 'Sans nom'}<span style={{ color: C.textMuted, fontSize: 11 }}> · {u.phone}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <div>{label('Titre')}<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Résumé du problème" style={inputStyle} /></div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>{label('Catégorie')}<select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>{Object.entries(TICKET_CAT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+            <div style={{ flex: 1 }}>{label('Priorité')}<select value={priority} onChange={(e) => setPriority(e.target.value)} style={inputStyle}>{Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+          </div>
+          <div>{label('Assigner à (optionnel)')}<select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={inputStyle}><option value="">Laisser non assigné</option>{team.map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}</select></div>
+          <div>{label('Description')}<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Détails du problème…" style={{ ...inputStyle, resize: 'vertical' }} /></div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={onClose} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
+            <button onClick={submit} disabled={saving} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 20px', cursor: saving ? 'wait' : 'pointer', fontWeight: 700 }}>{saving ? 'Création…' : 'Créer le ticket'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Sidebar nav items ─────────────────────────────────────
 // `id` sert aussi de clé i18n : le libellé est résolu via t(`nav.${id}`) et le
 // groupe via t(`nav.group_${group}`). Voir src/locales/*.json (section « nav »).
 const NAV: { id: string; icon: LucideIcon; group: string; badge?: string }[] = [
   { id: 'dashboard', icon: LayoutGrid, group: 'overview' },
   { id: 'alerts', icon: AlertTriangle, group: 'overview' },
+  { id: 'support', icon: LifeBuoy, group: 'overview' },
   { id: 'users', icon: UsersIcon, group: 'users' },
   { id: 'kyc', icon: ClipboardCheck, group: 'users' },
   { id: 'transactions', icon: Zap, group: 'finances' },
@@ -3986,9 +4344,9 @@ const GROUPS = ['overview', 'users', 'finances', 'compliance']
 // (le compte admin configuré est SUPER_ADMIN ; le backend garde l'autorité).
 const ROLE_PAGES: Record<string, string[] | '*'> = {
   SUPER_ADMIN: '*',
-  ADMIN: ['dashboard', 'alerts', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
+  ADMIN: ['dashboard', 'alerts', 'support', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
   COMPLIANCE_OFFICER: ['anif', 'audit'],
-  SUPPORT_OPERATOR: ['users', 'transactions'],
+  SUPPORT_OPERATOR: ['support', 'users', 'transactions'],
   FINANCE_OFFICER: ['finance', 'operations'],
   KYC_OFFICER: ['kyc'],
 }
@@ -4069,6 +4427,9 @@ export default function App() {
   // Sous-rôle admin (RBAC) lu depuis le token ; recalculé à chaque (dé)connexion.
   const adminRole = useMemo(() => getAdminRole(), [authed])
   const visibleNav = useMemo(() => NAV.filter((n) => canAccess(adminRole, n.id)), [adminRole])
+  // Badge sidebar : nombre de tickets ouverts non assignés (rafraîchi périodiquement).
+  const { data: supportBadge } = useFetch(() => (authed && canAccess(adminRole, 'support') ? getSupportStats() : Promise.resolve(null)), [authed, adminRole])
+  const supportUnassigned = supportBadge?.openUnassigned ?? 0
   // Page par défaut = première page autorisée pour le rôle.
   const [activePage, setActivePage] = useState(() => {
     const role = getAdminRole()
@@ -4127,6 +4488,7 @@ export default function App() {
     switch (effectivePage) {
       case 'dashboard': return <DashboardPage onNavigate={setActivePage} />
       case 'alerts': return <AlertsPage />
+      case 'support': return <SupportPage />
       case 'users': return <UsersPage />
       case 'kyc': return <KYCPage />
       case 'transactions': return <TransactionsPage />
@@ -4188,6 +4550,11 @@ export default function App() {
                   {active && <span style={{ position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: 3, background: C.green }} />}
                   <Icon size={18} style={{ flexShrink: 0 }} />
                   <span className="cw-navlabel" style={{ flex: 1 }}>{t(`nav.${item.id}`)}</span>
+                  {item.id === 'support' && supportUnassigned > 0 && (
+                    <span className="cw-nav-badge" style={{ fontSize: 10, background: C.red, color: '#fff', minWidth: 17, height: 17, padding: '0 5px', borderRadius: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {supportUnassigned}
+                    </span>
+                  )}
                   {item.badge && (
                     <span className="cw-nav-badge" style={{ fontSize: 10, background: C.blue + '25', color: C.blue, padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
                       {item.badge}
