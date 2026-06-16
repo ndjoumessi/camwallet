@@ -12,6 +12,7 @@ import {
   X, Check, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
+  Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -21,7 +22,7 @@ import {
   getKyc, getAlerts, getAudit, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase,
-  getOperations, retryOperation, WebhookEvent,
+  getOperations, retryOperation, WebhookEvent, AdminOperation,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
   downloadUsersCSV, downloadTransactionsCSV,
@@ -107,6 +108,86 @@ const partyLabel = (
   p: { fullName: string | null; phone: string } | null,
   fallback: string,
 ) => (p ? p.fullName ?? p.phone : fallback)
+
+// Temps relatif court en français : « à l'instant », « il y a 2 h », « il y a 3 j ».
+const relativeTime = (iso: string) => {
+  const diff = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return "à l'instant"
+  if (min < 60) return `il y a ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `il y a ${h} h`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `il y a ${d} j`
+  const mo = Math.floor(d / 30)
+  return mo < 12 ? `il y a ${mo} mois` : `il y a ${Math.floor(mo / 12)} an(s)`
+}
+
+// Métadonnées d'affichage des opérateurs mobiles (couleur de marque + sigle).
+const OPERATOR_META: Record<string, { label: string; color: string; short: string }> = {
+  ORANGE_MONEY: { label: 'Orange Money', color: '#FF7900', short: 'OM' },
+  MTN_MOMO: { label: 'MTN MoMo', color: '#FFCC00', short: 'MTN' },
+  CAMPAY: { label: 'CamPay', color: '#3B82F6', short: 'CP' },
+}
+
+// Pastille opérateur : sigle coloré dans un carré + nom complet.
+function OperatorBadge({ operator }: { operator: string | null }) {
+  const m = operator ? OPERATOR_META[operator] : undefined
+  if (!m) return <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 6, background: m.color + '22', color: m.color, fontSize: 9, fontWeight: 900, letterSpacing: '-0.02em' }}>{m.short}</span>
+      <span style={{ color: C.textSoft, fontSize: 12, whiteSpace: 'nowrap' }}>{m.label}</span>
+    </span>
+  )
+}
+
+// Cellule utilisateur : avatar à initiales coloré + nom (téléphone en second).
+// Jamais « — » seul : utilise le fallback (« Opérateur ») quand la partie est absente.
+function UserCell({ party, fallback = 'Opérateur' }: { party: { fullName: string | null; phone: string } | null; fallback?: string }) {
+  if (!party) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: C.textMuted }}>
+        <span style={{ width: 28, height: 28, borderRadius: 14, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: C.surface, color: C.textMuted }}><Smartphone size={13} /></span>
+        <span style={{ fontSize: 13 }}>{fallback}</span>
+      </span>
+    )
+  }
+  const name = party.fullName ?? party.phone
+  const hasName = !!party.fullName
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ width: 28, height: 28, borderRadius: 14, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(name)}</span>
+      <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.25 }}>
+        <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{name}</span>
+        {hasName && <span style={{ color: C.textMuted, fontSize: 11 }}>{party.phone}</span>}
+      </span>
+    </span>
+  )
+}
+
+// Référence monospace copiable au clic (icône + feedback « copié »).
+function CopyableRef({ value, truncate }: { value: string; truncate?: number }) {
+  const [copied, setCopied] = useState(false)
+  const display = truncate && value.length > truncate ? value.slice(0, truncate) + '…' : value
+  const copy = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation()
+    navigator.clipboard?.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    }).catch(() => {})
+  }
+  return (
+    <button
+      onClick={copy}
+      title={`Copier : ${value}`}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'monospace', fontSize: 12, color: C.textSoft }}
+    >
+      <span>{display}</span>
+      {copied ? <Check size={12} color={C.green} /> : <Copy size={12} color={C.textMuted} />}
+    </button>
+  )
+}
 
 // Génère un rapport PDF imprimable : ouvre une fenêtre mise en page aux couleurs
 // CamWallet et déclenche l'impression navigateur (l'utilisateur enregistre en PDF).
@@ -375,7 +456,7 @@ function KPICard({ label, value, delta, deltaUp, icon: Icon, color = C.green, su
 // ── Chart tooltip ─────────────────────────────────────────
 // Les séries monétaires (volume/fees/amount) sont formatées en FCFA ; les
 // comptages (tx/users/count) restent des entiers groupés.
-const MONEY_KEYS = new Set(['volume', 'fees', 'amount', 'revenue'])
+const MONEY_KEYS = new Set(['volume', 'fees', 'amount', 'revenue', 'recharge', 'withdrawal'])
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
   return (
@@ -1572,18 +1653,77 @@ function OperatorRatesWidget() {
   )
 }
 
+// Sélecteur de période réutilisable (7j / 30j / 90j [+ Personnalisée]).
+function PeriodTabs({ value, onChange, withCustom }: { value: string; onChange: (v: string) => void; withCustom?: boolean }) {
+  const opts = withCustom ? ['7d', '30d', '90d', 'custom'] : ['7d', '30d', '90d']
+  const label: Record<string, string> = { '7d': '7j', '30d': '30j', '90d': '90j', custom: 'Personnalisée' }
+  return (
+    <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
+      {opts.map((o) => (
+        <button key={o} onClick={() => onChange(o)} style={{
+          fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none',
+          background: value === o ? C.green : 'transparent', color: value === o ? '#fff' : C.textSoft,
+        }}>{label[o]}</button>
+      ))}
+    </div>
+  )
+}
+
 function TransactionsPage() {
   const [txFilter, setTxFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [period, setPeriod] = useState<'7d' | '30d' | '90d' | 'custom'>('30d')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [searchRaw, setSearchRaw] = useState('')
+  const search = useDebounced(searchRaw.trim(), 350)
   const toast = useToast()
   const [exporting, setExporting] = useState(false)
   const [selectedTx, setSelectedTx] = useState<AdminTransaction | null>(null)
 
+  // Bornes de dates dérivées de la période (ou personnalisées).
+  const range = useMemo(() => {
+    if (period === 'custom') return { from: customFrom || undefined, to: customTo || undefined }
+    const days = period === '90d' ? 90 : period === '30d' ? 30 : 7
+    return { from: new Date(Date.now() - days * 86400000).toISOString(), to: undefined }
+  }, [period, customFrom, customTo])
+
+  // Période du graphe : 7/30/90 (le mode « custom » retombe sur 30j pour l'aire).
+  const chartPeriod: '7d' | '30d' | '90d' = period === 'custom' ? '30d' : period
+
+  const { data: stats } = useFetch(() => getStats(), [])
+  const { data: ts } = useFetch(() => getTimeseries(chartPeriod), [chartPeriod])
   const { data, loading, error, refetch } = useFetch(
-    () => getTransactions({ limit: 50, type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter] }),
-    [txFilter],
+    () => getTransactions({
+      limit: 50,
+      type: txFilter === 'all' ? undefined : TX_TYPE_FILTER[txFilter],
+      status: statusFilter || undefined,
+      search: search || undefined,
+      from: range.from,
+      to: range.to,
+    }),
+    [txFilter, statusFilter, search, range.from, range.to],
   )
   const txs = data?.data ?? []
   const total = data?.meta.total ?? 0
+
+  // Cartes de synthèse (agrégats globaux issus de /admin/stats).
+  const byType = (t: string) => stats?.transactions.byType.find((x) => x.type === t)
+  const p2p = byType('P2P')
+  const qr = byType('QR_PAYMENT')
+  const byStatus = (s: string) => stats?.transactions.byStatus.find((x) => x.status === s)?.count ?? 0
+  const completed = byStatus('COMPLETED')
+  const failed = byStatus('FAILED') + byStatus('CANCELLED')
+  const successRate = completed + failed > 0 ? Math.round((completed / (completed + failed)) * 100) : null
+
+  const statCards: { label: string; value: string; sub: string; icon: LucideIcon; color: string }[] = stats ? [
+    { label: 'Total transactions', value: stats.transactions.total.toLocaleString('fr-FR'), sub: formatFCFA(stats.volume.completedAmount) + ' complété', icon: ArrowLeftRight, color: C.blue },
+    { label: 'P2P', value: (p2p?.count ?? 0).toLocaleString('fr-FR'), sub: formatFCFA(p2p?.volume ?? 0), icon: ArrowRight, color: C.blue },
+    { label: 'Paiements QR', value: (qr?.count ?? 0).toLocaleString('fr-FR'), sub: formatFCFA(qr?.volume ?? 0), icon: Zap, color: C.green },
+    { label: 'Taux de succès', value: successRate == null ? '—' : successRate + ' %', sub: `${completed} complétées · ${failed} échouées`, icon: Percent, color: successRate == null ? C.textMuted : successRate >= 95 ? C.green : C.red },
+  ] : []
+
+  const areaData = (ts?.series ?? []).map((p) => ({ date: p.date.slice(5), volume: toFcfa(p.volume) }))
 
   const handleExportTransactions = async () => {
     setExporting(true)
@@ -1616,77 +1756,118 @@ function TransactionsPage() {
     toast(ok ? 'Rapport PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
   }
 
+  const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Transactions</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} transaction{total > 1 ? 's' : ''} au total</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} transaction{total > 1 ? 's' : ''} sur la période</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="cw-btn"
-            onClick={handleExportTransactions}
-            disabled={exporting}
-            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}
-          >
-            ⬇ Export CSV
-          </button>
-          <button
-            className="cw-btn"
-            onClick={handleExportTxPdf}
-            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}
-          >
-            ⬇ Export PDF
-          </button>
+          <button className="cw-btn" onClick={handleExportTransactions} disabled={exporting}
+            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}>⬇ Export CSV</button>
+          <button className="cw-btn" onClick={handleExportTxPdf}
+            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>⬇ Export PDF</button>
         </div>
       </div>
 
-      {/* Type filters */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {['all', 'P2P', 'QR', 'RECHARGE', 'RETRAIT'].map(f => (
-          <button
-            key={f}
-            className="cw-chip"
-            onClick={() => setTxFilter(f)}
-            style={{
-              fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
-              background: txFilter === f ? C.green : C.card,
-              border: `1px solid ${txFilter === f ? C.green : C.border}`,
-              color: txFilter === f ? '#fff' : C.textSoft, fontWeight: txFilter === f ? 700 : 500,
-            }}
-          >
-            {f === 'all' ? 'Toutes' : f}
-          </button>
-        ))}
+      {/* Cartes de synthèse */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((s) => { const Icon = s.icon; return (
+          <div key={s.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{s.label}</span>
+              <span style={{ display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: s.color + '1F', color: s.color, alignItems: 'center', justifyContent: 'center' }}><Icon size={15} /></span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{s.value}</div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{s.sub}</div>
+          </div>
+        )})}
       </div>
 
-      {/* Widget taux de succès par opérateur */}
-      <OperatorRatesWidget />
+      {/* Graphe volume (aire émeraude) */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume par jour</h2>
+          <PeriodTabs value={chartPeriod} onChange={(v) => setPeriod(v as any)} />
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={areaData} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
+            <defs>
+              <linearGradient id="txVol" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={C.green} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={C.green} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="date" stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} minTickGap={24} />
+            <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={48}
+              tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v))} />
+            <Tooltip content={<ChartTooltip />} />
+            <Area type="monotone" dataKey="volume" name="Volume" stroke={C.green} strokeWidth={2} fill="url(#txVol)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Filtres */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {['all', 'P2P', 'QR', 'RECHARGE', 'RETRAIT'].map(f => (
+            <button key={f} className="cw-chip" onClick={() => setTxFilter(f)} style={{
+              fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
+              background: txFilter === f ? C.green : C.card, border: `1px solid ${txFilter === f ? C.green : C.border}`,
+              color: txFilter === f ? '#fff' : C.textSoft, fontWeight: txFilter === f ? 700 : 500,
+            }}>{f === 'all' ? 'Tous types' : f}</button>
+          ))}
+        </div>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous statuts</option>
+          <option value="COMPLETED">Complété</option>
+          <option value="PENDING">En attente</option>
+          <option value="FAILED">Échoué</option>
+        </select>
+        <PeriodTabs value={period} onChange={(v) => setPeriod(v as any)} withCustom />
+        {period === 'custom' && (
+          <>
+            <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} style={inputStyle} />
+            <span style={{ color: C.textMuted }}>→</span>
+            <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={inputStyle} />
+          </>
+        )}
+        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+          <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Référence, émetteur, destinataire…"
+            style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
+        </div>
+      </div>
 
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div className="cw-tablewrap">
-        <table style={{ width: '100%', minWidth: 780, borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead style={{ background: C.surface }}>
             <tr>
-              {['Réf.', 'Type', 'De', 'À', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
+              {['Réf.', 'Type', 'Émetteur', 'Destinataire', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {txs.map(tx => (
+            {txs.map(tx => {
+              const tColor = TX_TYPE_COLOR[tx.type] ?? C.text
+              return (
               <tr key={tx.id} className="cw-row" onClick={() => setSelectedTx(tx)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
-                <td style={{ padding: '11px 14px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
+                <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}><CopyableRef value={tx.reference} truncate={10} /></td>
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
-                <td style={{ padding: '11px 14px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
-                <td style={{ padding: '11px 14px', color: C.text, fontWeight: 700 }}>{formatFCFA(tx.amount)}</td>
-                <td style={{ padding: '11px 14px', color: C.textMuted }}>{formatFCFA(tx.fee)}</td>
+                <td style={{ padding: '11px 14px' }}><UserCell party={tx.sender} /></td>
+                <td style={{ padding: '11px 14px' }}><UserCell party={tx.receiver} /></td>
+                <td style={{ padding: '11px 14px', color: tColor, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatFCFA(tx.amount)}</td>
+                <td style={{ padding: '11px 14px', color: C.textMuted }}>{tx.fee > 0 ? formatFCFA(tx.fee) : '—'}</td>
                 <td style={{ padding: '11px 14px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
-                <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
+                <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tx.createdAt)}>{relativeTime(tx.createdAt)}</td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
         </div>
@@ -1715,14 +1896,17 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
   const phase = TX_STATUS_BADGE[tx.status] ?? tx.status
   const failed = phase === 'failed'
   const pending = phase === 'pending'
+  const isOperatorTx = tx.type === 'RECHARGE' || tx.type === 'WITHDRAWAL'
   // Relance possible uniquement pour une recharge/retrait opérateur en attente.
-  const canRetry = tx.status === 'PENDING' && (tx.type === 'RECHARGE' || tx.type === 'WITHDRAWAL')
+  const canRetry = tx.status === 'PENDING' && isOperatorTx
 
-  const steps: { label: string; state: 'done' | 'active' | 'failed' | 'future' }[] = failed
-    ? [{ label: 'Créée', state: 'done' }, { label: 'Traitement', state: 'done' }, { label: 'Échouée', state: 'failed' }]
+  // Timeline avec horodatages réels : created → processing → final.
+  const finalTime = tx.processedAt ?? tx.updatedAt ?? null
+  const steps: { label: string; state: 'done' | 'active' | 'failed' | 'future'; at: string | null }[] = failed
+    ? [{ label: 'Créée', state: 'done', at: tx.createdAt }, { label: 'Traitement', state: 'done', at: tx.updatedAt ?? null }, { label: 'Échouée', state: 'failed', at: finalTime }]
     : pending
-      ? [{ label: 'Créée', state: 'done' }, { label: 'En cours', state: 'active' }, { label: 'Complétée', state: 'future' }]
-      : [{ label: 'Créée', state: 'done' }, { label: 'Traitement', state: 'done' }, { label: 'Complétée', state: 'done' }]
+      ? [{ label: 'Créée', state: 'done', at: tx.createdAt }, { label: 'En cours', state: 'active', at: tx.updatedAt ?? null }, { label: 'Complétée', state: 'future', at: null }]
+      : [{ label: 'Créée', state: 'done', at: tx.createdAt }, { label: 'Traitement', state: 'done', at: tx.updatedAt ?? null }, { label: 'Complétée', state: 'done', at: finalTime }]
 
   const stepColor = (s: string) => (s === 'failed' ? C.red : s === 'future' ? C.textMuted : s === 'active' ? C.yellow : C.green)
 
@@ -1739,20 +1923,39 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
     }
   }
 
-  const rows: [string, string][] = [
-    ['Référence', tx.reference],
-    ['Identifiant', tx.id],
-    ['Type', TX_TYPE_LABEL[tx.type] ?? tx.type],
-    ['Émetteur', partyLabel(tx.sender, 'Opérateur')],
-    ['Destinataire', partyLabel(tx.receiver, 'Opérateur')],
-    ['Montant', formatFCFA(tx.amount)],
-    ['Frais', formatFCFA(tx.fee)],
-    ['Date', fmtDate(tx.createdAt)],
-  ]
+  // Reçu PDF imprimable de la transaction.
+  const handleReceipt = () => {
+    const ok = exportPdfReport(
+      `Reçu transaction ${tx.reference}`,
+      ['Champ', 'Valeur'],
+      [
+        ['Référence', tx.reference],
+        ['Type', TX_TYPE_LABEL[tx.type] ?? tx.type],
+        ['Statut', tx.status],
+        ['Émetteur', partyLabel(tx.sender, 'Opérateur')],
+        ['Destinataire', partyLabel(tx.receiver, 'Opérateur')],
+        ['Montant', formatFCFA(tx.amount)],
+        ['Frais', formatFCFA(tx.fee)],
+        ...(tx.operator ? [['Opérateur', OPERATOR_META[tx.operator]?.label ?? tx.operator] as [string, string]] : []),
+        ...(tx.operatorRef ? [['Réf. opérateur', tx.operatorRef] as [string, string]] : []),
+        ['Date de création', fmtDate(tx.createdAt)],
+        ...(finalTime ? [['Date de traitement', fmtDate(finalTime)] as [string, string]] : []),
+      ],
+    )
+    toast(ok ? 'Reçu PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
+  }
+
+  const tColor = TX_TYPE_COLOR[tx.type] ?? C.text
+  const partyCard = (title: string, party: { fullName: string | null; phone: string } | null) => (
+    <div style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+      <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{title}</div>
+      <UserCell party={party} />
+    </div>
+  )
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, width: 560, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, width: 580, maxWidth: '100%', maxHeight: '88vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <ArrowLeftRight size={18} color={C.green} />
@@ -1762,26 +1965,46 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
         </div>
 
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
-          {/* Statut + timeline */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <StatusBadge status={phase} />
-            <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
+          {/* Montant + statut */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: tColor, letterSpacing: -0.5 }}>{formatFCFA(tx.amount)}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <CopyableRef value={tx.reference} truncate={14} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+              <StatusBadge status={phase} />
+              <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+
+          {/* Timeline avec horodatages */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
             {steps.map((s, i, arr) => (
               <Fragment key={s.label}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 70 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 92 }}>
                   <span style={{ width: 12, height: 12, borderRadius: 6, background: stepColor(s.state) }} />
-                  <span style={{ fontSize: 11, color: s.state === 'future' ? C.textMuted : C.textSoft }}>{s.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: s.state === 'future' ? C.textMuted : C.textSoft }}>{s.label}</span>
+                  <span style={{ fontSize: 10, color: C.textMuted, textAlign: 'center' }}>{s.at ? fmtDate(s.at) : '—'}</span>
                 </div>
-                {i < arr.length - 1 && <span style={{ flex: 1, height: 2, background: arr[i].state === 'done' ? C.green : C.border }} />}
+                {i < arr.length - 1 && <span style={{ flex: 1, height: 2, marginTop: 5, background: arr[i].state === 'done' ? C.green : C.border }} />}
               </Fragment>
             ))}
           </div>
 
-          {/* Infos */}
+          {/* Émetteur / Destinataire */}
+          <div style={{ display: 'flex', gap: 12 }}>
+            {partyCard('Émetteur', tx.sender)}
+            {partyCard('Destinataire', tx.receiver)}
+          </div>
+
+          {/* Frais */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.border, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
-            {rows.map(([label, value]) => (
+            {([
+              ['Frais', tx.fee > 0 ? formatFCFA(tx.fee) : 'Aucun'],
+              ['Identifiant', tx.id],
+            ] as [string, string][]).map(([label, value]) => (
               <div key={label} style={{ background: C.card, padding: '10px 12px' }}>
                 <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 2 }}>{label}</div>
                 <div style={{ fontSize: 13, color: C.text, fontWeight: 600, wordBreak: 'break-all' }}>{value}</div>
@@ -1789,23 +2012,51 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
             ))}
           </div>
 
-          {/* Données techniques (JSON formaté — payload opérateur / logs) */}
-          <div>
-            <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Données techniques</div>
-            <pre style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 11.5, color: C.textSoft, overflowX: 'auto', margin: 0 }}>{JSON.stringify(tx, null, 2)}</pre>
-          </div>
-
-          {/* Actions (masquées en lecture seule) */}
-          {!isReadOnly() && canRetry && (
-            <button
-              className="cw-btn"
-              onClick={handleRetry}
-              disabled={retrying}
-              style={{ alignSelf: 'flex-start', fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 18px', cursor: retrying ? 'wait' : 'pointer', fontWeight: 700 }}
-            >
-              {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
-            </button>
+          {/* Section opérateur (recharge/retrait OM/MoMo) */}
+          {isOperatorTx && (
+            <div>
+              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Opération mobile money</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>Opérateur</span>
+                  <OperatorBadge operator={tx.operator ?? null} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>Référence opérateur</span>
+                  {tx.operatorRef ? <CopyableRef value={tx.operatorRef} truncate={20} /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}
+                </div>
+                {tx.operatorStatus && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>Statut opérateur</span>
+                    <span style={{ fontSize: 12, color: C.textSoft, fontFamily: 'monospace' }}>{tx.operatorStatus}</span>
+                  </div>
+                )}
+                {tx.failureReason && (
+                  <div style={{ fontSize: 12, color: C.red, marginTop: 2 }}>⚠ {tx.failureReason}</div>
+                )}
+              </div>
+            </div>
           )}
+
+          {/* Données techniques (JSON brut) */}
+          <details>
+            <summary style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>Données techniques</summary>
+            <pre style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 11.5, color: C.textSoft, overflowX: 'auto', margin: '8px 0 0' }}>{JSON.stringify(tx, null, 2)}</pre>
+          </details>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button className="cw-btn" onClick={handleReceipt}
+              style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
+              ⬇ Reçu PDF
+            </button>
+            {!isReadOnly() && canRetry && (
+              <button className="cw-btn" onClick={handleRetry} disabled={retrying}
+                style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 18px', cursor: retrying ? 'wait' : 'pointer', fontWeight: 700 }}>
+                {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1958,77 +2209,144 @@ function WebhookPayloadCell({ wh }: { wh: WebhookEvent }) {
   )
 }
 
+const OP_ORANGE = '#FB923C' // orange retraits (graphe + montants)
+
 function OperationsPage() {
   const [page, setPage] = useState(1)
   const [operator, setOperator] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('30d')
+  const [searchRaw, setSearchRaw] = useState('')
+  const search = useDebounced(searchRaw.trim(), 350)
   const [activeTab, setActiveTab] = useState<'ops' | 'webhooks'>('ops')
   const showToast = useContext(ToastContext)
   const { data, loading, error, refetch } = useFetch(
-    () => getOperations(page, 20, operator || undefined),
-    [page, operator],
+    () => getOperations(page, 20, {
+      operator: operator || undefined,
+      status: statusFilter || undefined,
+      type: typeFilter || undefined,
+      search: search || undefined,
+      period,
+    }),
+    [page, operator, statusFilter, typeFilter, search, period],
   )
+
+  // Tout changement de filtre ramène à la première page.
+  useEffect(() => { setPage(1) }, [operator, statusFilter, typeFilter, search, period])
 
   const handleRetry = async (id: string) => {
     try {
       await retryOperation(id)
       showToast('Opération relancée')
       refetch()
-    } catch {
-      showToast('Échec de la relance', 'error')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Échec de la relance', 'error')
     }
   }
 
-  const allOps = data?.data ?? []
-  // Filtre de statut appliqué côté client sur la page courante.
-  const ops = statusFilter ? allOps.filter((o) => o.status === statusFilter) : allOps
+  const ops = data?.data ?? []
   const webhooks = data?.webhookEvents ?? []
   const stats = data?.stats
+  const pendingWebhooks = stats?.pendingWebhooks ?? 0
   // L'« utilisateur » d'une opération : le bénéficiaire pour une recharge,
   // l'émetteur pour un retrait (l'autre partie étant l'opérateur mobile).
   const opUser = (op: AdminOperation) => (op.type === 'RECHARGE' ? op.receiver : op.sender)
 
-  const txStatusColor = (s: string) =>
-    s === 'COMPLETED' ? C.green : s === 'PENDING' || s === 'PROCESSING' ? C.yellow : C.red
+  const chartData = (data?.chart ?? []).map((c) => ({ date: c.date.slice(5), recharge: toFcfa(c.recharge), withdrawal: toFcfa(c.withdrawal) }))
 
-  const opLabel = (type: string) => (type === 'ORANGE_MONEY' ? 'Orange Money' : type === 'MTN_MOMO' ? 'MTN MoMo' : type ?? '—')
+  const successRate = stats?.successRate ?? null
+  const statCards: { label: string; value: string; sub: string; icon: LucideIcon; color: string; trend?: number | null; badge?: number }[] = [
+    { label: 'Recharges 7j', value: formatFCFA(stats?.rechargeTotal ?? 0), sub: `${stats?.rechargeCount ?? 0} opération(s)`, icon: ArrowDownToLine, color: C.green, trend: stats?.rechargeTrend },
+    { label: 'Retraits 7j', value: formatFCFA(stats?.withdrawalTotal ?? 0), sub: `${stats?.withdrawalCount ?? 0} opération(s)`, icon: ArrowUpFromLine, color: OP_ORANGE, trend: stats?.withdrawalTrend },
+    { label: 'Webhooks en attente', value: String(pendingWebhooks), sub: 'callbacks non traités', icon: Wifi, color: pendingWebhooks > 0 ? C.red : C.green, badge: pendingWebhooks },
+    { label: 'Taux de succès', value: successRate == null ? '—' : successRate + ' %', sub: '7 derniers jours', icon: Percent, color: successRate == null ? C.textMuted : successRate >= 95 ? C.green : C.red },
+  ]
+
+  const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
+  const opTypeColor = (type: string) => (type === 'RECHARGE' ? C.green : OP_ORANGE)
 
   return (
     <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
-      {/* KPI cards */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[
-          { label: 'Recharges 7j', value: formatFCFA(stats?.rechargeTotal ?? 0), sub: `${stats?.rechargeCount ?? 0} op.`, color: C.green },
-          { label: 'Retraits 7j', value: formatFCFA(stats?.withdrawalTotal ?? 0), sub: `${stats?.withdrawalCount ?? 0} op.`, color: C.purple },
-          { label: 'Webhooks en attente', value: String(stats?.pendingWebhooks ?? 0), sub: 'non traités', color: (stats?.pendingWebhooks ?? 0) > 0 ? C.red : C.green },
-        ].map(k => (
-          <div key={k.label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 20px', minWidth: 160 }}>
-            <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', fontWeight: 600, marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: k.color }}>{k.value}</div>
-            <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{k.sub}</div>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Recharges & Retraits</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>Opérations Mobile Money et callbacks opérateurs</p>
+      </div>
+
+      {/* Cartes de synthèse */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {statCards.map((k) => { const Icon = k.icon; const TrendIcon = (k.trend ?? 0) >= 0 ? ArrowUpRight : ArrowDownRight; return (
+          <div key={k.label} className="cw-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '14px 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{k.label}</span>
+              <span style={{ position: 'relative', display: 'inline-flex', width: 28, height: 28, borderRadius: 8, background: k.color + '1F', color: k.color, alignItems: 'center', justifyContent: 'center' }}>
+                <Icon size={15} />
+                {!!k.badge && k.badge > 0 && (
+                  <span style={{ position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: C.red, color: '#fff', fontSize: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{k.badge}</span>
+                )}
+              </span>
+            </div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: C.text, letterSpacing: -0.4 }}>{k.value}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <span style={{ fontSize: 12, color: C.textMuted }}>{k.sub}</span>
+              {k.trend != null && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 700, color: k.trend >= 0 ? C.green : C.red }}>
+                  <TrendIcon size={12} />{Math.abs(k.trend)} %
+                </span>
+              )}
+            </div>
           </div>
-        ))}
-        <div style={{ flex: 1 }} />
-        <select
-          value={operator}
-          onChange={e => { setOperator(e.target.value); setPage(1) }}
-          style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, alignSelf: 'flex-start' }}
-        >
-          <option value="">Tous les opérateurs</option>
+        )})}
+      </div>
+
+      {/* Graphe recharges vs retraits (7 jours) */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Recharges vs Retraits · 7 jours</h2>
+          <div style={{ display: 'flex', gap: 14 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green }} />Recharges</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: OP_ORANGE }} />Retraits</span>
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} margin={{ top: 6, right: 8, left: 4, bottom: 0 }} barGap={4}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="date" stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={48}
+              tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v))} />
+            <Tooltip cursor={{ fill: C.greenLight }} content={<ChartTooltip />} />
+            <Bar dataKey="recharge" name="Recharges" fill={C.green} radius={[4, 4, 0, 0]} maxBarSize={26} />
+            <Bar dataKey="withdrawal" name="Retraits" fill={OP_ORANGE} radius={[4, 4, 0, 0]} maxBarSize={26} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Filtres */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={operator} onChange={e => setOperator(e.target.value)} style={inputStyle}>
+          <option value="">Tous opérateurs</option>
           <option value="ORANGE_MONEY">Orange Money</option>
           <option value="MTN_MOMO">MTN MoMo</option>
+          <option value="CAMPAY">CamPay</option>
         </select>
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          style={{ background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13, alignSelf: 'flex-start' }}
-        >
-          <option value="">Tous les statuts</option>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous types</option>
+          <option value="RECHARGE">Recharge</option>
+          <option value="WITHDRAWAL">Retrait</option>
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={inputStyle}>
+          <option value="">Tous statuts</option>
           <option value="COMPLETED">Complété</option>
           <option value="PENDING">En attente</option>
           <option value="PROCESSING">En cours</option>
           <option value="FAILED">Échoué</option>
         </select>
+        <PeriodTabs value={period} onChange={(v) => setPeriod(v as any)} />
+        <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+          <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Réf. opérateur ou utilisateur…"
+            style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
+        </div>
       </div>
 
       {/* Tabs */}
@@ -2038,6 +2356,7 @@ function OperationsPage() {
             key={t}
             onClick={() => setActiveTab(t)}
             style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
               background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
               padding: '8px 16px', color: activeTab === t ? C.green : C.textMuted,
               borderBottom: activeTab === t ? `2px solid ${C.green}` : '2px solid transparent',
@@ -2045,6 +2364,9 @@ function OperationsPage() {
             }}
           >
             {t === 'ops' ? `Opérations (${data?.total ?? 0})` : `Callbacks webhook (${webhooks.length})`}
+            {t === 'webhooks' && pendingWebhooks > 0 && (
+              <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: C.red, color: '#fff', fontSize: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendingWebhooks}</span>
+            )}
           </button>
         ))}
       </div>
@@ -2057,39 +2379,42 @@ function OperationsPage() {
             <StateRow empty="Aucune opération" />
           )}
           {ops.length > 0 && (
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
             <div className="cw-tablewrap">
-              <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                    {['Date', 'Type', 'Utilisateur', 'Montant', 'Opérateur', 'Statut', 'Ref. opérateur', 'Tentatives', 'Action'].map(h => (
-                      <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.textMuted, fontWeight: 600, fontSize: 11 }}>{h}</th>
+              <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead style={{ background: C.surface }}>
+                  <tr>
+                    {['Date', 'Type', 'Utilisateur', 'Opérateur', 'Montant', 'Statut', 'Réf. opérateur', 'Tent.', 'Action'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '12px 12px', color: C.textMuted, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {ops.map(op => (
-                    <tr key={op.id} style={{ borderBottom: `1px solid ${C.border}20` }}>
-                      <td style={{ padding: '9px 10px', color: C.textMuted, whiteSpace: 'nowrap' }}>{fmtDate(op.createdAt)}</td>
-                      <td style={{ padding: '9px 10px' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, background: op.type === 'RECHARGE' ? C.yellow + '20' : C.purple + '20', color: op.type === 'RECHARGE' ? C.yellow : C.purple, padding: '2px 8px', borderRadius: 6 }}>
+                    <tr key={op.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
+                      <td style={{ padding: '10px 12px', color: C.textMuted, whiteSpace: 'nowrap', fontSize: 12 }} title={fmtDate(op.createdAt)}>{relativeTime(op.createdAt)}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, background: opTypeColor(op.type) + '20', color: opTypeColor(op.type), padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap' }}>
                           {op.type === 'RECHARGE' ? 'Recharge' : 'Retrait'}
                         </span>
                       </td>
-                      <td style={{ padding: '9px 10px', color: C.text }}>{partyLabel(opUser(op), '—')}</td>
-                      <td style={{ padding: '9px 10px', fontWeight: 700, color: C.text, whiteSpace: 'nowrap' }}>{formatFCFA(op.amount)}</td>
-                      <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11 }}>{opLabel(op.operator ?? '')}</td>
-                      <td style={{ padding: '9px 10px' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: txStatusColor(op.status) }}>{op.status}</span>
+                      <td style={{ padding: '10px 12px' }}><UserCell party={opUser(op)} /></td>
+                      <td style={{ padding: '10px 12px' }}><OperatorBadge operator={op.operator ?? null} /></td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: opTypeColor(op.type), whiteSpace: 'nowrap' }}>{formatFCFA(op.amount)}</td>
+                      <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[op.status] ?? op.status} /></td>
+                      <td style={{ padding: '10px 12px' }}>{op.operatorRef ? <CopyableRef value={op.operatorRef} truncate={14} /> : <span style={{ color: C.textMuted }}>—</span>}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                        {op.retryCount > 0
+                          ? <span style={{ fontSize: 11, fontWeight: 800, background: C.redLight, color: C.red, borderRadius: 10, padding: '2px 8px' }}>{op.retryCount}</span>
+                          : <span style={{ color: C.textMuted }}>0</span>}
                       </td>
-                      <td style={{ padding: '9px 10px', color: C.textMuted, fontSize: 11, fontFamily: 'monospace' }}>{op.operatorRef ?? '—'}</td>
-                      <td style={{ padding: '9px 10px', color: op.retryCount > 0 ? C.yellow : C.textMuted, textAlign: 'center' }}>{op.retryCount}</td>
-                      <td style={{ padding: '9px 10px' }}>
-                        {op.status === 'PENDING' && (
+                      <td style={{ padding: '10px 12px' }}>
+                        {!isReadOnly() && (op.status === 'PENDING' || op.status === 'FAILED') && (
                           <button
                             onClick={() => handleRetry(op.id)}
-                            style={{ fontSize: 11, background: C.yellow + '20', color: C.yellow, border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: C.yellow + '20', color: '#B89000', border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
                           >
-                            ↺ Relancer
+                            <RotateCcw size={11} /> Relancer
                           </button>
                         )}
                       </td>
@@ -2097,6 +2422,7 @@ function OperationsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
             </div>
           )}
           {(data?.total ?? 0) > 20 && (
@@ -2126,7 +2452,7 @@ function OperationsPage() {
                   {webhooks.map(wh => (
                     <tr key={wh.id} style={{ borderBottom: `1px solid ${C.border}20`, verticalAlign: 'top' }}>
                       <td style={{ padding: '9px 10px', color: C.textMuted, whiteSpace: 'nowrap' }}>{fmtDate(wh.createdAt)}</td>
-                      <td style={{ padding: '9px 10px', color: C.text }}>{opLabel(wh.operator)}</td>
+                      <td style={{ padding: '9px 10px' }}><OperatorBadge operator={wh.operator} /></td>
                       <td style={{ padding: '9px 10px', color: C.textMuted, fontFamily: 'monospace', fontSize: 11 }}>{wh.eventType}</td>
                       <td style={{ padding: '9px 10px' }}>
                         <WebhookPayloadCell wh={wh} />

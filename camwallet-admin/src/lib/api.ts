@@ -226,6 +226,13 @@ export interface AdminTransaction {
   receiverId: string | null
   description: string | null
   createdAt: string
+  // Champs enrichis (présents sur la liste transactions ; utiles à la modale détail)
+  updatedAt?: string
+  processedAt?: string | null
+  operator?: string | null
+  operatorRef?: string | null
+  operatorStatus?: string | null
+  failureReason?: string | null
   sender: { phone: string; fullName: string | null } | null
   receiver: { phone: string; fullName: string | null } | null
 }
@@ -290,7 +297,7 @@ export function getUsers(
 }
 
 export function getTransactions(
-  params: { page?: number; limit?: number; type?: string; status?: string } = {},
+  params: { page?: number; limit?: number; type?: string; status?: string; search?: string; from?: string; to?: string } = {},
 ) {
   return request<Paginated<AdminTransaction>>(`/admin/transactions${buildQuery(params)}`)
 }
@@ -426,6 +433,12 @@ export interface WebhookEvent {
   createdAt: string
 }
 
+export interface OperationsChartPoint {
+  date: string // YYYY-MM-DD
+  recharge: number // centimes (volume complété)
+  withdrawal: number // centimes
+}
+
 export interface OperationsResponse {
   data: AdminOperation[]
   total: number
@@ -434,16 +447,24 @@ export interface OperationsResponse {
   stats: {
     rechargeCount: number
     rechargeTotal: number
+    rechargeTrend: number | null
     withdrawalCount: number
     withdrawalTotal: number
+    withdrawalTrend: number | null
     pendingWebhooks: number
+    successRate: number | null
   }
+  chart: OperationsChartPoint[]
   webhookEvents: WebhookEvent[]
 }
 
-export const getOperations = (page = 1, limit = 20, operator?: string) =>
+export const getOperations = (
+  page = 1,
+  limit = 20,
+  params: { operator?: string; status?: string; type?: string; search?: string; period?: string } = {},
+) =>
   request<OperationsResponse>(
-    '/admin/operations' + buildQuery({ page, limit, operator }),
+    '/admin/operations' + buildQuery({ page, limit, ...params }),
   )
 
 export const retryOperation = (id: string) =>
