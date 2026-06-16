@@ -179,7 +179,7 @@ export interface AdminKycEntry {
 
 export interface AdminKyc {
   queue: AdminKycEntry[]
-  counts: { pending: number; approvedToday: number; rejectedToday: number; resubmitRequired: number; approvalRate: number }
+  counts: { pending: number; approvedToday: number; rejectedToday: number; resubmitRequired: number; approvalRate: number | null }
 }
 
 export interface AdminAlert {

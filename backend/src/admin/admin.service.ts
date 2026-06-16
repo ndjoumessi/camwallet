@@ -326,10 +326,12 @@ export class AdminService {
         this.prisma.kycDocument.count({ where: { status: KycStatus.REJECTED } }),
       ]);
 
+    // null quand aucune décision n'a encore été prise — le frontend affiche « — »
+    // plutôt qu'un « 0 % » trompeur.
     const approvalRate =
       totalApproved + totalRejected > 0
         ? Math.round((totalApproved / (totalApproved + totalRejected)) * 100)
-        : 0;
+        : null;
 
     return {
       queue,

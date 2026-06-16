@@ -1394,8 +1394,11 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
 
 function KYCPage() {
   const { data, loading, error, refetch } = useFetch(() => getKyc(), [])
-  const queue = data?.queue ?? []
-  const counts = data?.counts ?? { pending: 0, approvedToday: 0, rejectedToday: 0, resubmitRequired: 0, approvalRate: 0 }
+  // Tolérant aux deux formes de réponse : { queue, counts } (v2.9.2+) ou tableau brut (ancien backend).
+  const queue: AdminKycEntry[] = Array.isArray(data) ? data : data?.queue ?? []
+  const counts = data?.counts ?? { pending: 0, approvedToday: 0, rejectedToday: 0, resubmitRequired: 0, approvalRate: null }
+  // « — » quand le taux n'est pas calculable (aucune révision) ou absent de la réponse.
+  const approvalRateLabel = counts.approvalRate == null ? '—' : counts.approvalRate + ' %'
   const [filterStatus, setFilterStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<AdminKycEntry | null>(null)
@@ -1413,7 +1416,7 @@ function KYCPage() {
     { label: 'En attente', value: counts.pending, color: C.yellow, icon: Clock },
     { label: "Approuvés aujourd'hui", value: counts.approvedToday, color: C.green, icon: CheckCircle2 },
     { label: "Rejetés aujourd'hui", value: counts.rejectedToday, color: C.red, icon: XCircle },
-    { label: "Taux d'approbation", value: counts.approvalRate + ' %', color: C.blue, icon: TrendingUp },
+    { label: "Taux d'approbation", value: approvalRateLabel, color: C.blue, icon: TrendingUp },
   ]
 
   const STATUS_FILTERS = [
