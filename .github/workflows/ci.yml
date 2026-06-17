@@ -165,28 +165,10 @@ jobs:
             - ✅ TypeCheck mobile
           files: coverage/**/*
 
-  # ─── 7. DEPLOY BACKEND (Railway) ──────────────────────────────────────────
-  deploy-backend:
-    name: Deploy Backend — Railway
-    runs-on: ubuntu-latest
-    needs: integration-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    # Secrets requis dans GitHub → Settings → Secrets → Actions :
-    #   RAILWAY_TOKEN : token de service Railway (railway.app → Account → Tokens)
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - name: Installer Railway CLI
-        run: npm install -g @railway/cli
-      - name: Déployer sur Railway
-        # Le service Railway s'appelle « camwallet » (et non « backend »).
-        run: railway up --service camwallet --detach
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-
-  # ─── 8. DEPLOY ADMIN (Vercel) ─────────────────────────────────────────────
+  # ─── 7. DEPLOY ADMIN (Vercel) ─────────────────────────────────────────────
+  # Le backend est déployé automatiquement par l'intégration GitHub de Railway
+  # (service « camwallet » connecté au dépôt) sur push vers main — pas de job CI
+  # dédié pour éviter un double déploiement.
   deploy-admin:
     name: Deploy Admin — Vercel
     runs-on: ubuntu-latest
