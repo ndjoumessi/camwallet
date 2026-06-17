@@ -23,7 +23,7 @@ import {
   getKyc, getAlerts, getAlertsTimeline, getAudit, getAuditStats, reviewKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase, assignAnifCase, getAnifStats,
-  getOperations, retryOperation, WebhookEvent, AdminOperation, resolveTransaction,
+  getOperations, retryOperation, WebhookEvent, AdminOperation,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
   downloadUsersCSV, downloadTransactionsCSV,
@@ -2169,20 +2169,6 @@ function TransactionsPage() {
 function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransaction; onClose: () => void; onRetried: () => void }) {
   const toast = useToast()
   const [retrying, setRetrying] = useState(false)
-  const [resolving, setResolving] = useState(false)
-
-  const handleResolve = async () => {
-    setResolving(true)
-    try {
-      await resolveTransaction(tx.id)
-      toast('Transaction marquée résolue', 'success')
-      onRetried()
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Échec', 'error')
-    } finally {
-      setResolving(false)
-    }
-  }
 
   const phase = TX_STATUS_BADGE[tx.status] ?? tx.status
   const failed = phase === 'failed'
@@ -2365,14 +2351,6 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
                 {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
               </button>
             )}
-            {!isReadOnly() && (tx.resolved ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.green, fontWeight: 600 }}><CheckCircle2 size={14} /> Résolu</span>
-            ) : (
-              <button className="cw-btn" onClick={handleResolve} disabled={resolving}
-                style={{ fontSize: 13, color: '#B89000', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 8, padding: '9px 16px', cursor: resolving ? 'wait' : 'pointer', fontWeight: 600 }}>
-                {resolving ? '…' : '✓ Marquer résolu'}
-              </button>
-            ))}
           </div>
         </div>
       </div>
