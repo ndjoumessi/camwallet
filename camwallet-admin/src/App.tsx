@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext, Fragment, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18n from './i18n'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -80,18 +81,15 @@ const KYC_STATUS_BADGE: Record<string, string> = {
 const KYC_STATUS_COLOR: Record<string, string> = {
   PENDING: C.textMuted, SUBMITTED: C.yellow, APPROVED: C.green, REJECTED: C.red, RESUBMIT_REQUIRED: C.purple,
 }
-const KYC_STATUS_LABEL: Record<string, string> = {
-  PENDING: 'En attente', SUBMITTED: 'À réviser', APPROVED: 'Approuvé', REJECTED: 'Rejeté', RESUBMIT_REQUIRED: 'Nouveau doc requis',
-}
 const TX_STATUS_BADGE: Record<string, string> = {
   COMPLETED: 'success', PENDING: 'pending', PROCESSING: 'pending',
   FAILED: 'failed', REFUNDED: 'flagged', CANCELLED: 'failed',
 }
 // Niveau de risque (dérivé du volume 30j) → couleur.
-const RISK_META: Record<string, { color: string; label: string }> = {
-  'Bas': { color: '#00C896', label: 'Bas' },
-  'Moyen': { color: '#FB923C', label: 'Moyen' },
-  'Élevé': { color: '#FF4D6D', label: 'Élevé' },
+const RISK_META: Record<string, { color: string }> = {
+  'Bas': { color: '#00C896' },
+  'Moyen': { color: '#FB923C' },
+  'Élevé': { color: '#FF4D6D' },
 }
 const USER_ROLE_LABEL: Record<string, string> = { USER: 'Utilisateur', MERCHANT: 'Marchand', ADMIN: 'Admin' }
 // enum backend → libellé court attendu par TxTypeBadge
@@ -123,14 +121,14 @@ const partyLabel = (
 const relativeTime = (iso: string) => {
   const diff = Date.now() - new Date(iso).getTime()
   const min = Math.floor(diff / 60000)
-  if (min < 1) return "à l'instant"
-  if (min < 60) return `il y a ${min} min`
+  if (min < 1) return i18n.t('relative_time.now')
+  if (min < 60) return i18n.t('relative_time.min', { count: min })
   const h = Math.floor(min / 60)
-  if (h < 24) return `il y a ${h} h`
+  if (h < 24) return i18n.t('relative_time.hour', { count: h })
   const d = Math.floor(h / 24)
-  if (d < 30) return `il y a ${d} j`
+  if (d < 30) return i18n.t('relative_time.day', { count: d })
   const mo = Math.floor(d / 30)
-  return mo < 12 ? `il y a ${mo} mois` : `il y a ${Math.floor(mo / 12)} an(s)`
+  return mo < 12 ? i18n.t('relative_time.month', { count: mo }) : i18n.t('relative_time.year', { count: Math.floor(mo / 12) })
 }
 
 // Métadonnées d'affichage des opérateurs mobiles (couleur de marque + sigle).
@@ -153,18 +151,20 @@ function OperatorBadge({ operator }: { operator: string | null }) {
 }
 
 // Badge de niveau de risque (Bas / Moyen / Élevé) avec pastille colorée.
+const RISK_KEY: Record<string, string> = { 'Bas': 'low', 'Moyen': 'medium', 'Élevé': 'high' }
 function RiskBadge({ level }: { level?: string }) {
   const m = (level && RISK_META[level]) || RISK_META['Bas']
+  const lbl = i18n.t('risk.' + (RISK_KEY[level ?? 'Bas'] ?? 'low'))
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: m.color + '1F', color: m.color }}>
-      <span style={{ width: 6, height: 6, borderRadius: 3, background: m.color }} />{m.label}
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: m.color }} />{lbl}
     </span>
   )
 }
 
 // Cellule utilisateur : avatar à initiales coloré + nom (téléphone en second).
 // Jamais « — » seul : utilise le fallback (« Opérateur ») quand la partie est absente.
-function UserCell({ party, fallback = 'Opérateur' }: { party: { fullName: string | null; phone: string } | null; fallback?: string }) {
+function UserCell({ party, fallback = i18n.t('common.operator') }: { party: { fullName: string | null; phone: string } | null; fallback?: string }) {
   if (!party) {
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: C.textMuted }}>
@@ -349,7 +349,7 @@ function useFetch<T>(fn: () => Promise<T>, deps: unknown[]) {
       .then((d) => { if (alive) { setData(d); setError(null) } })
       .catch((e) => {
         if (alive && !(e instanceof SessionExpiredError))
-          setError(e instanceof Error ? e.message : 'Erreur de chargement')
+          setError(e instanceof Error ? e.message : i18n.t('common.error_loading'))
       })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -433,9 +433,10 @@ function TxTypeBadge({ type }: { type: string }) {
     RETRAIT: { bg: C.purpleLight, text: C.purple },
   }
   const s = map[type] ?? { bg: '#333', text: '#888' }
+  const lbl = type === 'RECHARGE' ? i18n.t('tx_type.recharge') : type === 'RETRAIT' ? i18n.t('tx_type.retrait') : type
   return (
     <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: s.bg, color: s.text }}>
-      {type}
+      {lbl}
     </span>
   )
 }
@@ -782,9 +783,6 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 const HEALTH_COLOR: Record<string, string> = {
   UP: C.green, DEGRADED: '#FB923C', SIMULATED: '#FB923C', DOWN: C.red, UNKNOWN: C.textMuted,
 }
-const HEALTH_LABEL: Record<string, string> = {
-  UP: 'Opérationnel', DEGRADED: 'Dégradé', SIMULATED: 'Simulé', DOWN: 'Hors ligne', UNKNOWN: 'Inconnu',
-}
 // Couleur de la latence selon les seuils (<50ms vert, 50–200 orange, >200 rouge).
 const latencyColor = (ms: number) => (ms < 50 ? C.green : ms <= 200 ? '#FB923C' : C.red)
 
@@ -796,10 +794,10 @@ function HealthWidget() {
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 20, marginTop: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <Activity size={16} color={C.green} />
-        <span style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>Santé des intégrations</span>
+        <span style={{ fontWeight: 700, color: C.text, fontSize: 14 }}>{i18n.t('health.title')}</span>
         {data?.checkedAt && (
           <span style={{ fontSize: 11, color: C.textMuted, marginLeft: 'auto' }}>
-            Vérifié {relativeTime(data.checkedAt)}
+            {i18n.t('health.checked_at', { date: relativeTime(data.checkedAt) })}
           </span>
         )}
       </div>
@@ -825,20 +823,20 @@ function HealthWidget() {
                 </div>
 
                 {/* Statut */}
-                <div style={{ fontSize: 12, color, fontWeight: 600, marginBottom: hasMetrics ? 10 : 4 }}>{HEALTH_LABEL[i.status] ?? i.status}</div>
+                <div style={{ fontSize: 12, color, fontWeight: 600, marginBottom: hasMetrics ? 10 : 4 }}>{i18n.t('health_status.' + i.status)}</div>
 
                 {hasMetrics ? (
                   <>
                     {/* Tx 24h + dernière activité */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.textMuted, marginBottom: 8 }}>
-                      <span><strong style={{ color: C.textSoft }}>{i.txCount24h}</strong> tx / 24h</span>
-                      <span>{i.lastSuccess ? relativeTime(i.lastSuccess) : 'aucune'}</span>
+                      <span dangerouslySetInnerHTML={{ __html: i18n.t('health.tx_24h', { count: i.txCount24h, interpolation: { escapeValue: false } }) }} />
+                      <span>{i.lastSuccess ? relativeTime(i.lastSuccess) : i18n.t('common.none')}</span>
                     </div>
                     {/* Uptime + barre de progression */}
                     {i.uptime != null && (
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginBottom: 3 }}>
-                          <span>Uptime 24h</span>
+                          <span>{i18n.t('health.up')} 24h</span>
                           <span style={{ fontWeight: 700, color: i.uptime >= 95 ? C.green : i.uptime >= 70 ? '#FB923C' : C.red }}>{i.uptime} %</span>
                         </div>
                         <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: 'hidden' }}>
@@ -861,9 +859,9 @@ function HealthWidget() {
 
 // Niveau d'alerte → libellé + couleur (error=Critique, warn=Avertissement, info=Info).
 const ALERT_LEVEL: Record<string, { label: string; color: string; bg: string; icon: LucideIcon }> = {
-  error: { label: 'Critique', color: C.red, bg: C.redLight, icon: Siren },
-  warn: { label: 'Avertissement', color: '#FB923C', bg: '#FB923C18', icon: AlertTriangle },
-  info: { label: 'Info', color: C.blue, bg: C.blueLight, icon: Info },
+  error: { label: 'alert_level.error', color: C.red, bg: C.redLight, icon: Siren },
+  warn: { label: 'alert_level.warn', color: '#FB923C', bg: '#FB923C18', icon: AlertTriangle },
+  info: { label: 'alert_level.info', color: C.blue, bg: C.blueLight, icon: Info },
 }
 
 function AlertsPage() {
@@ -887,23 +885,23 @@ function AlertsPage() {
   const counts = { error: alerts.filter(a => a.type === 'error').length, warn: alerts.filter(a => a.type === 'warn').length, info: alerts.filter(a => a.type === 'info').length }
   const tlData = (timeline?.series ?? []).map((p) => ({ label: p.label, failed: p.failed, highValue: p.highValue }))
 
-  const markAllRead = () => { persistRead(new Set(alerts.map((a) => a.id))); toast('Toutes les alertes marquées comme lues', 'success') }
+  const markAllRead = () => { persistRead(new Set(alerts.map((a) => a.id))); toast(i18n.t('x.al.marked_all'), 'success') }
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
-            Alertes & Surveillance
+            {i18n.t('x.al.title')}
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 20, padding: '3px 10px' }}>
-              <span className="cw-live-dot" style={{ width: 7, height: 7, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} /> Temps réel
+              <span className="cw-live-dot" style={{ width: 7, height: 7, borderRadius: 4, background: C.green, animation: 'pulse 2s infinite' }} /> {i18n.t('x.al.realtime')}
             </span>
           </h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{unread} non lue(s) sur {alerts.length} alerte(s)</p>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.al.subtitle', { unread, total: alerts.length })}</p>
         </div>
         <button className="cw-btn" disabled={!unread} onClick={markAllRead}
           style={{ fontSize: 13, color: unread ? C.green : C.textMuted, background: unread ? C.greenLight : C.surface, border: `1px solid ${unread ? C.green + '40' : C.border}`, borderRadius: 8, padding: '8px 16px', cursor: unread ? 'pointer' : 'default', fontWeight: 600 }}>
-          ✓ Tout marquer comme lu
+          {i18n.t('x.al.mark_all')}
         </button>
       </div>
 
@@ -912,10 +910,10 @@ function AlertsPage() {
       {/* Graphe : alertes par heure sur 24h */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Alertes par heure · 24h</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.al.per_hour')}</h2>
           <div style={{ display: 'flex', gap: 14 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red }} />Échecs</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#FB923C' }} />Gros montants</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red }} />{i18n.t('x.al.leg_failures')}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#FB923C' }} />{i18n.t('x.al.leg_highvalue')}</span>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={180}>
@@ -924,25 +922,25 @@ function AlertsPage() {
             <XAxis dataKey="label" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} interval={2} />
             <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
             <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
-            <Bar dataKey="failed" name="Échecs" stackId="a" fill={C.red} radius={[0, 0, 0, 0]} maxBarSize={18} />
-            <Bar dataKey="highValue" name="Gros montants" stackId="a" fill="#FB923C" radius={[3, 3, 0, 0]} maxBarSize={18} />
+            <Bar dataKey="failed" name={i18n.t('x.al.leg_failures')} stackId="a" fill={C.red} radius={[0, 0, 0, 0]} maxBarSize={18} />
+            <Bar dataKey="highValue" name={i18n.t('x.al.leg_highvalue')} stackId="a" fill="#FB923C" radius={[3, 3, 0, 0]} maxBarSize={18} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
       {/* Filtre par niveau */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        <button onClick={() => setLevelFilter('')} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === '' ? 700 : 500, background: levelFilter === '' ? C.green : C.card, border: `1px solid ${levelFilter === '' ? C.green : C.border}`, color: levelFilter === '' ? '#fff' : C.textSoft }}>Toutes ({alerts.length})</button>
+        <button onClick={() => setLevelFilter('')} style={{ fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === '' ? 700 : 500, background: levelFilter === '' ? C.green : C.card, border: `1px solid ${levelFilter === '' ? C.green : C.border}`, color: levelFilter === '' ? '#fff' : C.textSoft }}>{i18n.t('x.al.all_count', { count: alerts.length })}</button>
         {(['error', 'warn', 'info'] as const).map((lvl) => { const m = ALERT_LEVEL[lvl]; return (
           <button key={lvl} onClick={() => setLevelFilter(levelFilter === lvl ? '' : lvl)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: levelFilter === lvl ? 700 : 500, background: levelFilter === lvl ? m.color : m.bg, border: `1px solid ${levelFilter === lvl ? m.color : m.color + '40'}`, color: levelFilter === lvl ? '#fff' : m.color }}>
-            <span style={{ width: 6, height: 6, borderRadius: 3, background: levelFilter === lvl ? '#fff' : m.color }} />{m.label} ({counts[lvl]})
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: levelFilter === lvl ? '#fff' : m.color }} />{i18n.t(m.label)} ({counts[lvl]})
           </button>
         )})}
       </div>
 
       {/* Alert cards (3 niveaux) */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-        {filtered.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 24, color: C.textMuted, fontSize: 13 }}>Aucune alerte active</div>}
+        {filtered.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 24, color: C.textMuted, fontSize: 13 }}>{i18n.t('x.al.no_active')}</div>}
         {filtered.map(a => {
           const m = ALERT_LEVEL[a.type] ?? ALERT_LEVEL.info
           const AlertIcon = m.icon
@@ -952,13 +950,13 @@ function AlertsPage() {
               <AlertIcon size={18} color={m.color} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: m.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: m.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{i18n.t(m.label)}</span>
                   <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{a.title}</span>
                 </div>
                 <div style={{ color: C.textSoft, fontSize: 12, marginTop: 2 }}>{a.desc}</div>
               </div>
               {!isRead && (
-                <button onClick={() => persistRead(new Set([...readIds, a.id]))} title="Marquer comme lu"
+                <button onClick={() => persistRead(new Set([...readIds, a.id]))} title={i18n.t('x.al.mark_read')}
                   style={{ flexShrink: 0, background: 'none', border: 'none', color: m.color, cursor: 'pointer', padding: 4, borderRadius: 6 }}><Check size={16} /></button>
               )}
             </div>
@@ -969,13 +967,13 @@ function AlertsPage() {
       {/* Flagged transactions (échecs + gros montants, 7 derniers jours) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
-          <AlertTriangle size={16} color={C.yellow} /> Transactions signalées
+          <AlertTriangle size={16} color={C.yellow} /> {i18n.t('x.al.flagged')}
         </h2>
         <div className="cw-tablewrap">
         <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              {['Réf.', 'Type', 'Montant', 'De', 'À', 'Statut', 'Date'].map(h => (
+              {[i18n.t('x.al.col_ref'), i18n.t('x.al.col_type'), i18n.t('x.al.col_amount'), i18n.t('x.al.col_from'), i18n.t('x.al.col_to'), i18n.t('x.al.col_status'), i18n.t('x.al.col_date')].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', padding: '0 12px 10px' }}>{h}</th>
               ))}
             </tr>
@@ -986,8 +984,8 @@ function AlertsPage() {
                 <td style={{ padding: '10px 12px', color: C.textSoft, fontFamily: 'monospace', fontSize: 12 }}>{tx.reference}</td>
                 <td style={{ padding: '10px 12px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
                 <td style={{ padding: '10px 12px', color: C.yellow, fontWeight: 700 }}>{formatFCFA(tx.amount)}</td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, 'Opérateur')}</td>
-                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, 'Opérateur')}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.sender, i18n.t('common.operator'))}</td>
+                <td style={{ padding: '10px 12px', color: C.text }}>{partyLabel(tx.receiver, i18n.t('common.operator'))}</td>
                 <td style={{ padding: '10px 12px' }}><StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} /></td>
                 <td style={{ padding: '10px 12px', color: C.textMuted, fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
               </tr>
@@ -996,7 +994,7 @@ function AlertsPage() {
         </table>
         </div>
         {!loading && !error && flagged.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 24, color: C.textMuted }}>Aucune transaction signalée</div>
+          <div style={{ textAlign: 'center', padding: 24, color: C.textMuted }}>{i18n.t('x.al.no_flagged')}</div>
         )}
       </div>
     </div>
@@ -1033,9 +1031,9 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
       await addAdminNote(userId, noteText.trim())
       setNoteText('')
       refetchNotes()
-      toast('Note ajoutée', 'success')
+      toast(i18n.t('x.ud.note_added'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error')
     } finally {
       setAddingNote(false)
     }
@@ -1045,13 +1043,13 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
     try {
       await deleteAdminNote(noteId)
       refetchNotes()
-      toast('Note supprimée', 'success')
+      toast(i18n.t('x.ud.note_deleted'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error')
     }
   }
 
-  const run = async (fn: () => Promise<unknown>, okMsg = 'Action effectuée') => {
+  const run = async (fn: () => Promise<unknown>, okMsg = i18n.t('x.ud.action_done')) => {
     setActing(true)
     try {
       await fn()
@@ -1059,7 +1057,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
       onChanged()
       toast(okMsg, 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('common.action_failed'), 'error')
     } finally {
       setActing(false)
     }
@@ -1083,18 +1081,18 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
   const sectionTitle = (t: string): CSSProperties => ({ color: C.text, fontSize: 13, fontWeight: 700, marginBottom: 10 })
 
   const TABS: { key: 'profil' | 'tx' | 'kyc' | 'audit'; label: string }[] = [
-    { key: 'profil', label: 'Profil' },
-    { key: 'tx', label: 'Transactions' },
-    { key: 'kyc', label: 'KYC' },
-    { key: 'audit', label: 'Audit' },
+    { key: 'profil', label: i18n.t('x.ud.tab_profile') },
+    { key: 'tx', label: i18n.t('x.ud.tab_tx') },
+    { key: 'kyc', label: i18n.t('x.ud.tab_kyc') },
+    { key: 'audit', label: i18n.t('x.ud.tab_audit') },
   ]
 
   return (
     <div style={overlay} onClick={onClose}>
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.text }}>Détail utilisateur</h2>
-          <button className="cw-iconbtn" onClick={onClose} aria-label="Fermer"
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: C.text }}>{i18n.t('x.ud.title')}</h2>
+          <button className="cw-iconbtn" onClick={onClose} aria-label={i18n.t('common.close')}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 9, background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}>
             <X size={20} />
           </button>
@@ -1110,16 +1108,16 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
                 {u.avatarUrl ? <img src={u.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials(u.fullName)}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ color: C.text, fontWeight: 700, fontSize: 17 }}>{u.fullName ?? 'Sans nom'}</div>
+                <div style={{ color: C.text, fontWeight: 700, fontSize: 17 }}>{u.fullName ?? i18n.t('common.no_name')}</div>
                 <div style={{ color: C.textSoft, fontFamily: 'monospace', fontSize: 13 }}>{u.phone}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 7, flexWrap: 'wrap' }}>
                   <StatusBadge status={USER_STATUS_BADGE[u.status] ?? u.status} />
                   <StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} />
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: C.blueLight, color: C.blue }}>{USER_ROLE_LABEL[u.role] ?? u.role}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: C.blueLight, color: C.blue }}>{i18n.t('roles.' + (u.role === 'USER' ? 'user' : u.role === 'MERCHANT' ? 'merchant' : 'admin'))}</span>
                 </div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 11, color: C.textMuted }}>Membre depuis</div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.ud.label_member_since')}</div>
                 <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{relativeTime(u.createdAt)}</div>
               </div>
             </div>
@@ -1128,30 +1126,30 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
             {!isReadOnly() && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               {u.role !== 'ADMIN' && (u.status === 'LOCKED' ? (
-                <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'), 'Compte débloqué')}
-                  style={{ fontSize: 12, color: C.green, background: C.greenLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
+                <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'ACTIVE'), i18n.t('x.ud.account_unblocked'))}
+                  style={{ fontSize: 12, color: C.green, background: C.greenLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.unblock')}</button>
               ) : (
-                <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'LOCKED'), 'Compte bloqué')}
-                  style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
+                <button className="cw-btn" disabled={acting} onClick={() => run(() => setUserStatus(u.id, 'LOCKED'), i18n.t('x.ud.account_blocked'))}
+                  style={{ fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.block')}</button>
               ))}
               {confirmingPinReset ? (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '4px 6px 4px 10px' }}>
-                  <span style={{ fontSize: 12, color: '#B89000', fontWeight: 600 }}>Confirmer ?</span>
-                  <button className="cw-btn" disabled={acting} onClick={() => { setConfirmingPinReset(false); run(() => resetUserPin(u.id), 'PIN réinitialisé') }}
-                    style={{ fontSize: 12, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
+                  <span style={{ fontSize: 12, color: '#B89000', fontWeight: 600 }}>{i18n.t('common.confirm_question')}</span>
+                  <button className="cw-btn" disabled={acting} onClick={() => { setConfirmingPinReset(false); run(() => resetUserPin(u.id), i18n.t('x.ud.pin_reset_ok')) }}
+                    style={{ fontSize: 12, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 700 }}>{i18n.t('common.yes')}</button>
                   <button className="cw-btn" onClick={() => setConfirmingPinReset(false)}
-                    style={{ fontSize: 12, color: C.textSoft, background: 'none', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
+                    style={{ fontSize: 12, color: C.textSoft, background: 'none', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('common.cancel')}</button>
                 </div>
               ) : (
                 <button className="cw-btn" disabled={acting} onClick={() => setConfirmingPinReset(true)}
-                  style={{ fontSize: 12, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>Réinitialiser le PIN</button>
+                  style={{ fontSize: 12, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.reset_pin')}</button>
               )}
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
-                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'), 'KYC approuvé')}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><Check size={14} /> Approuver KYC</button>
-                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'), 'KYC rejeté')}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><X size={14} /> Rejeter KYC</button>
+                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'), i18n.t('x.ud.kyc_approved'))}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><Check size={14} /> {i18n.t('x.ud.approve_kyc')}</button>
+                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'), i18n.t('x.ud.kyc_rejected'))}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><X size={14} /> {i18n.t('x.ud.reject_kyc')}</button>
                 </>
               )}
             </div>
@@ -1172,29 +1170,29 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
             {tab === 'profil' && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
-                  <div>{label('Email')}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
-                  <div>{label('Ville')}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
-                  <div>{label('Naissance')}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
-                  <div>{label('Solde')}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{formatFCFA(u.wallet?.balance ?? 0)}</span></div>
-                  <div>{label('Dernière connexion')}<span style={{ color: C.text, fontSize: 13 }}>{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</span></div>
-                  <div>{label('Membre depuis')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.createdAt)}</span></div>
-                  <div>{label('Transactions')}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
-                  <div>{label('Total envoyé')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalSent)}</span></div>
-                  <div>{label('Total reçu')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalReceived)}</span></div>
+                  <div>{label(i18n.t('x.ud.label_email'))}<span style={{ color: C.text, fontSize: 13 }}>{u.email ?? '—'}</span></div>
+                  <div>{label(i18n.t('x.ud.label_city'))}<span style={{ color: C.text, fontSize: 13 }}>{u.city ?? '—'}</span></div>
+                  <div>{label(i18n.t('x.ud.label_dob'))}<span style={{ color: C.text, fontSize: 13 }}>{u.dateOfBirth ? fmtDate(u.dateOfBirth) : '—'}</span></div>
+                  <div>{label(i18n.t('x.ud.label_balance'))}<span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{formatFCFA(u.wallet?.balance ?? 0)}</span></div>
+                  <div>{label(i18n.t('x.ud.label_last_login'))}<span style={{ color: C.text, fontSize: 13 }}>{u.lastLoginAt ? fmtDate(u.lastLoginAt) : '—'}</span></div>
+                  <div>{label(i18n.t('x.ud.label_member_since'))}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.createdAt)}</span></div>
+                  <div>{label(i18n.t('x.ud.label_tx_count'))}<span style={{ color: C.text, fontSize: 13 }}>{data.stats.transactionsCount}</span></div>
+                  <div>{label(i18n.t('x.ud.label_total_sent'))}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalSent)}</span></div>
+                  <div>{label(i18n.t('x.ud.label_total_received'))}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.totalReceived)}</span></div>
                   {data.stats.monthlyVolume !== undefined && (
-                    <div>{label('Volume 30j')}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.monthlyVolume)}</span></div>
+                    <div>{label(i18n.t('x.ud.label_volume_30d'))}<span style={{ color: C.text, fontSize: 13 }}>{formatFCFA(data.stats.monthlyVolume)}</span></div>
                   )}
                   {data.stats.anifRisk && (
-                    <div>{label('Score risque')}<RiskBadge level={data.stats.anifRisk} /></div>
+                    <div>{label(i18n.t('x.ud.label_risk_score'))}<RiskBadge level={data.stats.anifRisk} /></div>
                   )}
                 </div>
 
                 {/* Notes internes */}
-                <h3 style={sectionTitle('Notes internes')}>Notes internes</h3>
+                <h3 style={sectionTitle('')}>{i18n.t('x.ud.notes_section')}</h3>
                 <div style={{ marginBottom: 12 }}>
-                  {notesLoading && <div style={{ color: C.textMuted, fontSize: 12 }}>Chargement…</div>}
+                  {notesLoading && <div style={{ color: C.textMuted, fontSize: 12 }}>{i18n.t('common.loading')}</div>}
                   {!notesLoading && (!notes || notes.length === 0) && (
-                    <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune note</div>
+                    <div style={{ color: C.textMuted, fontSize: 12 }}>{i18n.t('x.ud.notes_none')}</div>
                   )}
                   {(notes ?? []).map((n: AdminNote) => (
                     <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
@@ -1202,14 +1200,14 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
                         <div style={{ color: C.text, marginBottom: 2 }}>{n.content}</div>
                         <div style={{ color: C.textMuted, fontSize: 11 }}>{n.author.email ?? n.author.fullName ?? 'Admin'} · {fmtDate(n.createdAt)}</div>
                       </div>
-                      {!isReadOnly() && <button onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }} aria-label="Supprimer"><X size={14} /></button>}
+                      {!isReadOnly() && <button onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }} aria-label={i18n.t('user_detail.notes_delete_aria')}><X size={14} /></button>}
                     </div>
                   ))}
                 </div>
                 {!isReadOnly() && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder="Ajouter une note interne…" aria-label="Note interne" style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
-                    <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>Ajouter</button>
+                    <input value={noteText} onChange={e => setNoteText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddNote() } }} placeholder={i18n.t('x.ud.notes_placeholder')} aria-label={i18n.t('x.ud.notes_aria')} style={{ flex: 1, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
+                    <button onClick={handleAddNote} disabled={addingNote || !noteText.trim()} style={{ padding: '8px 14px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: addingNote || !noteText.trim() ? 'not-allowed' : 'pointer', opacity: !noteText.trim() ? 0.6 : 1 }}>{i18n.t('x.ud.notes_add')}</button>
                   </div>
                 )}
               </>
@@ -1218,12 +1216,12 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
             {/* Tab Transactions */}
             {tab === 'tx' && (
               <div>
-                {data.transactions.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune transaction</div>}
+                {data.transactions.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>{i18n.t('x.ud.no_tx')}</div>}
                 {data.transactions.map((tx) => (
                   <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} />
-                      <span style={{ color: C.textSoft }}>{partyLabel(tx.sender, 'Opérateur')} → {partyLabel(tx.receiver, 'Opérateur')}</span>
+                      <span style={{ color: C.textSoft }}>{partyLabel(tx.sender, i18n.t('common.operator'))} → {partyLabel(tx.receiver, i18n.t('common.operator'))}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <StatusBadge status={TX_STATUS_BADGE[tx.status] ?? tx.status} />
@@ -1241,23 +1239,23 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
                 {u.kycDocument ? (
                   <>
                     <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-                      {photoTile(u.kycDocument.idFrontUrl, 'CNI recto')}
-                      {photoTile(u.kycDocument.idBackUrl, 'CNI verso')}
-                      {photoTile(u.kycDocument.selfieUrl, 'Selfie')}
+                      {photoTile(u.kycDocument.idFrontUrl, i18n.t('x.ud.kyc_id_front'))}
+                      {photoTile(u.kycDocument.idBackUrl, i18n.t('x.ud.kyc_id_back'))}
+                      {photoTile(u.kycDocument.selfieUrl, i18n.t('x.ud.kyc_selfie'))}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-                      <div>{label('Statut KYC')}<StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></div>
-                      <div>{label('Soumis le')}<span style={{ color: C.text, fontSize: 13 }}>{u.kycDocument.submittedAt ? fmtDate(u.kycDocument.submittedAt) : '—'}</span></div>
-                      {u.kycDocument.reviewedAt && <div>{label('Décision le')}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.kycDocument.reviewedAt)}</span></div>}
+                      <div>{label(i18n.t('x.ud.label_kyc_status'))}<StatusBadge status={KYC_STATUS_BADGE[u.kycStatus] ?? u.kycStatus} /></div>
+                      <div>{label(i18n.t('x.ud.label_submitted_at'))}<span style={{ color: C.text, fontSize: 13 }}>{u.kycDocument.submittedAt ? fmtDate(u.kycDocument.submittedAt) : '—'}</span></div>
+                      {u.kycDocument.reviewedAt && <div>{label(i18n.t('x.ud.label_decided_at'))}<span style={{ color: C.text, fontSize: 13 }}>{fmtDate(u.kycDocument.reviewedAt)}</span></div>}
                     </div>
                     {u.kycDocument.reviewNote && (
                       <div style={{ marginTop: 12, padding: '10px 12px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                        {label('Note de révision')}<span style={{ color: C.textSoft, fontSize: 12 }}>{u.kycDocument.reviewNote}</span>
+                        {label(i18n.t('x.ud.label_review_note'))}<span style={{ color: C.textSoft, fontSize: 12 }}>{u.kycDocument.reviewNote}</span>
                       </div>
                     )}
                   </>
                 ) : (
-                  <div style={{ color: C.textMuted, fontSize: 12 }}>Aucun document KYC soumis</div>
+                  <div style={{ color: C.textMuted, fontSize: 12 }}>{i18n.t('x.ud.no_kyc_doc')}</div>
                 )}
               </div>
             )}
@@ -1265,7 +1263,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
             {/* Tab Audit */}
             {tab === 'audit' && (
               <div>
-                {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>Aucune action enregistrée</div>}
+                {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>{i18n.t('x.ud.no_audit')}</div>}
                 {data.audit.map((a) => (
                   <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
                     <span style={{ color: C.textSoft }}>{a.action}{a.metadata?.note ? ` — ${a.metadata.note}` : ''}</span>
@@ -1328,25 +1326,25 @@ function UsersPage() {
   const handleExportCsv = () => {
     downloadCsv(
       'utilisateurs-camwallet.csv',
-      ['Nom', 'Téléphone', 'Email', 'Solde (FCFA)', 'Statut', 'KYC', 'Risque', 'Rôle', 'Inscrit'],
+      [i18n.t('x.users.csv_name'), i18n.t('x.users.csv_phone'), i18n.t('x.users.csv_email'), i18n.t('x.users.csv_balance'), i18n.t('x.users.csv_status'), i18n.t('x.users.csv_kyc'), i18n.t('x.users.csv_risk'), i18n.t('x.users.csv_role'), i18n.t('x.users.csv_registered')],
       sortedUsers.map((u) => [
         u.fullName ?? '—', u.phone, u.email ?? '—',
         toFcfa(Number(u.wallet?.balance ?? 0)).toLocaleString('fr-FR'),
-        u.status, u.kycStatus, u.riskLevel ?? 'Bas', USER_ROLE_LABEL[u.role] ?? u.role, fmtDate(u.createdAt),
+        u.status, u.kycStatus, u.riskLevel ?? 'Bas', i18n.t('roles.' + (u.role === 'USER' ? 'user' : u.role === 'MERCHANT' ? 'merchant' : 'admin')), fmtDate(u.createdAt),
       ]),
     )
-    toast('Export CSV téléchargé', 'success')
+    toast(i18n.t('x.users.csv_exported'), 'success')
   }
   const handleExportPdf = () => {
     const ok = exportPdfReport(
-      'Utilisateurs CamWallet',
-      ['Nom', 'Téléphone', 'Solde (FCFA)', 'Statut', 'KYC', 'Risque', 'Inscrit'],
+      i18n.t('x.users.pdf_title'),
+      [i18n.t('x.users.csv_name'), i18n.t('x.users.csv_phone'), i18n.t('x.users.csv_balance'), i18n.t('x.users.csv_status'), i18n.t('x.users.csv_kyc'), i18n.t('x.users.csv_risk'), i18n.t('x.users.csv_registered')],
       sortedUsers.map((u) => [
         u.fullName ?? '—', u.phone, toFcfa(Number(u.wallet?.balance ?? 0)).toLocaleString('fr-FR'),
         u.status, u.kycStatus, u.riskLevel ?? 'Bas', fmtDate(u.createdAt),
       ]),
     )
-    toast(ok ? 'Rapport PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
+    toast(ok ? i18n.t('common.pdf_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
   }
 
   // Bloquer / réactiver un compte (action tracée côté backend dans l'AuditLog).
@@ -1355,9 +1353,9 @@ function UsersPage() {
     try {
       await setUserStatus(u.id, u.status === 'LOCKED' ? 'ACTIVE' : 'LOCKED')
       refetch()
-      toast(u.status === 'LOCKED' ? 'Compte débloqué' : 'Compte bloqué', 'success')
+      toast(u.status === 'LOCKED' ? i18n.t('x.users.account_unblocked') : i18n.t('x.users.account_blocked'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('common.action_failed'), 'error')
     } finally {
       setActing(null)
     }
@@ -1366,9 +1364,9 @@ function UsersPage() {
     setActing(id)
     try {
       await resetUserPin(id)
-      toast('PIN réinitialisé', 'success')
+      toast(i18n.t('x.users.pin_reset_ok'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Action échouée', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('common.action_failed'), 'error')
     } finally {
       setActing(null); setPinConfirm(null)
     }
@@ -1379,10 +1377,10 @@ function UsersPage() {
 
   const stats = ustats
   const statCards: { label: string; value: string; sub: string; icon: LucideIcon; color: string; trend?: number | null }[] = stats ? [
-    { label: 'Total utilisateurs', value: stats.total.toLocaleString('fr-FR'), sub: `${stats.newToday} nouveau(x) aujourd'hui`, icon: UsersIcon, color: C.blue, trend: stats.trends.total },
-    { label: "Actifs aujourd'hui", value: stats.activeToday.toLocaleString('fr-FR'), sub: 'connectés aujourd’hui', icon: Activity, color: C.green },
-    { label: 'KYC approuvés', value: stats.kycApproved.toLocaleString('fr-FR'), sub: 'comptes vérifiés', icon: ClipboardCheck, color: C.purple, trend: stats.trends.kycApproved },
-    { label: 'Marchands', value: stats.merchants.toLocaleString('fr-FR'), sub: 'comptes commerçants', icon: Landmark, color: C.yellow, trend: stats.trends.merchants },
+    { label: i18n.t('x.users.stat_total'), value: stats.total.toLocaleString('fr-FR'), sub: i18n.t('x.users.stat_new', { count: stats.newToday }), icon: UsersIcon, color: C.blue, trend: stats.trends.total },
+    { label: i18n.t('x.users.stat_active'), value: stats.activeToday.toLocaleString('fr-FR'), sub: i18n.t('x.users.stat_active_sub'), icon: Activity, color: C.green },
+    { label: i18n.t('x.users.stat_kyc'), value: stats.kycApproved.toLocaleString('fr-FR'), sub: i18n.t('x.users.stat_kyc_sub'), icon: ClipboardCheck, color: C.purple, trend: stats.trends.kycApproved },
+    { label: i18n.t('x.users.stat_merchants'), value: stats.merchants.toLocaleString('fr-FR'), sub: i18n.t('x.users.stat_merchants_sub'), icon: Landmark, color: C.yellow, trend: stats.trends.merchants },
   ] : []
 
   const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
@@ -1391,14 +1389,14 @@ function UsersPage() {
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Utilisateurs</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} utilisateur{total > 1 ? 's' : ''} · {sortedUsers.length} affiché(s)</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('users.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.users.subtitle', { total, shown: sortedUsers.length })}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="cw-btn" onClick={handleExportCsv}
-            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>⬇ Exporter CSV</button>
+            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.common.export_csv')}</button>
           <button className="cw-btn" onClick={handleExportPdf}
-            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>⬇ Export PDF</button>
+            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('common.export_pdf')}</button>
         </div>
       </div>
 
@@ -1427,31 +1425,31 @@ function UsersPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
           <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Nom, téléphone ou email…"
-            aria-label="Rechercher un utilisateur" style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder={i18n.t('x.users.search_ph')}
+            aria-label={i18n.t('x.users.search_aria')} style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous statuts</option>
-          <option value="ACTIVE">Actif</option>
-          <option value="SUSPENDED">Suspendu</option>
-          <option value="LOCKED">Bloqué</option>
+          <option value="">{i18n.t('x.users.all_status')}</option>
+          <option value="ACTIVE">{i18n.t('x.users.st_active')}</option>
+          <option value="SUSPENDED">{i18n.t('x.users.st_suspended')}</option>
+          <option value="LOCKED">{i18n.t('x.users.st_locked')}</option>
         </select>
         <select value={kycFilter} onChange={e => setKycFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous KYC</option>
-          <option value="APPROVED">Approuvé</option>
-          <option value="SUBMITTED">En attente</option>
-          <option value="REJECTED">Rejeté</option>
+          <option value="">{i18n.t('x.users.all_kyc')}</option>
+          <option value="APPROVED">{i18n.t('x.users.kyc_approved')}</option>
+          <option value="SUBMITTED">{i18n.t('x.users.kyc_pending')}</option>
+          <option value="REJECTED">{i18n.t('x.users.kyc_rejected')}</option>
         </select>
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous rôles</option>
-          <option value="USER">Utilisateur</option>
-          <option value="MERCHANT">Marchand</option>
+          <option value="">{i18n.t('x.users.all_roles')}</option>
+          <option value="USER">{i18n.t('roles.user')}</option>
+          <option value="MERCHANT">{i18n.t('roles.merchant')}</option>
         </select>
         <select value={riskFilter} onChange={e => setRiskFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous risques</option>
-          <option value="Bas">Risque bas</option>
-          <option value="Moyen">Risque moyen</option>
-          <option value="Élevé">Risque élevé</option>
+          <option value="">{i18n.t('x.users.all_risks')}</option>
+          <option value="Bas">{i18n.t('x.users.risk_low')}</option>
+          <option value="Moyen">{i18n.t('x.users.risk_medium')}</option>
+          <option value="Élevé">{i18n.t('x.users.risk_high')}</option>
         </select>
       </div>
 
@@ -1461,12 +1459,12 @@ function UsersPage() {
           <thead style={{ background: C.surface }}>
             <tr>
               {([
-                { h: 'Utilisateur' }, { h: 'Email' }, { h: 'Solde', sk: 'balance' as const },
-                { h: 'KYC' }, { h: 'Risque' }, { h: 'Inscription', sk: 'createdAt' as const }, { h: 'Statut' }, { h: 'Actions' },
+                { h: i18n.t('x.users.col_user') }, { h: i18n.t('x.users.col_email') }, { h: i18n.t('x.users.col_balance'), sk: 'balance' as const },
+                { h: i18n.t('x.users.col_kyc') }, { h: i18n.t('x.users.col_risk') }, { h: i18n.t('x.users.col_registered'), sk: 'createdAt' as const }, { h: i18n.t('x.users.col_status') }, { h: i18n.t('x.users.col_actions') },
               ]).map(({ h, sk }) => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>
                   {sk ? (
-                    <button className="cw-link" onClick={() => toggleSort(sk)} aria-label={`Trier par ${h}`}
+                    <button className="cw-link" onClick={() => toggleSort(sk)} aria-label={i18n.t('x.users.sort_by', { col: h })}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: 11, fontWeight: 600, color: sort?.key === sk ? C.green : C.textMuted }}>
                       {h}{sort?.key === sk ? (sort.dir === -1 ? <ChevronDown size={13} /> : <ChevronUp size={13} />) : <ChevronsUpDown size={13} style={{ opacity: 0.45 }} />}
                     </button>
@@ -1485,7 +1483,7 @@ function UsersPage() {
                       {initials(u.fullName)}
                     </div>
                     <div>
-                      <div style={{ color: C.text, fontWeight: 600 }}>{u.fullName ?? 'Sans nom'}</div>
+                      <div style={{ color: C.text, fontWeight: 600 }}>{u.fullName ?? i18n.t('common.no_name')}</div>
                       <div style={{ color: C.textMuted, fontSize: 11, fontFamily: 'monospace' }}>{u.phone}</div>
                     </div>
                   </div>
@@ -1505,7 +1503,7 @@ function UsersPage() {
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <button className="cw-btn" onClick={() => setSelected(u.id)}
                       style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>
-                      Voir détail
+                      {i18n.t('x.users.see_detail')}
                     </button>
                     {!isReadOnly() && u.role !== 'ADMIN' && (acting === u.id ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.textMuted, padding: '4px 10px' }}>
@@ -1515,26 +1513,26 @@ function UsersPage() {
                       <>
                         {u.status === 'LOCKED' ? (
                           <button className="cw-btn" onClick={() => toggleBlock(u)}
-                            style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Débloquer</button>
+                            style={{ fontSize: 11, color: C.green, background: C.greenLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.unblock')}</button>
                         ) : blockConfirm === u.id ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.redLight, border: `1px solid ${C.red}50`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
-                            <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>Bloquer ?</span>
-                            <button className="cw-btn" onClick={() => { setBlockConfirm(null); toggleBlock(u) }} style={{ fontSize: 11, color: '#fff', background: C.red, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
-                            <button className="cw-btn" onClick={() => setBlockConfirm(null)} aria-label="Annuler" style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
+                            <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>{i18n.t('x.users.block_q')}</span>
+                            <button className="cw-btn" onClick={() => { setBlockConfirm(null); toggleBlock(u) }} style={{ fontSize: 11, color: '#fff', background: C.red, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>{i18n.t('common.yes')}</button>
+                            <button className="cw-btn" onClick={() => setBlockConfirm(null)} aria-label={i18n.t('common.cancel')} style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
                           </span>
                         ) : (
                           <button className="cw-btn" onClick={() => setBlockConfirm(u.id)}
-                            style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Bloquer</button>
+                            style={{ fontSize: 11, color: C.red, background: C.redLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.block')}</button>
                         )}
                         {pinConfirm === u.id ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
-                            <span style={{ fontSize: 11, color: '#B89000', fontWeight: 600 }}>Reset ?</span>
-                            <button className="cw-btn" onClick={() => doResetPin(u.id)} style={{ fontSize: 11, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>Oui</button>
-                            <button className="cw-btn" onClick={() => setPinConfirm(null)} aria-label="Annuler" style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
+                            <span style={{ fontSize: 11, color: '#B89000', fontWeight: 600 }}>{i18n.t('x.users.reset_q')}</span>
+                            <button className="cw-btn" onClick={() => doResetPin(u.id)} style={{ fontSize: 11, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>{i18n.t('common.yes')}</button>
+                            <button className="cw-btn" onClick={() => setPinConfirm(null)} aria-label={i18n.t('common.cancel')} style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
                           </span>
                         ) : (
                           <button className="cw-btn" onClick={() => setPinConfirm(u.id)}
-                            style={{ fontSize: 11, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>Reset PIN</button>
+                            style={{ fontSize: 11, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.users.reset_pin')}</button>
                         )}
                       </>
                     ))}
@@ -1546,7 +1544,7 @@ function UsersPage() {
         </table>
         </div>
         {!loading && !error && sortedUsers.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun utilisateur trouvé</div>
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{i18n.t('x.users.no_users')}</div>
         )}
         <StateRow loading={loading} error={error} />
       </div>
@@ -1582,21 +1580,21 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
 
   const decide = async (decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED') => {
     if (decision !== 'APPROVED' && !comment.trim()) {
-      toast('Un commentaire est requis pour rejeter ou demander un nouveau document', 'error')
+      toast(i18n.t('x.kycd.comment_required'), 'error')
       return
     }
     setActing(decision)
     try {
       await reviewKyc(entry.id, decision, comment.trim() || undefined)
       const msg =
-        decision === 'APPROVED' ? `KYC approuvé pour ${entry.fullName ?? entry.phone}` :
-        decision === 'REJECTED' ? `KYC rejeté — ${comment}` :
-        `Nouveau document demandé à ${entry.fullName ?? entry.phone}`
+        decision === 'APPROVED' ? i18n.t('x.kycd.approved_for', { name: entry.fullName ?? entry.phone }) :
+        decision === 'REJECTED' ? i18n.t('x.kycd.rejected_reason', { reason: comment }) :
+        i18n.t('x.kycd.resubmit_for', { name: entry.fullName ?? entry.phone })
       toast(msg, 'success')
       onDecision()
       onClose()
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error')
     } finally { setActing(null) }
   }
 
@@ -1606,9 +1604,9 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
   const statusColor = KYC_STATUS_COLOR[entry.kycStatus] ?? C.textMuted
 
   const photos: { key: 'idFrontUrl' | 'idBackUrl' | 'selfieUrl'; label: string }[] = [
-    { key: 'idFrontUrl', label: 'CNI Recto' },
-    { key: 'idBackUrl', label: 'CNI Verso' },
-    { key: 'selfieUrl', label: 'Selfie' },
+    { key: 'idFrontUrl', label: i18n.t('x.kyc.id_front') },
+    { key: 'idBackUrl', label: i18n.t('x.kyc.id_back') },
+    { key: 'selfieUrl', label: i18n.t('x.kyc.selfie') },
   ]
 
   return (
@@ -1621,10 +1619,10 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
             <span style={{ width: 46, height: 46, borderRadius: 23, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 900, background: statusColor + '22', color: statusColor }}>{initials(entry.fullName)}</span>
             <div>
               <div style={{ fontSize: 17, fontWeight: 900, color: C.text }}>{entry.fullName ?? '—'}</div>
-              <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{entry.phone} · Inscrit le {fmtDate(entry.createdAt)}</div>
+              <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{entry.phone} · {i18n.t('x.kycd.registered_on', { date: fmtDate(entry.createdAt) })}</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
                 <StatusBadge status={KYC_STATUS_BADGE[entry.kycStatus] ?? entry.kycStatus} />
-                {doc?.submittedAt && <span style={{ fontSize: 11, color: C.textMuted }}>Soumis le {fmtDate(doc.submittedAt)}</span>}
+                {doc?.submittedAt && <span style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.kycd.submitted_on', { date: fmtDate(doc.submittedAt) })}</span>}
               </div>
             </div>
           </div>
@@ -1633,7 +1631,7 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
 
         {/* Photos */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Documents</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>{i18n.t('x.kycd.documents')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
             {photos.map(({ key, label }) => {
               const url = doc?.[key]
@@ -1645,7 +1643,7 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
                     </button>
                   ) : (
                     <div style={{ height: 130, border: `1px dashed ${C.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: C.textMuted, fontSize: 12 }}>
-                      <FileText size={22} opacity={0.4} /><span>Manquant</span>
+                      <FileText size={22} opacity={0.4} /><span>{i18n.t('common.none')}</span>
                     </div>
                   )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 11, fontWeight: 700, color: url ? C.green : C.red }}>
@@ -1660,7 +1658,7 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
         {/* Score conformité */}
         <div style={{ background: C.surface, borderRadius: 12, padding: '14px 16px', marginBottom: 18 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Score de conformité</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{i18n.t('x.kycd.score')}</span>
             <span style={{ fontSize: 18, fontWeight: 900, color: scoreColor }}>{score}%</span>
           </div>
           <div style={{ height: 7, background: C.border, borderRadius: 4, overflow: 'hidden', marginBottom: 10 }}>
@@ -1679,7 +1677,7 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
         {doc?.reviewNote && (
           <div style={{ background: C.yellow + '0F', border: `1px solid ${C.yellow}30`, borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.yellow, marginBottom: 4 }}>
-              Note précédente{doc.reviewedAt ? ` · ${fmtDate(doc.reviewedAt)}` : ''}
+              {i18n.t('x.kycd.prev_note')}{doc.reviewedAt ? ` · ${fmtDate(doc.reviewedAt)}` : ''}
             </div>
             <div style={{ fontSize: 13, color: C.text }}>{doc.reviewNote}</div>
           </div>
@@ -1688,10 +1686,10 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
         {/* Commentaire */}
         <div style={{ marginBottom: 22 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-            Commentaire <span style={{ color: C.textMuted, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(requis pour Rejeter ou Nouveau doc)</span>
+            {i18n.t('x.kycd.comment')} <span style={{ color: C.textMuted, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{i18n.t('x.kycd.comment_hint')}</span>
           </label>
           <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3}
-            placeholder="Motif de la décision (qualité image insuffisante, document expiré…)"
+            placeholder={i18n.t('x.kycd.comment_ph')}
             style={{ width: '100%', background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 10, padding: '10px 12px', fontSize: 13, resize: 'vertical', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
         </div>
 
@@ -1699,19 +1697,19 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           <button onClick={() => decide('APPROVED')} disabled={!!acting}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 8px', borderRadius: 10, border: 'none', background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
-            <Check size={15} /> {acting === 'APPROVED' ? 'En cours…' : 'Approuver'}
+            <Check size={15} /> {acting === 'APPROVED' ? i18n.t('x.kycd.in_progress') : i18n.t('x.kycd.approve')}
           </button>
           <button onClick={() => decide('REJECTED')} disabled={!!acting}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 8px', borderRadius: 10, border: `1px solid ${C.red}40`, background: C.red + '15', color: C.red, fontWeight: 700, fontSize: 13, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
-            <X size={15} /> {acting === 'REJECTED' ? 'En cours…' : 'Rejeter'}
+            <X size={15} /> {acting === 'REJECTED' ? i18n.t('x.kycd.in_progress') : i18n.t('x.kycd.reject')}
           </button>
           <button onClick={() => decide('RESUBMIT_REQUIRED')} disabled={!!acting}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '11px 8px', borderRadius: 10, border: `1px solid ${C.purple}40`, background: C.purple + '15', color: C.purple, fontWeight: 700, fontSize: 13, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
-            <RotateCcw size={14} /> {acting === 'RESUBMIT_REQUIRED' ? 'En cours…' : 'Nouveau doc'}
+            <RotateCcw size={14} /> {acting === 'RESUBMIT_REQUIRED' ? i18n.t('x.kycd.in_progress') : i18n.t('x.kycd.resubmit')}
           </button>
         </div>
       </div>
-      {lightboxUrl && <KYCLightbox url={lightboxUrl} alt="Document KYC" onClose={() => setLightboxUrl(null)} />}
+      {lightboxUrl && <KYCLightbox url={lightboxUrl} alt={i18n.t('x.kycd.doc_alt')} onClose={() => setLightboxUrl(null)} />}
     </div>
   )
 }
@@ -1737,26 +1735,26 @@ function KYCPage() {
   })
 
   const stats: { label: string; value: string | number; color: string; icon: LucideIcon }[] = [
-    { label: 'En attente', value: counts.pending, color: C.yellow, icon: Clock },
-    { label: "Approuvés aujourd'hui", value: counts.approvedToday, color: C.green, icon: CheckCircle2 },
-    { label: "Rejetés aujourd'hui", value: counts.rejectedToday, color: C.red, icon: XCircle },
-    { label: "Taux d'approbation", value: approvalRateLabel, color: C.blue, icon: TrendingUp },
+    { label: i18n.t('x.kyc.stat_pending'), value: counts.pending, color: C.yellow, icon: Clock },
+    { label: i18n.t('x.kyc.stat_approved_today'), value: counts.approvedToday, color: C.green, icon: CheckCircle2 },
+    { label: i18n.t('x.kyc.stat_rejected_today'), value: counts.rejectedToday, color: C.red, icon: XCircle },
+    { label: i18n.t('x.kyc.stat_rate'), value: approvalRateLabel, color: C.blue, icon: TrendingUp },
   ]
 
   const STATUS_FILTERS = [
-    { label: 'Tous', value: 'all' },
-    { label: 'À réviser', value: 'SUBMITTED' },
-    { label: 'Approuvés', value: 'APPROVED' },
-    { label: 'Rejetés', value: 'REJECTED' },
-    { label: 'Nouveau doc requis', value: 'RESUBMIT_REQUIRED' },
+    { label: i18n.t('x.kyc.filter_all'), value: 'all' },
+    { label: i18n.t('x.kyc.filter_submitted'), value: 'SUBMITTED' },
+    { label: i18n.t('x.kyc.filter_approved'), value: 'APPROVED' },
+    { label: i18n.t('x.kyc.filter_rejected'), value: 'REJECTED' },
+    { label: i18n.t('x.kyc.filter_resubmit'), value: 'RESUBMIT_REQUIRED' },
   ]
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       {/* Header */}
       <div style={{ marginBottom: 22 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Vérification KYC</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{counts.pending} demande(s) en attente de révision</p>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('kyc.title')}</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.kyc.subtitle', { count: counts.pending })}</p>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
@@ -1786,7 +1784,7 @@ function KYCPage() {
         </div>
         <div style={{ position: 'relative', marginLeft: 'auto' }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.textMuted, pointerEvents: 'none' }} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom ou téléphone…"
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={i18n.t('x.kyc.search_ph')}
             style={{ paddingLeft: 30, paddingRight: 12, paddingTop: 7, paddingBottom: 7, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, fontSize: 12, outline: 'none', width: 210 }} />
         </div>
       </div>
@@ -1797,7 +1795,7 @@ function KYCPage() {
           <table style={{ width: '100%', minWidth: 860, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Utilisateur', 'Date soumission', 'Statut', 'Score conformité', 'Documents', 'Actions'].map((h) => (
+                {[i18n.t('x.kyc.col_user'), i18n.t('x.kyc.col_submitted'), i18n.t('x.kyc.col_status'), i18n.t('x.kyc.col_score'), i18n.t('x.kyc.col_docs'), i18n.t('x.kyc.col_actions')].map((h) => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
@@ -1823,7 +1821,7 @@ function KYCPage() {
                     <td style={{ padding: '12px 14px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: statusColor + '20', color: statusColor }}>
                         <span style={{ width: 5, height: 5, borderRadius: 3, background: statusColor, flexShrink: 0 }} />
-                        {KYC_STATUS_LABEL[k.kycStatus] ?? k.kycStatus}
+                        {i18n.t('kyc_status.' + k.kycStatus)}
                       </span>
                     </td>
                     <td style={{ padding: '12px 14px', minWidth: 130 }}>
@@ -1837,7 +1835,7 @@ function KYCPage() {
                     <td style={{ padding: '12px 14px' }}>
                       <div style={{ display: 'flex', gap: 4 }}>
                         {(['idFrontUrl', 'idBackUrl', 'selfieUrl'] as const).map((key, i) => (
-                          <span key={key} title={['CNI Recto', 'CNI Verso', 'Selfie'][i]}
+                          <span key={key} title={[i18n.t('x.kyc.id_front'), i18n.t('x.kyc.id_back'), i18n.t('x.kyc.selfie')][i]}
                             style={{ display: 'inline-flex', width: 22, height: 22, borderRadius: 6, alignItems: 'center', justifyContent: 'center', background: doc?.[key] ? C.green + '20' : C.border + '80', color: doc?.[key] ? C.green : C.textMuted }}>
                             {doc?.[key] ? <Check size={11} /> : <X size={10} />}
                           </span>
@@ -1847,7 +1845,7 @@ function KYCPage() {
                     <td style={{ padding: '12px 14px' }}>
                       <button onClick={() => setSelected(k)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: C.blue, background: C.blue + '15', border: `1px solid ${C.blue}30`, borderRadius: 7, padding: '6px 12px', cursor: 'pointer' }}>
-                        <Eye size={13} /> Voir détail
+                        <Eye size={13} /> {i18n.t('x.kyc.see_detail')}
                       </button>
                     </td>
                   </tr>
@@ -1858,7 +1856,7 @@ function KYCPage() {
         </div>
         {!loading && !error && filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>
-            {search || filterStatus !== 'all' ? 'Aucun résultat pour ces filtres' : 'Aucune demande KYC'}
+            {search || filterStatus !== 'all' ? i18n.t('x.kyc.no_results') : i18n.t('x.kyc.no_queue')}
           </div>
         )}
       </div>
@@ -1882,14 +1880,14 @@ function OperatorRatesWidget() {
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 16 }}>
-      <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Taux de succès par opérateur</h2>
+      <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{i18n.t('finance.operator_rates')}</h2>
       <ResponsiveContainer width="100%" height={160}>
         <BarChart data={chartData} barSize={36}>
           <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
           <XAxis dataKey="name" stroke={C.textMuted} fontSize={12} />
           <YAxis stroke={C.textMuted} fontSize={11} domain={[0, 100]} tickFormatter={v => v + '%'} />
           <Tooltip content={<ChartTooltip />} formatter={(v: number) => v + '%'} />
-          <Bar dataKey="taux" name="Taux de succès" fill="#22c55e" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="taux" name={i18n.t('finance.op_success_rate')} fill="#22c55e" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -1899,7 +1897,7 @@ function OperatorRatesWidget() {
 // Sélecteur de période réutilisable (7j / 30j / 90j [+ Personnalisée]).
 function PeriodTabs({ value, onChange, withCustom }: { value: string; onChange: (v: string) => void; withCustom?: boolean }) {
   const opts = withCustom ? ['7d', '30d', '90d', 'custom'] : ['7d', '30d', '90d']
-  const label: Record<string, string> = { '7d': '7j', '30d': '30j', '90d': '90j', custom: 'Personnalisée' }
+  const label: Record<string, string> = { '7d': i18n.t('dashboard.period_7d'), '30d': i18n.t('dashboard.period_30d'), '90d': i18n.t('dashboard.period_90d'), custom: i18n.t('x.audit.custom') }
   return (
     <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
       {opts.map((o) => (
@@ -1969,10 +1967,10 @@ function TransactionsPage() {
   const successRate = completed + failed > 0 ? Math.round((completed / (completed + failed)) * 100) : null
 
   const statCards: { label: string; value: string; sub: string; icon: LucideIcon; color: string }[] = stats ? [
-    { label: 'Total transactions', value: stats.transactions.total.toLocaleString('fr-FR'), sub: formatFCFA(stats.volume.completedAmount) + ' complété', icon: ArrowLeftRight, color: C.blue },
-    { label: 'P2P', value: (p2p?.count ?? 0).toLocaleString('fr-FR'), sub: formatFCFA(p2p?.volume ?? 0), icon: ArrowRight, color: C.blue },
-    { label: 'Paiements QR', value: (qr?.count ?? 0).toLocaleString('fr-FR'), sub: formatFCFA(qr?.volume ?? 0), icon: Zap, color: C.green },
-    { label: 'Taux de succès', value: successRate == null ? '—' : successRate + ' %', sub: `${completed} complétées · ${failed} échouées`, icon: Percent, color: successRate == null ? C.textMuted : successRate >= 95 ? C.green : C.red },
+    { label: i18n.t('x.tx.stat_total'), value: stats.transactions.total.toLocaleString('fr-FR'), sub: i18n.t('x.tx.stat_completed_amount', { value: formatFCFA(stats.volume.completedAmount) }), icon: ArrowLeftRight, color: C.blue },
+    { label: i18n.t('x.tx.stat_p2p'), value: (p2p?.count ?? 0).toLocaleString('fr-FR'), sub: formatFCFA(p2p?.volume ?? 0), icon: ArrowRight, color: C.blue },
+    { label: i18n.t('x.tx.stat_qr'), value: (qr?.count ?? 0).toLocaleString('fr-FR'), sub: formatFCFA(qr?.volume ?? 0), icon: Zap, color: C.green },
+    { label: i18n.t('x.tx.stat_rate'), value: successRate == null ? '—' : successRate + ' %', sub: i18n.t('x.tx.stat_rate_sub', { completed, failed }), icon: Percent, color: successRate == null ? C.textMuted : successRate >= 95 ? C.green : C.red },
   ] : []
 
   const areaData = (ts?.series ?? []).map((p) => ({ date: p.date.slice(5), volume: toFcfa(p.volume) }))
@@ -1981,9 +1979,9 @@ function TransactionsPage() {
     setExporting(true)
     try {
       await downloadTransactionsCSV()
-      toast('Export téléchargé', 'success')
+      toast(i18n.t('x.tx.exported'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Export échoué', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.tx.export_failed'), 'error')
     } finally {
       setExporting(false)
     }
@@ -1992,20 +1990,20 @@ function TransactionsPage() {
   // Export PDF des transactions actuellement affichées (filtre appliqué).
   const handleExportTxPdf = () => {
     const ok = exportPdfReport(
-      'Transactions CamWallet',
-      ['Réf.', 'Type', 'De', 'À', 'Montant (FCFA)', 'Frais (FCFA)', 'Statut', 'Date'],
+      i18n.t('x.tx.pdf_title'),
+      [i18n.t('x.tx.pdf_ref'), i18n.t('x.tx.pdf_type'), i18n.t('x.tx.pdf_from'), i18n.t('x.tx.pdf_to'), i18n.t('x.tx.pdf_amount'), i18n.t('x.tx.pdf_fees'), i18n.t('x.tx.pdf_status'), i18n.t('x.tx.pdf_date')],
       txs.map((tx) => [
         tx.reference,
         TX_TYPE_LABEL[tx.type] ?? tx.type,
-        partyLabel(tx.sender, 'Opérateur'),
-        partyLabel(tx.receiver, 'Opérateur'),
+        partyLabel(tx.sender, i18n.t('common.operator')),
+        partyLabel(tx.receiver, i18n.t('common.operator')),
         toFcfa(tx.amount).toLocaleString('fr-FR'),
         toFcfa(tx.fee).toLocaleString('fr-FR'),
         tx.status,
         fmtDate(tx.createdAt),
       ]),
     )
-    toast(ok ? 'Rapport PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
+    toast(ok ? i18n.t('common.pdf_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
   }
 
   const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
@@ -2014,14 +2012,14 @@ function TransactionsPage() {
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Transactions</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} transaction{total > 1 ? 's' : ''} sur la période</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('transactions.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.tx.subtitle', { count: total })}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="cw-btn" onClick={handleExportTransactions} disabled={exporting}
-            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}>⬇ Export CSV</button>
+            style={{ fontSize: 13, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 16px', cursor: exporting ? 'wait' : 'pointer', fontWeight: 600 }}>{i18n.t('common.export_csv')}</button>
           <button className="cw-btn" onClick={handleExportTxPdf}
-            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>⬇ Export PDF</button>
+            style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('common.export_pdf')}</button>
         </div>
       </div>
 
@@ -2042,7 +2040,7 @@ function TransactionsPage() {
       {/* Graphe volume (aire émeraude) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Volume par jour</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.tx.chart_volume')}</h2>
           <PeriodTabs value={chartPeriod} onChange={(v) => setPeriod(v as any)} />
         </div>
         <ResponsiveContainer width="100%" height={220}>
@@ -2071,14 +2069,14 @@ function TransactionsPage() {
               fontSize: 12, padding: '6px 14px', borderRadius: 20, cursor: 'pointer',
               background: txFilter === f ? C.green : C.card, border: `1px solid ${txFilter === f ? C.green : C.border}`,
               color: txFilter === f ? '#fff' : C.textSoft, fontWeight: txFilter === f ? 700 : 500,
-            }}>{f === 'all' ? 'Tous types' : f}</button>
+            }}>{f === 'all' ? i18n.t('x.tx.all_types') : f}</button>
           ))}
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous statuts</option>
-          <option value="COMPLETED">Complété</option>
-          <option value="PENDING">En attente</option>
-          <option value="FAILED">Échoué</option>
+          <option value="">{i18n.t('x.tx.all_statuses')}</option>
+          <option value="COMPLETED">{i18n.t('x.tx.st_completed')}</option>
+          <option value="PENDING">{i18n.t('x.tx.st_pending')}</option>
+          <option value="FAILED">{i18n.t('x.tx.st_failed')}</option>
         </select>
         <PeriodTabs value={period} onChange={(v) => setPeriod(v as any)} withCustom />
         {period === 'custom' && (
@@ -2088,11 +2086,11 @@ function TransactionsPage() {
             <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} style={inputStyle} />
           </>
         )}
-        <input type="number" inputMode="numeric" value={amountMinRaw} onChange={(e) => setAmountMinRaw(e.target.value)} placeholder="Montant min" style={{ ...inputStyle, width: 120 }} />
-        <input type="number" inputMode="numeric" value={amountMaxRaw} onChange={(e) => setAmountMaxRaw(e.target.value)} placeholder="Montant max" style={{ ...inputStyle, width: 120 }} />
+        <input type="number" inputMode="numeric" value={amountMinRaw} onChange={(e) => setAmountMinRaw(e.target.value)} placeholder={i18n.t('x.tx.amount_min')} style={{ ...inputStyle, width: 120 }} />
+        <input type="number" inputMode="numeric" value={amountMaxRaw} onChange={(e) => setAmountMaxRaw(e.target.value)} placeholder={i18n.t('x.tx.amount_max')} style={{ ...inputStyle, width: 120 }} />
         <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Référence, émetteur, destinataire…"
+          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder={i18n.t('x.tx.search_ph')}
             style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
       </div>
@@ -2100,14 +2098,14 @@ function TransactionsPage() {
       {/* Barre de sélection en masse */}
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '10px 14px', background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 10 }}>
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{picked.size} sélectionnée(s)</span>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{i18n.t('x.tx.selected', { count: picked.size })}</span>
           <button onClick={() => {
             const rows = txs.filter((t) => picked.has(t.id))
-            downloadCsv('transactions-selection.csv', ['Réf.', 'Type', 'De', 'À', 'Montant (FCFA)', 'Frais (FCFA)', 'Statut', 'Date'],
-              rows.map((tx) => [tx.reference, TX_TYPE_LABEL[tx.type] ?? tx.type, partyLabel(tx.sender, 'Opérateur'), partyLabel(tx.receiver, 'Opérateur'), toFcfa(tx.amount).toLocaleString('fr-FR'), toFcfa(tx.fee).toLocaleString('fr-FR'), tx.status, fmtDate(tx.createdAt)]))
-            toast('Sélection exportée', 'success')
-          }} style={{ fontSize: 12, color: C.blue, background: C.card, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>⬇ Exporter la sélection (CSV)</button>
-          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Effacer</button>
+            downloadCsv('transactions-selection.csv', [i18n.t('x.tx.pdf_ref'), i18n.t('x.tx.pdf_type'), i18n.t('x.tx.pdf_from'), i18n.t('x.tx.pdf_to'), i18n.t('x.tx.pdf_amount'), i18n.t('x.tx.pdf_fees'), i18n.t('x.tx.pdf_status'), i18n.t('x.tx.pdf_date')],
+              rows.map((tx) => [tx.reference, TX_TYPE_LABEL[tx.type] ?? tx.type, partyLabel(tx.sender, i18n.t('common.operator')), partyLabel(tx.receiver, i18n.t('common.operator')), toFcfa(tx.amount).toLocaleString('fr-FR'), toFcfa(tx.fee).toLocaleString('fr-FR'), tx.status, fmtDate(tx.createdAt)]))
+            toast(i18n.t('x.tx.selection_exported'), 'success')
+          }} style={{ fontSize: 12, color: C.blue, background: C.card, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.tx.export_selection')}</button>
+          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>{i18n.t('x.tx.clear')}</button>
         </div>
       )}
 
@@ -2117,7 +2115,7 @@ function TransactionsPage() {
           <thead style={{ background: C.surface }}>
             <tr>
               <th style={{ width: 36, padding: '12px 0 12px 14px' }}></th>
-              {['Réf.', 'Type', 'Émetteur', 'Destinataire', 'Montant', 'Frais', 'Statut', 'Date'].map(h => (
+              {[i18n.t('x.tx.col_ref'), i18n.t('x.tx.col_type'), i18n.t('x.tx.col_from'), i18n.t('x.tx.col_to'), i18n.t('x.tx.col_amount'), i18n.t('x.tx.col_fees'), i18n.t('x.tx.col_status'), i18n.t('x.tx.col_date')].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}
             </tr>
@@ -2128,12 +2126,12 @@ function TransactionsPage() {
               return (
               <tr key={tx.id} className="cw-row" onClick={() => setSelectedTx(tx)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                 <td style={{ padding: '11px 0 11px 14px' }} onClick={(e) => e.stopPropagation()}>
-                  <input type="checkbox" checked={picked.has(tx.id)} onChange={() => togglePick(tx.id)} aria-label="Sélectionner" style={{ cursor: 'pointer', accentColor: C.green }} />
+                  <input type="checkbox" checked={picked.has(tx.id)} onChange={() => togglePick(tx.id)} aria-label={i18n.t('x.tx.select_aria')} style={{ cursor: 'pointer', accentColor: C.green }} />
                 </td>
                 <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <CopyableRef value={tx.reference} truncate={10} />
-                    {tx.resolved && <CheckCircle2 size={13} color={C.green} aria-label="Résolu" />}
+                    {tx.resolved && <CheckCircle2 size={13} color={C.green} aria-label={i18n.t('x.tx.resolved_aria')} />}
                   </div>
                 </td>
                 <td style={{ padding: '11px 14px' }}><TxTypeBadge type={TX_TYPE_LABEL[tx.type] ?? tx.type} /></td>
@@ -2149,7 +2147,7 @@ function TransactionsPage() {
         </table>
         </div>
         {!loading && !error && txs.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucune transaction</div>
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{i18n.t('x.tx.no_tx')}</div>
         )}
         <StateRow loading={loading} error={error} />
       </div>
@@ -2190,24 +2188,18 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
   // Contexte pré-rempli pour un ticket ouvert depuis cette transaction.
   const ticketInitial = ticketClient ? {
     client: ticketClient,
-    title: `Litige transaction ${tx.reference}`,
+    title: i18n.t('x.txd.ticket_title', { ref: tx.reference }),
     category: 'PAYMENT',
-    description:
-      `Transaction concernée : ${tx.reference}\n` +
-      `Type : ${TX_TYPE_LABEL[tx.type] ?? tx.type}\n` +
-      `Montant : ${formatFCFA(tx.amount)}\n` +
-      `Statut : ${tx.status}\n` +
-      `Date : ${fmtDate(tx.createdAt)}\n\n` +
-      `Description du problème :\n`,
+    description: i18n.t('x.txd.ticket_desc', { ref: tx.reference, type: TX_TYPE_LABEL[tx.type] ?? tx.type, amount: formatFCFA(tx.amount), status: tx.status, date: fmtDate(tx.createdAt) }),
   } : undefined
 
   // Timeline avec horodatages réels : created → processing → final.
   const finalTime = tx.processedAt ?? tx.updatedAt ?? null
   const steps: { label: string; state: 'done' | 'active' | 'failed' | 'future'; at: string | null }[] = failed
-    ? [{ label: 'Créée', state: 'done', at: tx.createdAt }, { label: 'Traitement', state: 'done', at: tx.updatedAt ?? null }, { label: 'Échouée', state: 'failed', at: finalTime }]
+    ? [{ label: i18n.t('x.txd.step_created'), state: 'done', at: tx.createdAt }, { label: i18n.t('x.txd.step_processing'), state: 'done', at: tx.updatedAt ?? null }, { label: i18n.t('x.txd.step_failed'), state: 'failed', at: finalTime }]
     : pending
-      ? [{ label: 'Créée', state: 'done', at: tx.createdAt }, { label: 'En cours', state: 'active', at: tx.updatedAt ?? null }, { label: 'Complétée', state: 'future', at: null }]
-      : [{ label: 'Créée', state: 'done', at: tx.createdAt }, { label: 'Traitement', state: 'done', at: tx.updatedAt ?? null }, { label: 'Complétée', state: 'done', at: finalTime }]
+      ? [{ label: i18n.t('x.txd.step_created'), state: 'done', at: tx.createdAt }, { label: i18n.t('x.txd.step_active'), state: 'active', at: tx.updatedAt ?? null }, { label: i18n.t('x.txd.step_completed'), state: 'future', at: null }]
+      : [{ label: i18n.t('x.txd.step_created'), state: 'done', at: tx.createdAt }, { label: i18n.t('x.txd.step_processing'), state: 'done', at: tx.updatedAt ?? null }, { label: i18n.t('x.txd.step_completed'), state: 'done', at: finalTime }]
 
   const stepColor = (s: string) => (s === 'failed' ? C.red : s === 'future' ? C.textMuted : s === 'active' ? C.yellow : C.green)
 
@@ -2215,10 +2207,10 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
     setRetrying(true)
     try {
       await retryOperation(tx.id)
-      toast('Opération relancée', 'success')
+      toast(i18n.t('x.txd.op_relaunched'), 'success')
       onRetried()
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Échec de la relance', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.txd.retry_failed'), 'error')
     } finally {
       setRetrying(false)
     }
@@ -2227,23 +2219,23 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
   // Reçu PDF imprimable de la transaction.
   const handleReceipt = () => {
     const ok = exportPdfReport(
-      `Reçu transaction ${tx.reference}`,
-      ['Champ', 'Valeur'],
+      i18n.t('x.txd.receipt_title', { ref: tx.reference }),
+      [i18n.t('x.txd.field'), i18n.t('x.txd.value')],
       [
-        ['Référence', tx.reference],
-        ['Type', TX_TYPE_LABEL[tx.type] ?? tx.type],
-        ['Statut', tx.status],
-        ['Émetteur', partyLabel(tx.sender, 'Opérateur')],
-        ['Destinataire', partyLabel(tx.receiver, 'Opérateur')],
-        ['Montant', formatFCFA(tx.amount)],
-        ['Frais', formatFCFA(tx.fee)],
-        ...(tx.operator ? [['Opérateur', OPERATOR_META[tx.operator]?.label ?? tx.operator] as [string, string]] : []),
-        ...(tx.operatorRef ? [['Réf. opérateur', tx.operatorRef] as [string, string]] : []),
-        ['Date de création', fmtDate(tx.createdAt)],
-        ...(finalTime ? [['Date de traitement', fmtDate(finalTime)] as [string, string]] : []),
+        [i18n.t('x.txd.row_ref'), tx.reference],
+        [i18n.t('x.txd.row_type'), TX_TYPE_LABEL[tx.type] ?? tx.type],
+        [i18n.t('x.txd.row_status'), tx.status],
+        [i18n.t('x.txd.row_sender'), partyLabel(tx.sender, i18n.t('common.operator'))],
+        [i18n.t('x.txd.row_receiver'), partyLabel(tx.receiver, i18n.t('common.operator'))],
+        [i18n.t('x.txd.row_amount'), formatFCFA(tx.amount)],
+        [i18n.t('x.txd.row_fees'), formatFCFA(tx.fee)],
+        ...(tx.operator ? [[i18n.t('x.txd.row_operator'), OPERATOR_META[tx.operator]?.label ?? tx.operator] as [string, string]] : []),
+        ...(tx.operatorRef ? [[i18n.t('x.txd.row_op_ref'), tx.operatorRef] as [string, string]] : []),
+        [i18n.t('x.txd.row_created'), fmtDate(tx.createdAt)],
+        ...(finalTime ? [[i18n.t('x.txd.row_processed'), fmtDate(finalTime)] as [string, string]] : []),
       ],
     )
-    toast(ok ? 'Reçu PDF ouvert' : 'Fenêtre bloquée par le navigateur', ok ? 'success' : 'error')
+    toast(ok ? i18n.t('x.txd.receipt_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
   }
 
   const tColor = TX_TYPE_COLOR[tx.type] ?? C.text
@@ -2260,9 +2252,9 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: `1px solid ${C.border}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <ArrowLeftRight size={18} color={C.green} />
-            <h2 style={{ fontSize: 16, fontWeight: 800, color: C.text }}>Détail transaction</h2>
+            <h2 style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{i18n.t('x.txd.title')}</h2>
           </div>
-          <button className="cw-iconbtn" onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 4, borderRadius: 6 }}><X size={18} /></button>
+          <button className="cw-iconbtn" onClick={onClose} aria-label={i18n.t('common.close')} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 4, borderRadius: 6 }}><X size={18} /></button>
         </div>
 
         <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -2296,15 +2288,15 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
 
           {/* Émetteur / Destinataire */}
           <div style={{ display: 'flex', gap: 12 }}>
-            {partyCard('Émetteur', tx.sender)}
-            {partyCard('Destinataire', tx.receiver)}
+            {partyCard(i18n.t('tx_detail.row_sender'), tx.sender)}
+            {partyCard(i18n.t('tx_detail.row_receiver'), tx.receiver)}
           </div>
 
           {/* Frais */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: C.border, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
             {([
-              ['Frais', tx.fee > 0 ? formatFCFA(tx.fee) : 'Aucun'],
-              ['Identifiant', tx.id],
+              [i18n.t('x.txd.label_fees'), tx.fee > 0 ? formatFCFA(tx.fee) : i18n.t('x.txd.fees_none')],
+              [i18n.t('x.txd.label_id'), tx.id],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} style={{ background: C.card, padding: '10px 12px' }}>
                 <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 2 }}>{label}</div>
@@ -2316,15 +2308,15 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           {/* Soldes émetteur avant / après (capturés dans la transaction ACID) */}
           {tx.senderBalanceBefore != null && tx.senderBalanceAfter != null && (
             <div>
-              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Solde émetteur</div>
+              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{i18n.t('x.txd.sender_balance')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: C.textMuted }}>Avant</div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.txd.before')}</div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: C.textSoft }}>{formatFCFA(tx.senderBalanceBefore)}</div>
                 </div>
                 <ArrowRight size={16} color={C.textMuted} />
                 <div style={{ flex: 1, textAlign: 'right' }}>
-                  <div style={{ fontSize: 11, color: C.textMuted }}>Après</div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.txd.after')}</div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: tx.senderBalanceAfter < tx.senderBalanceBefore ? C.red : C.green }}>{formatFCFA(tx.senderBalanceAfter)}</div>
                 </div>
               </div>
@@ -2334,19 +2326,19 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           {/* Section opérateur (recharge/retrait OM/MoMo) */}
           {isOperatorTx && (
             <div>
-              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Opération mobile money</div>
+              <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{i18n.t('x.txd.mm_op')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: C.textMuted }}>Opérateur</span>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.txd.operator')}</span>
                   <OperatorBadge operator={tx.operator ?? null} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: C.textMuted }}>Référence opérateur</span>
+                  <span style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.txd.op_ref')}</span>
                   {tx.operatorRef ? <CopyableRef value={tx.operatorRef} truncate={20} /> : <span style={{ color: C.textMuted, fontSize: 12 }}>—</span>}
                 </div>
                 {tx.operatorStatus && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 12, color: C.textMuted }}>Statut opérateur</span>
+                    <span style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.txd.op_status')}</span>
                     <span style={{ fontSize: 12, color: C.textSoft, fontFamily: 'monospace' }}>{tx.operatorStatus}</span>
                   </div>
                 )}
@@ -2359,7 +2351,7 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
 
           {/* Données techniques (JSON brut) */}
           <details>
-            <summary style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>Données techniques</summary>
+            <summary style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer' }}>{i18n.t('x.txd.tech_data')}</summary>
             <pre style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 12, fontSize: 11.5, color: C.textSoft, overflowX: 'auto', margin: '8px 0 0' }}>{JSON.stringify(tx, null, 2)}</pre>
           </details>
 
@@ -2367,18 +2359,18 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button className="cw-btn" onClick={handleReceipt}
               style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
-              ⬇ Reçu PDF
+              {i18n.t('x.txd.receipt_pdf')}
             </button>
             {!isReadOnly() && ticketClient && (
               <button className="cw-btn" onClick={() => setShowTicket(true)}
                 style={{ fontSize: 13, color: C.purple, background: C.purple + '18', border: `1px solid ${C.purple}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
-                🎫 Ouvrir un ticket
+                {i18n.t('x.txd.open_ticket')}
               </button>
             )}
             {!isReadOnly() && canRetry && (
               <button className="cw-btn" onClick={handleRetry} disabled={retrying}
                 style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 18px', cursor: retrying ? 'wait' : 'pointer', fontWeight: 700 }}>
-                {retrying ? 'Relance…' : '↺ Relancer l\'opération'}
+                {retrying ? i18n.t('x.txd.retrying') : i18n.t('x.txd.retry')}
               </button>
             )}
           </div>
@@ -2390,7 +2382,7 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           initial={ticketInitial}
           zIndex={320}
           onClose={() => setShowTicket(false)}
-          onCreated={(id) => { setShowTicket(false); toast(`Ticket créé pour ${tx.reference}`, 'success'); void id }}
+          onCreated={(id) => { setShowTicket(false); toast(i18n.t('x.txd.ticket_created', { ref: tx.reference }), 'success'); void id }}
         />
       )}
     </div>
@@ -2415,10 +2407,10 @@ function FinancePage() {
 
   const kpis: { label: string; value: string; icon: LucideIcon; color: string; trend?: number | null; spark: number[] }[] = stats
     ? [
-        { label: 'Frais perçus', value: formatFCFA(stats.volume.collectedFees), icon: Wallet, color: C.green, spark: sparkFees },
-        { label: 'Volume complété', value: formatFCFA(stats.volume.completedAmount), icon: TrendingUp, color: C.blue, trend: stats.trends.volume, spark: sparkVol },
-        { label: 'Solde plateforme', value: formatFCFA(stats.totalBalance), icon: Landmark, color: C.purple, spark: [] },
-        { label: 'Transactions', value: stats.transactions.total.toLocaleString('fr-FR'), icon: Zap, color: C.yellow, trend: stats.trends.transactions, spark: sparkTx },
+        { label: i18n.t('x.fin.kpi_fees'), value: formatFCFA(stats.volume.collectedFees), icon: Wallet, color: C.green, spark: sparkFees },
+        { label: i18n.t('x.fin.kpi_volume'), value: formatFCFA(stats.volume.completedAmount), icon: TrendingUp, color: C.blue, trend: stats.trends.volume, spark: sparkVol },
+        { label: i18n.t('x.fin.kpi_balance'), value: formatFCFA(stats.totalBalance), icon: Landmark, color: C.purple, spark: [] },
+        { label: i18n.t('x.fin.kpi_tx'), value: stats.transactions.total.toLocaleString('fr-FR'), icon: Zap, color: C.yellow, trend: stats.trends.transactions, spark: sparkTx },
       ]
     : []
 
@@ -2428,17 +2420,17 @@ function FinancePage() {
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Finances & Revenus</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>Données en temps réel — API CamWallet</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('finance.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('finance.subtitle')}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="cw-btn" style={exportBtn} disabled={!byType.length}
-            onClick={() => downloadCsv('finances-camwallet.csv', ['Type', 'Transactions', 'Volume (FCFA)'], byType.map((d) => [d.name, d.count, d.volume]))}>
-            <FileText size={14} /> Export CSV
+            onClick={() => downloadCsv('finances-camwallet.csv', [i18n.t('x.fin.col_type'), i18n.t('x.fin.col_tx'), i18n.t('x.fin.col_volume')], byType.map((d) => [d.name, d.count, d.volume]))}>
+            <FileText size={14} /> {i18n.t('common.export_csv')}
           </button>
           <button className="cw-btn" style={exportBtn} disabled={!byType.length}
-            onClick={() => exportPdfReport('Finances — Volume par type', ['Type', 'Transactions', 'Volume'], byType.map((d) => [d.name, d.count, fmt(d.volume)]))}>
-            <FileText size={14} /> Export PDF
+            onClick={() => exportPdfReport(i18n.t('x.fin.pdf_title'), [i18n.t('x.fin.col_type'), i18n.t('x.fin.col_tx'), i18n.t('x.fin.col_volume2')], byType.map((d) => [d.name, d.count, fmt(d.volume)]))}>
+            <FileText size={14} /> {i18n.t('common.export_pdf')}
           </button>
         </div>
       </div>
@@ -2473,7 +2465,7 @@ function FinancePage() {
       {/* Volume par type — barres horizontales avec valeurs en bout de barre */}
       {stats && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Volume par type de transaction</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{i18n.t('x.fin.by_type')}</h2>
           <ResponsiveContainer width="100%" height={Math.max(180, byType.length * 56)}>
             <BarChart data={byType} layout="vertical" margin={{ top: 4, right: 96, left: 8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
@@ -2481,7 +2473,7 @@ function FinancePage() {
                 tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k')} />
               <YAxis type="category" dataKey="name" stroke={C.textMuted} fontSize={12} width={88} tickLine={false} axisLine={false} />
               <Tooltip cursor={{ fill: C.greenLight }} content={<ChartTooltip />} />
-              <Bar dataKey="volume" name="Volume" radius={[0, 6, 6, 0]} maxBarSize={34}>
+              <Bar dataKey="volume" name={i18n.t('x.fin.series_volume')} radius={[0, 6, 6, 0]} maxBarSize={34}>
                 {byType.map((d, i) => <Cell key={i} fill={d.color} />)}
                 <LabelList dataKey="volume" position="right" formatter={(v: number) => fmt(v)} style={{ fill: C.text, fontSize: 11, fontWeight: 700 }} />
               </Bar>
@@ -2493,14 +2485,14 @@ function FinancePage() {
       {/* Détail par type (réel) */}
       {stats && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Détail par type</h2>
-          {byType.length === 0 && <div style={{ color: C.textMuted, fontSize: 13 }}>Aucune transaction</div>}
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{i18n.t('x.fin.detail_by_type')}</h2>
+          {byType.length === 0 && <div style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.fin.no_tx')}</div>}
           {byType.map((d) => (
             <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: `1px solid ${C.border}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color }} />
                 <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{d.name}</span>
-                <span style={{ color: C.textMuted, fontSize: 12 }}>· {d.count} tx</span>
+                <span style={{ color: C.textMuted, fontSize: 12 }}>· {i18n.t('x.fin.tx_count', { count: d.count })}</span>
               </div>
               <span style={{ color: C.text, fontSize: 13, fontWeight: 700 }}>{fmt(d.volume)}</span>
             </div>
@@ -2515,17 +2507,17 @@ function FinancePage() {
 function WebhookPayloadCell({ wh }: { wh: WebhookEvent }) {
   const [open, setOpen] = useState(false)
   const statusColor = wh.processed ? C.green : wh.error ? C.red : C.yellow
-  const statusLabel = wh.processed ? 'Traité' : wh.error ? 'Erreur' : 'En attente'
+  const statusLabel = wh.processed ? i18n.t('x.ops.wh_processed') : wh.error ? i18n.t('x.ops.wh_error') : i18n.t('x.ops.wh_pending')
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
         <button
           onClick={() => setOpen(v => !v)}
-          title="Voir payload"
+          title={i18n.t('x.ops.wh_see_payload')}
           style={{ fontSize: 10, background: C.border, color: C.textMuted, border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer' }}
         >
-          {open ? '▲ payload' : '▼ payload'}
+          {open ? i18n.t('x.ops.wh_payload_hide') : i18n.t('x.ops.wh_payload_show')}
         </button>
       </div>
       {wh.error && <div style={{ fontSize: 10, color: C.red, marginTop: 2 }}>{wh.error}</div>}
@@ -2578,10 +2570,10 @@ function OperationsPage() {
   const handleRetry = async (id: string) => {
     try {
       await retryOperation(id)
-      showToast('Opération relancée')
+      showToast(i18n.t('x.ops.op_relaunched'))
       refetch()
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Échec de la relance', 'error')
+      showToast(e instanceof Error ? e.message : i18n.t('x.ops.retry_failed'), 'error')
     }
   }
 
@@ -2593,7 +2585,7 @@ function OperationsPage() {
       try { await retryOperation(id); ok++ } catch { ko++ }
     }
     setBulkRetrying(false); setPicked(new Set()); refetch()
-    showToast(`${ok} relancée(s)${ko ? `, ${ko} échec(s)` : ''}`, ko ? 'error' : 'success')
+    showToast(i18n.t('x.ops.bulk_done', { ok, ko: ko ? i18n.t('x.ops.bulk_ko', { count: ko }) : '' }), ko ? 'error' : 'success')
   }
 
   const ops = data?.data ?? []
@@ -2608,10 +2600,10 @@ function OperationsPage() {
 
   const successRate = stats?.successRate ?? null
   const statCards: { label: string; value: string; sub: string; icon: LucideIcon; color: string; trend?: number | null; badge?: number }[] = [
-    { label: 'Recharges 7j', value: formatFCFA(stats?.rechargeTotal ?? 0), sub: `${stats?.rechargeCount ?? 0} opération(s)`, icon: ArrowDownToLine, color: C.green, trend: stats?.rechargeTrend },
-    { label: 'Retraits 7j', value: formatFCFA(stats?.withdrawalTotal ?? 0), sub: `${stats?.withdrawalCount ?? 0} opération(s)`, icon: ArrowUpFromLine, color: OP_ORANGE, trend: stats?.withdrawalTrend },
-    { label: 'Webhooks en attente', value: String(pendingWebhooks), sub: 'callbacks non traités', icon: Wifi, color: pendingWebhooks > 0 ? C.red : C.green, badge: pendingWebhooks },
-    { label: 'Taux de succès', value: successRate == null ? '—' : successRate + ' %', sub: '7 derniers jours', icon: Percent, color: successRate == null ? C.textMuted : successRate >= 95 ? C.green : C.red },
+    { label: i18n.t('x.ops.kpi_recharges'), value: formatFCFA(stats?.rechargeTotal ?? 0), sub: i18n.t('x.ops.ops_count', { count: stats?.rechargeCount ?? 0 }), icon: ArrowDownToLine, color: C.green, trend: stats?.rechargeTrend },
+    { label: i18n.t('x.ops.kpi_withdrawals'), value: formatFCFA(stats?.withdrawalTotal ?? 0), sub: i18n.t('x.ops.ops_count', { count: stats?.withdrawalCount ?? 0 }), icon: ArrowUpFromLine, color: OP_ORANGE, trend: stats?.withdrawalTrend },
+    { label: i18n.t('x.ops.kpi_webhooks'), value: String(pendingWebhooks), sub: i18n.t('x.ops.not_processed'), icon: Wifi, color: pendingWebhooks > 0 ? C.red : C.green, badge: pendingWebhooks },
+    { label: i18n.t('x.ops.kpi_rate'), value: successRate == null ? '—' : successRate + ' %', sub: i18n.t('x.ops.last_7d'), icon: Percent, color: successRate == null ? C.textMuted : successRate >= 95 ? C.green : C.red },
   ]
 
   const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
@@ -2620,8 +2612,8 @@ function OperationsPage() {
   return (
     <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Recharges & Retraits</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Opérations Mobile Money et callbacks opérateurs</p>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('x.ops.title')}</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.ops.subtitle')}</p>
       </div>
 
       {/* Cartes de synthèse */}
@@ -2653,10 +2645,10 @@ function OperationsPage() {
       {/* Graphe recharges vs retraits (7 jours) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Recharges vs Retraits · 7 jours</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.ops.chart_title')}</h2>
           <div style={{ display: 'flex', gap: 14 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green }} />Recharges</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: OP_ORANGE }} />Retraits</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green }} />{i18n.t('x.ops.recharges')}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: OP_ORANGE }} />{i18n.t('x.ops.withdrawals')}</span>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={220}>
@@ -2666,8 +2658,8 @@ function OperationsPage() {
             <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={48}
               tickFormatter={(v) => (v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : v >= 1000 ? (v / 1000).toFixed(0) + 'k' : String(v))} />
             <Tooltip cursor={{ fill: C.greenLight }} content={<ChartTooltip />} />
-            <Bar dataKey="recharge" name="Recharges" fill={C.green} radius={[4, 4, 0, 0]} maxBarSize={26} />
-            <Bar dataKey="withdrawal" name="Retraits" fill={OP_ORANGE} radius={[4, 4, 0, 0]} maxBarSize={26} />
+            <Bar dataKey="recharge" name={i18n.t('x.ops.recharges')} fill={C.green} radius={[4, 4, 0, 0]} maxBarSize={26} />
+            <Bar dataKey="withdrawal" name={i18n.t('x.ops.withdrawals')} fill={OP_ORANGE} radius={[4, 4, 0, 0]} maxBarSize={26} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -2675,27 +2667,27 @@ function OperationsPage() {
       {/* Filtres */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={operator} onChange={e => setOperator(e.target.value)} style={inputStyle}>
-          <option value="">Tous opérateurs</option>
+          <option value="">{i18n.t('x.ops.all_operators')}</option>
           <option value="ORANGE_MONEY">Orange Money</option>
           <option value="MTN_MOMO">MTN MoMo</option>
           <option value="CAMPAY">CamPay</option>
         </select>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous types</option>
-          <option value="RECHARGE">Recharge</option>
-          <option value="WITHDRAWAL">Retrait</option>
+          <option value="">{i18n.t('x.ops.all_types')}</option>
+          <option value="RECHARGE">{i18n.t('x.ops.type_recharge')}</option>
+          <option value="WITHDRAWAL">{i18n.t('x.ops.type_withdrawal')}</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={inputStyle}>
-          <option value="">Tous statuts</option>
-          <option value="COMPLETED">Complété</option>
-          <option value="PENDING">En attente</option>
-          <option value="PROCESSING">En cours</option>
-          <option value="FAILED">Échoué</option>
+          <option value="">{i18n.t('x.ops.all_statuses')}</option>
+          <option value="COMPLETED">{i18n.t('x.ops.st_completed')}</option>
+          <option value="PENDING">{i18n.t('x.ops.st_pending')}</option>
+          <option value="PROCESSING">{i18n.t('x.ops.st_processing')}</option>
+          <option value="FAILED">{i18n.t('x.ops.st_failed')}</option>
         </select>
         <PeriodTabs value={period} onChange={(v) => setPeriod(v as any)} />
         <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
           <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Réf. opérateur ou utilisateur…"
+          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder={i18n.t('x.ops.search_ph')}
             style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
       </div>
@@ -2704,20 +2696,20 @@ function OperationsPage() {
       {successRate != null && (100 - successRate) > 10 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '12px 16px', background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 10 }}>
           <Siren size={18} color={C.red} />
-          <span style={{ fontSize: 13, color: C.text }}><strong style={{ color: C.red }}>Taux d'échec élevé : {100 - successRate} %</strong> sur les 7 derniers jours (seuil d'alerte : 10 %). Vérifiez l'intégration opérateur.</span>
+          <span style={{ fontSize: 13, color: C.text }}><strong style={{ color: C.red }}>{i18n.t('x.ops.fail_alert_strong', { rate: 100 - successRate })}</strong>{i18n.t('x.ops.fail_alert_rest')}</span>
         </div>
       )}
 
       {/* Barre de relance en masse */}
       {picked.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 14px', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 10 }}>
-          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{picked.size} opération(s) sélectionnée(s)</span>
+          <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{i18n.t('x.ops.selected', { count: picked.size })}</span>
           {!isReadOnly() && (
             <button onClick={handleBulkRetry} disabled={bulkRetrying} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#B89000', background: C.card, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '6px 12px', cursor: bulkRetrying ? 'wait' : 'pointer', fontWeight: 600 }}>
-              <RotateCcw size={13} /> {bulkRetrying ? 'Relance…' : 'Relancer les sélectionnés'}
+              <RotateCcw size={13} /> {bulkRetrying ? i18n.t('x.ops.bulk_retrying') : i18n.t('x.ops.bulk_retry')}
             </button>
           )}
-          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>Effacer</button>
+          <button onClick={() => setPicked(new Set())} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: 'none', cursor: 'pointer' }}>{i18n.t('x.tx.clear')}</button>
         </div>
       )}
 
@@ -2735,7 +2727,7 @@ function OperationsPage() {
               marginBottom: -1,
             }}
           >
-            {t === 'ops' ? `Opérations (${data?.total ?? 0})` : `Callbacks webhook (${webhooks.length})`}
+            {t === 'ops' ? i18n.t('x.ops.tab_ops', { count: data?.total ?? 0 }) : i18n.t('x.ops.tab_webhooks', { count: webhooks.length })}
             {t === 'webhooks' && pendingWebhooks > 0 && (
               <span style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: C.red, color: '#fff', fontSize: 9, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{pendingWebhooks}</span>
             )}
@@ -2748,7 +2740,7 @@ function OperationsPage() {
       {activeTab === 'ops' && (
         <>
           {ops.length === 0 && !loading && !error && (
-            <StateRow empty="Aucune opération" />
+            <StateRow empty={i18n.t('x.ops.no_ops')} />
           )}
           {ops.length > 0 && (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
@@ -2757,7 +2749,7 @@ function OperationsPage() {
                 <thead style={{ background: C.surface }}>
                   <tr>
                     <th style={{ width: 34, padding: '12px 0 12px 12px' }}></th>
-                    {['Date', 'Type', 'Utilisateur', 'Opérateur', 'Montant', 'Statut', 'Réf. opérateur', 'Tent.', 'Action'].map(h => (
+                    {[i18n.t('x.ops.col_date'), i18n.t('x.ops.col_type'), i18n.t('x.ops.col_user'), i18n.t('x.ops.col_operator'), i18n.t('x.ops.col_amount'), i18n.t('x.ops.col_status'), i18n.t('x.ops.col_op_ref'), i18n.t('x.ops.col_tries'), i18n.t('x.ops.col_action')].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '12px 12px', color: C.textMuted, fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                     ))}
                   </tr>
@@ -2766,12 +2758,12 @@ function OperationsPage() {
                   {ops.map(op => { const retriable = op.status === 'PENDING' || op.status === 'FAILED'; return (
                     <tr key={op.id} className="cw-row" onClick={() => setDetailOp(op)} style={{ borderTop: `1px solid ${C.border}`, cursor: 'pointer' }}>
                       <td style={{ padding: '10px 0 10px 12px' }} onClick={(e) => e.stopPropagation()}>
-                        {retriable && <input type="checkbox" checked={picked.has(op.id)} onChange={() => togglePick(op.id)} aria-label="Sélectionner" style={{ cursor: 'pointer', accentColor: C.yellow }} />}
+                        {retriable && <input type="checkbox" checked={picked.has(op.id)} onChange={() => togglePick(op.id)} aria-label={i18n.t('x.ops.select_aria')} style={{ cursor: 'pointer', accentColor: C.yellow }} />}
                       </td>
                       <td style={{ padding: '10px 12px', color: C.textMuted, whiteSpace: 'nowrap', fontSize: 12 }} title={fmtDate(op.createdAt)}>{relativeTime(op.createdAt)}</td>
                       <td style={{ padding: '10px 12px' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, background: opTypeColor(op.type) + '20', color: opTypeColor(op.type), padding: '3px 9px', borderRadius: 6, whiteSpace: 'nowrap' }}>
-                          {op.type === 'RECHARGE' ? 'Recharge' : 'Retrait'}
+                          {op.type === 'RECHARGE' ? i18n.t('x.ops.type_recharge') : i18n.t('x.ops.type_withdrawal')}
                         </span>
                       </td>
                       <td style={{ padding: '10px 12px' }}><UserCell party={opUser(op)} /></td>
@@ -2790,7 +2782,7 @@ function OperationsPage() {
                             onClick={() => handleRetry(op.id)}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: C.yellow + '20', color: '#B89000', border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
                           >
-                            <RotateCcw size={11} /> Relancer
+                            <RotateCcw size={11} /> {i18n.t('x.ops.retry')}
                           </button>
                         )}
                       </td>
@@ -2803,9 +2795,9 @@ function OperationsPage() {
           )}
           {(data?.total ?? 0) > 20 && (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
-              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Préc.</button>
-              <span style={{ color: C.textMuted, fontSize: 13, alignSelf: 'center' }}>Page {page} · {data?.total} opérations</span>
-              <button disabled={page * 20 >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>Suiv.</button>
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>{i18n.t('x.ops.prev')}</button>
+              <span style={{ color: C.textMuted, fontSize: 13, alignSelf: 'center' }}>{i18n.t('x.ops.page_info', { page, total: data?.total })}</span>
+              <button disabled={page * 20 >= (data?.total ?? 0)} onClick={() => setPage(p => p + 1)} style={{ padding: '6px 14px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, cursor: 'pointer' }}>{i18n.t('x.ops.next')}</button>
             </div>
           )}
         </>
@@ -2813,13 +2805,13 @@ function OperationsPage() {
 
       {activeTab === 'webhooks' && (
         <>
-          {webhooks.length === 0 && !loading && <StateRow empty="Aucun événement webhook" />}
+          {webhooks.length === 0 && !loading && <StateRow empty={i18n.t('x.ops.no_webhooks')} />}
           {webhooks.length > 0 && (
             <div className="cw-tablewrap">
               <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-                    {['Date réception', 'Opérateur', 'Événement', 'Statut / Payload'].map(h => (
+                    {[i18n.t('x.ops.wh_date'), i18n.t('x.ops.wh_operator'), i18n.t('x.ops.wh_event'), i18n.t('x.ops.wh_status')].map(h => (
                       <th key={h} style={{ textAlign: 'left', padding: '8px 10px', color: C.textMuted, fontWeight: 600, fontSize: 11 }}>{h}</th>
                     ))}
                   </tr>
@@ -2833,7 +2825,7 @@ function OperationsPage() {
                       <td style={{ padding: '9px 10px' }}>
                         <WebhookPayloadCell wh={wh} />
                         {wh.processedAt && (
-                          <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>Traité le {fmtDate(wh.processedAt)}</div>
+                          <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>{i18n.t('x.ops.wh_processed_on', { date: fmtDate(wh.processedAt) })}</div>
                         )}
                       </td>
                     </tr>
@@ -2866,7 +2858,7 @@ function anifRiskScore(kind: 'highvalue' | 'unusual' | 'smurfing' | 'frequency',
   const ratio = thresholdFcfa > 0 ? amountFcfa / thresholdFcfa : 1
   return Math.min(100, Math.round(45 + ratio * 18))
 }
-const riskBand = (s: number) => (s >= 80 ? { key: 'critique', label: 'Critique', color: C.red } : s >= 50 ? { key: 'eleve', label: 'Élevé', color: '#FB923C' } : { key: 'moyen', label: 'Moyen', color: C.yellow })
+const riskBand = (s: number) => (s >= 80 ? { key: 'critique', label: 'x.anif.band_critical', color: C.red } : s >= 50 ? { key: 'eleve', label: 'x.anif.band_high', color: '#FB923C' } : { key: 'moyen', label: 'x.anif.band_medium', color: C.yellow })
 
 function ANIFPage() {
   const { data, loading, error, refetch } = useFetch(getAnifAlerts, [])
@@ -2908,10 +2900,10 @@ function ANIFPage() {
 
   // Donut : répartition par type d'alerte.
   const donut = [
-    { name: 'Montant élevé', value: data?.highValue?.length ?? 0, color: C.red },
-    { name: 'Fractionnement', value: smurfing.length, color: '#FB923C' },
-    { name: 'Fréquence', value: frequent.length, color: C.yellow },
-    { name: 'Sous-seuil', value: data?.unusualAmounts?.length ?? 0, color: C.purple },
+    { name: i18n.t('x.anif.t_highvalue'), value: data?.highValue?.length ?? 0, color: C.red },
+    { name: i18n.t('x.anif.t_smurfing'), value: smurfing.length, color: '#FB923C' },
+    { name: i18n.t('x.anif.t_frequency'), value: frequent.length, color: C.yellow },
+    { name: i18n.t('x.anif.t_subthreshold'), value: data?.unusualAmounts?.length ?? 0, color: C.purple },
   ].filter((d) => d.value > 0)
   const donutTotal = donut.reduce((s, d) => s + d.value, 0)
 
@@ -2929,49 +2921,49 @@ function ANIFPage() {
   }, [suspects, period])
 
   const handleOpenCase = async () => {
-    if (!caseInput?.reason.trim()) { toast('Saisissez un motif', 'error'); return }
-    try { await openAnifCase(caseInput.txId, caseInput.reason); toast('Dossier ANIF ouvert', 'success'); setCaseInput(null); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    if (!caseInput?.reason.trim()) { toast(i18n.t('x.anif.reason_required'), 'error'); return }
+    try { await openAnifCase(caseInput.txId, caseInput.reason); toast(i18n.t('x.anif.case_opened'), 'success'); setCaseInput(null); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
   const handleClose = async () => {
-    if (!closing?.resolution.trim()) { toast('Saisissez une résolution', 'error'); return }
-    try { await closeAnifCase(closing.id, closing.resolution, closing.report || undefined); toast('Dossier clôturé', 'success'); setClosing(null); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    if (!closing?.resolution.trim()) { toast(i18n.t('x.anif.resolution_required'), 'error'); return }
+    try { await closeAnifCase(closing.id, closing.resolution, closing.report || undefined); toast(i18n.t('x.anif.case_closed'), 'success'); setClosing(null); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
   const handleAssign = async (caseId: string, analystId: string) => {
     if (!analystId) return
-    try { await assignAnifCase(caseId, analystId); toast('Dossier assigné', 'success'); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    try { await assignAnifCase(caseId, analystId); toast(i18n.t('x.anif.case_assigned'), 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
   const handleReport = (c: any) => {
     const meta = c.metadata ?? {}
-    const ok = exportPdfReport(`Rapport ANIF — ${meta.caseRef ?? c.id.slice(0, 8)}`, ['Champ', 'Valeur'], [
-      ['Référence dossier', meta.caseRef ?? '—'], ['Transaction', meta.reference ?? '—'],
-      ['Montant', meta.amount ? formatFCFA(Number(meta.amount)) : '—'], ['Motif', meta.reason ?? '—'],
-      ['Ouvert le', fmtDate(c.createdAt)], ['Statut', c.status],
+    const ok = exportPdfReport(i18n.t('x.anif.report_title', { ref: meta.caseRef ?? c.id.slice(0, 8) }), [i18n.t('x.anif.field'), i18n.t('x.anif.value')], [
+      [i18n.t('x.anif.r_case_ref'), meta.caseRef ?? '—'], [i18n.t('x.anif.r_tx'), meta.reference ?? '—'],
+      [i18n.t('x.anif.r_amount'), meta.amount ? formatFCFA(Number(meta.amount)) : '—'], [i18n.t('x.anif.r_reason'), meta.reason ?? '—'],
+      [i18n.t('x.anif.r_opened'), fmtDate(c.createdAt)], [i18n.t('x.anif.r_status'), c.status],
     ])
-    toast(ok ? 'Rapport PDF généré' : 'Fenêtre bloquée', ok ? 'success' : 'error')
+    toast(ok ? i18n.t('x.anif.report_generated') : i18n.t('x.anif.popup_blocked'), ok ? 'success' : 'error')
   }
   const toggleRule = async (key: string, on: boolean) => {
-    try { await updateSettings({ [key]: on ? 'on' : 'off' }); refetchSettings(); toast('Règle mise à jour', 'success') }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    try { await updateSettings({ [key]: on ? 'on' : 'off' }); refetchSettings(); toast(i18n.t('x.anif.rule_updated'), 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
   const saveThreshold = async (val: string) => {
-    try { await updateSettings({ anif_threshold_fcfa: val }); refetchSettings(); toast('Seuil mis à jour', 'success') }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    try { await updateSettings({ anif_threshold_fcfa: val }); refetchSettings(); toast(i18n.t('x.anif.threshold_updated'), 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
 
   const statCards = anifStats ? [
-    { label: 'Alertes actives', value: anifStats.activeAlerts.toLocaleString('fr-FR'), icon: Siren, color: C.red },
-    { label: 'Dossiers ouverts', value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: '#FB923C' },
-    { label: 'Tx > seuil (30j)', value: anifStats.overThreshold30d.toLocaleString('fr-FR'), icon: TrendingUp, color: C.purple },
-    { label: 'Taux de résolution', value: anifStats.resolutionRate == null ? '—' : anifStats.resolutionRate + ' %', icon: CheckCircle2, color: C.green },
+    { label: i18n.t('x.anif.kpi_active'), value: anifStats.activeAlerts.toLocaleString('fr-FR'), icon: Siren, color: C.red },
+    { label: i18n.t('x.anif.kpi_open'), value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: '#FB923C' },
+    { label: i18n.t('x.anif.kpi_over'), value: anifStats.overThreshold30d.toLocaleString('fr-FR'), icon: TrendingUp, color: C.purple },
+    { label: i18n.t('x.anif.kpi_resolution'), value: anifStats.resolutionRate == null ? '—' : anifStats.resolutionRate + ' %', icon: CheckCircle2, color: C.green },
   ] : []
 
   const RULES = [
-    { key: 'anif_rule_highvalue', label: 'Transaction au-dessus du seuil', desc: `Alerte si montant > ${groupFr(thresholdFcfa)} FCFA`, editable: 'threshold' as const },
-    { key: 'anif_rule_smurfing', label: 'Fractionnement (smurfing)', desc: '> 10 tx < 50k FCFA, total > 300k / 24h' },
-    { key: 'anif_rule_frequency', label: 'Fréquence anormale', desc: `> ${freqMax} transactions / 24h`, editable: 'freq' as const },
+    { key: 'anif_rule_highvalue', label: i18n.t('x.anif.rule_highvalue'), desc: i18n.t('x.anif.rule_highvalue_desc', { value: groupFr(thresholdFcfa) }), editable: 'threshold' as const },
+    { key: 'anif_rule_smurfing', label: i18n.t('x.anif.rule_smurfing'), desc: i18n.t('x.anif.rule_smurfing_desc') },
+    { key: 'anif_rule_frequency', label: i18n.t('x.anif.rule_frequency'), desc: i18n.t('x.anif.rule_frequency_desc', { max: freqMax }), editable: 'freq' as const },
   ]
   const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
 
@@ -2979,9 +2971,9 @@ function ANIFPage() {
     <div className="cw-page" style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
-          <ShieldAlert size={22} color={C.red} /> Conformité ANIF
+          <ShieldAlert size={22} color={C.red} /> {i18n.t('x.anif.title')}
         </h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Lutte anti-blanchiment — surveillance & dossiers d'enquête</p>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.anif.subtitle')}</p>
       </div>
 
       <StateRow loading={loading} error={error} />
@@ -3003,10 +2995,10 @@ function ANIFPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Alertes par jour</h2>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.anif.alerts_per_day')}</h2>
             <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
               {(['7d', '30d'] as const).map((p) => (
-                <button key={p} onClick={() => setPeriod(p)} style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: period === p ? C.green : 'transparent', color: period === p ? '#fff' : C.textSoft }}>{p === '7d' ? '7j' : '30j'}</button>
+                <button key={p} onClick={() => setPeriod(p)} style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer', background: period === p ? C.green : 'transparent', color: period === p ? '#fff' : C.textSoft }}>{p === '7d' ? i18n.t('dashboard.period_7d') : i18n.t('dashboard.period_30d')}</button>
               ))}
             </div>
           </div>
@@ -3016,13 +3008,13 @@ function ANIFPage() {
               <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} minTickGap={20} />
               <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={26} allowDecimals={false} />
               <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
-              <Bar dataKey="alerts" name="Alertes" fill={C.red} radius={[3, 3, 0, 0]} maxBarSize={24} />
+              <Bar dataKey="alerts" name={i18n.t('x.anif.alerts')} fill={C.red} radius={[3, 3, 0, 0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Répartition par type d'alerte</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>{i18n.t('x.anif.by_type')}</h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ position: 'relative', width: 140, height: 140, flexShrink: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
@@ -3034,11 +3026,11 @@ function ANIFPage() {
               </ResponsiveContainer>
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                 <span style={{ fontSize: 22, fontWeight: 900, color: C.text }}>{donutTotal}</span>
-                <span style={{ fontSize: 10, color: C.textMuted }}>alertes</span>
+                <span style={{ fontSize: 10, color: C.textMuted }}>{i18n.t('x.anif.alerts')}</span>
               </div>
             </div>
             <div style={{ flex: 1 }}>
-              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>Aucune alerte</span>}
+              {donut.length === 0 && <span style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.anif.no_alert')}</span>}
               {donut.map((d, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
@@ -3054,18 +3046,18 @@ function ANIFPage() {
       {/* Tableau de bord alertes (transactions suspectes scorées) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '14px 16px', flexWrap: 'wrap' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Transactions suspectes ({filteredSuspects.length})</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.anif.suspects', { count: filteredSuspects.length })}</h2>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => setRiskFilter('')} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === '' ? 700 : 500, background: riskFilter === '' ? C.green : C.surface, border: `1px solid ${riskFilter === '' ? C.green : C.border}`, color: riskFilter === '' ? '#fff' : C.textSoft }}>Tous</button>
-            {[{ k: 'critique', l: 'Critique', c: C.red }, { k: 'eleve', l: 'Élevé', c: '#FB923C' }, { k: 'moyen', l: 'Moyen', c: C.yellow }].map((b) => (
-              <button key={b.k} onClick={() => setRiskFilter(riskFilter === b.k ? '' : b.k)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === b.k ? 700 : 500, background: riskFilter === b.k ? b.c : b.c + '18', border: `1px solid ${b.c}40`, color: riskFilter === b.k ? '#fff' : b.c }}>{b.l}</button>
+            <button onClick={() => setRiskFilter('')} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === '' ? 700 : 500, background: riskFilter === '' ? C.green : C.surface, border: `1px solid ${riskFilter === '' ? C.green : C.border}`, color: riskFilter === '' ? '#fff' : C.textSoft }}>{i18n.t('x.anif.all')}</button>
+            {[{ k: 'critique', l: 'x.anif.band_critical', c: C.red }, { k: 'eleve', l: 'x.anif.band_high', c: '#FB923C' }, { k: 'moyen', l: 'x.anif.band_medium', c: C.yellow }].map((b) => (
+              <button key={b.k} onClick={() => setRiskFilter(riskFilter === b.k ? '' : b.k)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === b.k ? 700 : 500, background: riskFilter === b.k ? b.c : b.c + '18', border: `1px solid ${b.c}40`, color: riskFilter === b.k ? '#fff' : b.c }}>{i18n.t(b.l)}</button>
             ))}
           </div>
         </div>
         <div className="cw-tablewrap">
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
-              <tr>{['Score', 'Émetteur', 'Bénéficiaire', 'Montant', 'Type', 'Date', 'Action'].map(h => (
+              <tr>{[i18n.t('x.anif.col_score'), i18n.t('x.anif.col_sender'), i18n.t('x.anif.col_receiver'), i18n.t('x.anif.col_amount'), i18n.t('x.anif.col_type'), i18n.t('x.anif.col_date'), i18n.t('x.anif.col_action')].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}</tr>
             </thead>
@@ -3075,7 +3067,7 @@ function ANIFPage() {
                   <td style={{ padding: '11px 14px' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ minWidth: 34, textAlign: 'center', fontSize: 12, fontWeight: 800, color: band.color, background: band.color + '20', borderRadius: 6, padding: '2px 6px' }}>{score}</span>
-                      <span style={{ fontSize: 11, color: band.color, fontWeight: 600 }}>{band.label}</span>
+                      <span style={{ fontSize: 11, color: band.color, fontWeight: 600 }}>{i18n.t(band.label)}</span>
                     </span>
                   </td>
                   <td style={{ padding: '11px 14px' }}><UserCell party={tx.sender} /></td>
@@ -3086,12 +3078,12 @@ function ANIFPage() {
                   <td style={{ padding: '11px 14px' }} onClick={(e) => e.stopPropagation()}>
                     {!isReadOnly() && (caseInput?.txId === tx.id ? (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <input autoFocus value={caseInput.reason} onChange={(e) => setCaseInput({ txId: tx.id, reason: e.target.value })} placeholder="Motif…" style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, width: 140 }} />
+                        <input autoFocus value={caseInput.reason} onChange={(e) => setCaseInput({ txId: tx.id, reason: e.target.value })} placeholder={i18n.t('x.anif.reason_ph')} style={{ ...inputStyle, padding: '5px 8px', fontSize: 12, width: 140 }} />
                         <button onClick={handleOpenCase} style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontSize: 12 }}>OK</button>
                         <button onClick={() => setCaseInput(null)} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.textMuted, borderRadius: 6, padding: '5px 8px', cursor: 'pointer', fontSize: 12 }}>✕</button>
                       </div>
                     ) : (
-                      <button onClick={() => setCaseInput({ txId: tx.id, reason: '' })} style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Ouvrir un dossier</button>
+                      <button onClick={() => setCaseInput({ txId: tx.id, reason: '' })} style={{ fontSize: 11, fontWeight: 600, background: C.red + '15', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{i18n.t('x.anif.open_case')}</button>
                     ))}
                   </td>
                 </tr>
@@ -3099,12 +3091,12 @@ function ANIFPage() {
             </tbody>
           </table>
         </div>
-        {filteredSuspects.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 30, color: C.textMuted, fontSize: 13 }}>Aucune transaction suspecte sur la période</div>}
+        {filteredSuspects.length === 0 && !loading && <div style={{ textAlign: 'center', padding: 30, color: C.textMuted, fontSize: 13 }}>{i18n.t('x.anif.no_suspects')}</div>}
       </div>
 
       {/* Règles de détection configurables */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px', marginBottom: 20 }}>
-        <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Règles de détection</h2>
+        <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12 }}>{i18n.t('x.anif.rules')}</h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {RULES.map((r) => { const on = (settings?.[r.key] ?? 'on') === 'on'; return (
             <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 14, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
@@ -3118,7 +3110,7 @@ function ANIFPage() {
               {r.editable === 'freq' && (
                 <input type="number" defaultValue={freqMax} onBlur={(e) => { if (Number(e.target.value) !== freqMax) updateSettings({ anif_frequency_max: String(Math.max(1, Number(e.target.value) || 10)) }).then(() => refetchSettings()) }} style={{ ...inputStyle, width: 80, textAlign: 'right' }} disabled={isReadOnly()} />
               )}
-              <button disabled={isReadOnly()} onClick={() => toggleRule(r.key, !on)} aria-label="Activer/désactiver" style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: isReadOnly() ? 'default' : 'pointer', background: on ? C.green : C.border, transition: 'background .2s', flexShrink: 0 }}>
+              <button disabled={isReadOnly()} onClick={() => toggleRule(r.key, !on)} aria-label={i18n.t('x.anif.toggle_aria')} style={{ position: 'relative', width: 44, height: 24, borderRadius: 12, border: 'none', cursor: isReadOnly() ? 'default' : 'pointer', background: on ? C.green : C.border, transition: 'background .2s', flexShrink: 0 }}>
                 <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 18, height: 18, borderRadius: 9, background: '#fff', transition: 'left .2s' }} />
               </button>
             </div>
@@ -3129,15 +3121,15 @@ function ANIFPage() {
       {/* Dossiers d'enquête */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>Dossiers d'enquête ({visibleCases.length})</h2>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.anif.cases', { count: visibleCases.length })}</h2>
           <div style={{ display: 'flex', gap: 6 }}>
             {['', 'Ouvert', 'Clôturé'].map((st) => (
-              <button key={st || 'all'} onClick={() => setCaseStatusFilter(st)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: caseStatusFilter === st ? 700 : 500, background: caseStatusFilter === st ? C.green : C.surface, border: `1px solid ${caseStatusFilter === st ? C.green : C.border}`, color: caseStatusFilter === st ? '#fff' : C.textSoft }}>{st || 'Tous'}</button>
+              <button key={st || 'all'} onClick={() => setCaseStatusFilter(st)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: caseStatusFilter === st ? 700 : 500, background: caseStatusFilter === st ? C.green : C.surface, border: `1px solid ${caseStatusFilter === st ? C.green : C.border}`, color: caseStatusFilter === st ? '#fff' : C.textSoft }}>{st ? (st === 'Ouvert' ? i18n.t('x.anif.st_open') : i18n.t('x.anif.st_closed')) : i18n.t('x.anif.all_cases')}</button>
             ))}
           </div>
         </div>
         {visibleCases.length === 0 ? (
-          <div style={{ color: C.textMuted, fontSize: 13 }}>Aucun dossier.</div>
+          <div style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.anif.no_cases')}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', paddingLeft: 22 }}>
             <div style={{ position: 'absolute', left: 6, top: 8, bottom: 8, width: 2, background: C.border }} />
@@ -3150,34 +3142,34 @@ function ANIFPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 180 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{meta.caseRef ?? 'Dossier'}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: isClosed ? C.green : C.red, background: (isClosed ? C.green : C.red) + '20', borderRadius: 10, padding: '2px 8px' }}>{c.status}</span>
+                      <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{meta.caseRef ?? i18n.t('x.anif.case_default')}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: isClosed ? C.green : C.red, background: (isClosed ? C.green : C.red) + '20', borderRadius: 10, padding: '2px 8px' }}>{c.status === 'Clôturé' ? i18n.t('x.anif.st_closed') : i18n.t('x.anif.st_open')}</span>
                     </div>
                     <div style={{ color: C.textMuted, fontSize: 12, marginTop: 3 }}>{meta.reason ?? c.details ?? '—'}{meta.amount ? ` · ${formatFCFA(Number(meta.amount))}` : ''}</div>
-                    <div style={{ color: C.textSoft, fontSize: 11, marginTop: 3 }}>Ouvert {relativeTime(c.createdAt)}</div>
+                    <div style={{ color: C.textSoft, fontSize: 11, marginTop: 3 }}>{i18n.t('x.anif.opened_rel', { rel: relativeTime(c.createdAt) })}</div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
                     {!isReadOnly() && !isClosed && (
                       <select defaultValue="" onChange={(e) => handleAssign(c.id, e.target.value)} style={{ ...inputStyle, padding: '5px 8px', fontSize: 12 }}>
-                        <option value="">Assigner à…</option>
+                        <option value="">{i18n.t('x.anif.assign_to')}</option>
                         {(team ?? []).map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
                       </select>
                     )}
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => handleReport(c)} style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>⬇ Rapport PDF</button>
+                      <button onClick={() => handleReport(c)} style={{ fontSize: 11, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.anif.report_pdf')}</button>
                       {!isReadOnly() && !isClosed && (closing?.id === c.id ? null : (
-                        <button onClick={() => setClosing({ id: c.id, resolution: '', report: '' })} style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>
+                        <button onClick={() => setClosing({ id: c.id, resolution: '', report: '' })} style={{ fontSize: 11, background: C.green + '15', color: C.green, border: `1px solid ${C.green}40`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.anif.close_case')}</button>
                       ))}
                     </div>
                   </div>
                 </div>
                 {closing?.id === c.id && (
                   <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <input autoFocus value={closing.resolution} onChange={(e) => setClosing({ ...closing, resolution: e.target.value })} placeholder="Résolution (obligatoire)…" style={{ ...inputStyle, fontSize: 12 }} />
-                    <textarea value={closing.report} onChange={(e) => setClosing({ ...closing, report: e.target.value })} placeholder="Rapport ANIF (optionnel)…" rows={2} style={{ ...inputStyle, fontSize: 12, resize: 'vertical' }} />
+                    <input autoFocus value={closing.resolution} onChange={(e) => setClosing({ ...closing, resolution: e.target.value })} placeholder={i18n.t('x.anif.resolution_ph')} style={{ ...inputStyle, fontSize: 12 }} />
+                    <textarea value={closing.report} onChange={(e) => setClosing({ ...closing, report: e.target.value })} placeholder={i18n.t('x.anif.report_ph')} rows={2} style={{ ...inputStyle, fontSize: 12, resize: 'vertical' }} />
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={handleClose} style={{ fontSize: 12, background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontWeight: 700 }}>Confirmer la clôture</button>
-                      <button onClick={() => setClosing(null)} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>Annuler</button>
+                      <button onClick={handleClose} style={{ fontSize: 12, background: C.green, color: '#fff', border: 'none', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontWeight: 700 }}>{i18n.t('x.anif.confirm_close')}</button>
+                      <button onClick={() => setClosing(null)} style={{ fontSize: 12, color: C.textMuted, background: 'none', border: `1px solid ${C.border}`, borderRadius: 6, padding: '6px 12px', cursor: 'pointer' }}>{i18n.t('common.cancel')}</button>
                     </div>
                   </div>
                 )}
@@ -3195,18 +3187,18 @@ function ANIFPage() {
 const AUDIT_CYAN = '#22D3EE'
 const auditCategory = (action: string): { key: string; label: string; color: string } => {
   const a = (action || '').toUpperCase()
-  if (/KYC/.test(a)) return { key: 'kyc', label: 'KYC', color: C.purple }
-  if (/TRANSACTION|WITHDRAWAL|OPERATION|RECHARGE|DISPUTE|ANIF/.test(a)) return { key: 'finance', label: 'Finance', color: AUDIT_CYAN }
-  if (/LOGIN|BLOCK|LOCK|PIN_RESET|STATUS|SUSPEND/.test(a)) return { key: 'security', label: 'Sécurité', color: C.red }
-  if (/ADMIN|ROLE|PASSWORD|SETTINGS|CREATE|DELETE/.test(a)) return { key: 'admin', label: 'Admin', color: C.blue }
-  return { key: 'other', label: 'Autre', color: C.textMuted }
+  if (/KYC/.test(a)) return { key: 'kyc', label: i18n.t('audit_cat.kyc'), color: C.purple }
+  if (/TRANSACTION|WITHDRAWAL|OPERATION|RECHARGE|DISPUTE|ANIF/.test(a)) return { key: 'finance', label: i18n.t('audit_cat.finance'), color: AUDIT_CYAN }
+  if (/LOGIN|BLOCK|LOCK|PIN_RESET|STATUS|SUSPEND/.test(a)) return { key: 'security', label: i18n.t('audit_cat.security'), color: C.red }
+  if (/ADMIN|ROLE|PASSWORD|SETTINGS|CREATE|DELETE/.test(a)) return { key: 'admin', label: i18n.t('audit_cat.admin'), color: C.blue }
+  return { key: 'other', label: i18n.t('audit_cat.other'), color: C.textMuted }
 }
 const auditActionColor = (action: string): string => auditCategory(action).color
 const AUDIT_CATEGORIES = [
-  { key: 'security', label: 'Sécurité', color: C.red },
-  { key: 'kyc', label: 'KYC', color: C.purple },
-  { key: 'finance', label: 'Finance', color: AUDIT_CYAN },
-  { key: 'admin', label: 'Admin', color: C.blue },
+  { key: 'security', label: 'audit_cat.security', color: C.red },
+  { key: 'kyc', label: 'audit_cat.kyc', color: C.purple },
+  { key: 'finance', label: 'audit_cat.finance', color: AUDIT_CYAN },
+  { key: 'admin', label: 'audit_cat.admin', color: C.blue },
 ]
 
 function AuditPage() {
@@ -3246,24 +3238,24 @@ function AuditPage() {
 
   const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
   const statCards = stats ? [
-    { label: 'Actions (30j)', value: stats.total30d.toLocaleString('fr-FR'), icon: FileText, color: C.blue },
-    { label: 'Actions critiques', value: stats.criticalActions.toLocaleString('fr-FR'), icon: ShieldAlert, color: C.red },
-    { label: 'Acteurs uniques', value: stats.uniqueActors.toLocaleString('fr-FR'), icon: UsersIcon, color: C.green },
-    { label: 'Dernière action', value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action, icon: Clock, color: C.purple },
+    { label: i18n.t('x.audit.kpi_actions'), value: stats.total30d.toLocaleString('fr-FR'), icon: FileText, color: C.blue },
+    { label: i18n.t('x.audit.kpi_critical'), value: stats.criticalActions.toLocaleString('fr-FR'), icon: ShieldAlert, color: C.red },
+    { label: i18n.t('x.audit.kpi_actors'), value: stats.uniqueActors.toLocaleString('fr-FR'), icon: UsersIcon, color: C.green },
+    { label: i18n.t('x.audit.kpi_last'), value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action, icon: Clock, color: C.purple },
   ] : []
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Journal d'audit</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{entries.length} entrée(s) affichée(s) — traçabilité ANIF</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('x.audit.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.audit.subtitle', { count: entries.length })}</p>
         </div>
         <button className="cw-btn" disabled={!entries.length}
-          onClick={() => downloadCsv('audit-camwallet.csv', ['Date', 'Acteur', 'Rôle', 'Action', 'Catégorie', 'Ressource', 'IP', 'Détails'],
-            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? 'Système', e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
+          onClick={() => downloadCsv('audit-camwallet.csv', [i18n.t('x.audit.csv_date'), i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_role'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_details')],
+            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'), e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
-          <FileText size={14} /> Export CSV
+          <FileText size={14} /> {i18n.t('common.export_csv')}
         </button>
       </div>
 
@@ -3285,20 +3277,20 @@ function AuditPage() {
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* Catégories colorées */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button onClick={() => setCategory('')} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === '' ? 700 : 500, background: category === '' ? C.green : C.card, border: `1px solid ${category === '' ? C.green : C.border}`, color: category === '' ? '#fff' : C.textSoft }}>Toutes</button>
+          <button onClick={() => setCategory('')} style={{ fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === '' ? 700 : 500, background: category === '' ? C.green : C.card, border: `1px solid ${category === '' ? C.green : C.border}`, color: category === '' ? '#fff' : C.textSoft }}>{i18n.t('x.audit.all')}</button>
           {AUDIT_CATEGORIES.map((c) => (
             <button key={c.key} onClick={() => setCategory(category === c.key ? '' : c.key)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: category === c.key ? 700 : 500, background: category === c.key ? c.color : c.color + '18', border: `1px solid ${category === c.key ? c.color : c.color + '40'}`, color: category === c.key ? '#fff' : c.color }}>
-              <span style={{ width: 6, height: 6, borderRadius: 3, background: category === c.key ? '#fff' : c.color }} />{c.label}
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: category === c.key ? '#fff' : c.color }} />{i18n.t(c.label)}
             </button>
           ))}
         </div>
-        <input value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder="Acteur (email)…" style={{ ...inputStyle, minWidth: 160 }} />
-        <input value={resource} onChange={(e) => setResource(e.target.value)} placeholder="Ressource (ID ou type)…" style={{ ...inputStyle, minWidth: 160 }} />
+        <input value={actorSearch} onChange={(e) => setActorSearch(e.target.value)} placeholder={i18n.t('x.audit.actor_ph')} style={{ ...inputStyle, minWidth: 160 }} />
+        <input value={resource} onChange={(e) => setResource(e.target.value)} placeholder={i18n.t('x.audit.resource_ph')} style={{ ...inputStyle, minWidth: 160 }} />
         <div style={{ display: 'inline-flex', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, padding: 3, gap: 2 }}>
-          {([['today', "Aujourd'hui"], ['7d', '7j'], ['30d', '30j']] as const).map(([k, l]) => (
+          {([['today', i18n.t('x.audit.today')], ['7d', i18n.t('x.audit.p7d')], ['30d', i18n.t('x.audit.p30d')]] as const).map(([k, l]) => (
             <button key={k} onClick={() => setPreset(k)} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === k ? C.green : 'transparent', color: preset === k ? '#fff' : C.textSoft }}>{l}</button>
           ))}
-          <button onClick={() => setPreset('custom')} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === 'custom' ? C.green : 'transparent', color: preset === 'custom' ? '#fff' : C.textSoft }}>Perso.</button>
+          <button onClick={() => setPreset('custom')} style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', border: 'none', background: preset === 'custom' ? C.green : 'transparent', color: preset === 'custom' ? '#fff' : C.textSoft }}>{i18n.t('x.audit.custom')}</button>
         </div>
         {preset === 'custom' && (
           <>
@@ -3313,7 +3305,7 @@ function AuditPage() {
           <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Acteur', 'Action', 'Ressource', 'IP / Agent', 'Date'].map(h => (
+                {[i18n.t('x.audit.col_actor'), i18n.t('x.audit.col_action'), i18n.t('x.audit.col_resource'), i18n.t('x.audit.col_ip'), i18n.t('x.audit.col_date')].map(h => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
@@ -3321,15 +3313,15 @@ function AuditPage() {
             <tbody>
               {entries.map(e => {
                 const cat = auditCategory(e.action)
-                const actorName = e.user?.fullName ?? e.user?.email ?? 'Système'
+                const actorName = e.user?.fullName ?? e.user?.email ?? i18n.t('x.audit.system')
                 return (
                 <tr key={e.id} className="cw-row" style={{ borderTop: `1px solid ${C.border}` }}>
                   <td style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 28, height: 28, borderRadius: 14, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: (e.user ? C.green : C.textMuted) + '22', color: e.user ? C.green : C.textMuted }}>{e.user ? initials(actorName) : 'SYS'}</span>
                       <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.25 }}>
-                        <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600 }}>{e.user?.email ?? 'Système'}</span>
-                        {e.user?.adminRole && <span style={{ color: C.textMuted, fontSize: 11 }}>{ROLE_LABELS[e.user.adminRole] ?? e.user.adminRole}</span>}
+                        <span style={{ color: C.text, fontSize: 12.5, fontWeight: 600 }}>{e.user?.email ?? i18n.t('x.audit.system')}</span>
+                        {e.user?.adminRole && <span style={{ color: C.textMuted, fontSize: 11 }}>{i18n.t('roles.' + e.user.adminRole)}</span>}
                       </span>
                     </div>
                   </td>
@@ -3350,7 +3342,7 @@ function AuditPage() {
           </table>
         </div>
         {(loading || error || entries.length === 0) && (
-          <StateRow loading={loading} error={error} empty={!loading && !error ? 'Aucune entrée d\'audit' : undefined} />
+          <StateRow loading={loading} error={error} empty={!loading && !error ? i18n.t('x.audit.no_entries') : undefined} />
         )}
       </div>
     </div>
@@ -3376,7 +3368,7 @@ function SettingsPage() {
       const result = await setup2FA()
       setTwoFASetup(result)
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur 2FA', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.set.twofa_error'), 'error')
     } finally {
       setTwoFAActing(false)
     }
@@ -3389,9 +3381,9 @@ function SettingsPage() {
       setTwoFASetup(null)
       setTwoFACode('')
       refetch2FA()
-      toast('2FA activé', 'success')
+      toast(i18n.t('x.set.twofa_enabled'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Code invalide', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.set.twofa_invalid'), 'error')
     } finally {
       setTwoFAActing(false)
     }
@@ -3403,9 +3395,9 @@ function SettingsPage() {
       await disable2FA(twoFACode)
       setTwoFACode('')
       refetch2FA()
-      toast('2FA désactivé', 'success')
+      toast(i18n.t('x.set.twofa_disabled'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Code invalide', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.set.twofa_invalid'), 'error')
     } finally {
       setTwoFAActing(false)
     }
@@ -3430,11 +3422,11 @@ function SettingsPage() {
     try {
       await updateSettings(form)
       setSaved(true)
-      showToast('Paramètres sauvegardés', 'success')
+      showToast(i18n.t('x.set.saved'), 'success')
       refetchHistory()
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Erreur lors de la sauvegarde', 'error')
+      showToast(e instanceof Error ? e.message : i18n.t('x.set.save_error'), 'error')
     }
   }
 
@@ -3468,8 +3460,8 @@ function SettingsPage() {
   return (
     <div className="cw-page" style={{ padding: 24, paddingBottom: dirty ? 90 : 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Paramètres système</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>Configuration globale de la plateforme CamWallet</p>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('x.set.title')}</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.set.subtitle')}</p>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
@@ -3478,45 +3470,45 @@ function SettingsPage() {
         <>
           {/* Limites & Frais — sliders */}
           <div style={card}>
-            <h2 style={h2}>Limites & Frais</h2>
-            {SliderRow({ k: "daily_limit_fcfa", label: "Limite journalière", min: 0, max: 2_000_000, step: 50_000, fmt: fmt })}
-            {SliderRow({ k: "monthly_limit_fcfa", label: "Limite mensuelle", min: 0, max: 20_000_000, step: 500_000, fmt: fmt })}
-            {SliderRow({ k: 'p2p_fee_rate', label: 'Taux de frais P2P', min: 0, max: 5, step: 0.1, fmt: (n: number) => n + ' %' })}
+            <h2 style={h2}>{i18n.t('x.set.limits')}</h2>
+            {SliderRow({ k: "daily_limit_fcfa", label: i18n.t('x.set.daily_limit'), min: 0, max: 2_000_000, step: 50_000, fmt: fmt })}
+            {SliderRow({ k: "monthly_limit_fcfa", label: i18n.t('x.set.monthly_limit'), min: 0, max: 20_000_000, step: 500_000, fmt: fmt })}
+            {SliderRow({ k: 'p2p_fee_rate', label: i18n.t('x.set.p2p_fee'), min: 0, max: 5, step: 0.1, fmt: (n: number) => n + ' %' })}
           </div>
 
           {/* Seuils ANIF — avec aperçu d'impact */}
           <div style={card}>
-            <h2 style={h2}>Seuils ANIF</h2>
-            {SliderRow({ k: "anif_threshold_fcfa", label: "Seuil de déclaration ANIF", min: 100_000, max: 5_000_000, step: 50_000, fmt: fmt })}
+            <h2 style={h2}>{i18n.t('x.set.anif_thresholds')}</h2>
+            {SliderRow({ k: "anif_threshold_fcfa", label: i18n.t('x.set.anif_threshold'), min: 100_000, max: 5_000_000, step: 50_000, fmt: fmt })}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px' }}>
               <Info size={16} color={C.blue} />
               <span style={{ fontSize: 12, color: C.textSoft }}>
-                Impact : <strong style={{ color: C.text }}>{anifImpact?.overThreshold30d ?? '—'}</strong> transaction(s) ont dépassé le seuil actuel sur les 30 derniers jours.
+                {i18n.t('x.set.anif_impact_pre')}<strong style={{ color: C.text }}>{anifImpact?.overThreshold30d ?? '—'}</strong>{i18n.t('x.set.anif_impact_post')}
               </span>
             </div>
           </div>
 
           {/* Sécurité */}
           <div style={card}>
-            <h2 style={h2}>Sécurité</h2>
-            {SliderRow({ k: 'session_duration_minutes', label: 'Durée de session (minutes)', min: 5, max: 120, step: 5, fmt: (n: number) => n + ' min' })}
-            {ToggleRow({ k: "require_2fa", label: "2FA obligatoire pour les administrateurs", desc: "Impose l'authentification à deux facteurs à tous les opérateurs." })}
+            <h2 style={h2}>{i18n.t('x.set.security')}</h2>
+            {SliderRow({ k: 'session_duration_minutes', label: i18n.t('x.set.session'), min: 5, max: 120, step: 5, fmt: (n: number) => n + ' min' })}
+            {ToggleRow({ k: "require_2fa", label: i18n.t('x.set.require_2fa'), desc: i18n.t('x.set.require_2fa_desc') })}
           </div>
 
           {/* Notifications */}
           <div style={card}>
-            <h2 style={h2}>Notifications (alertes email / SMS)</h2>
-            {ToggleRow({ k: "notify_kyc_submitted", label: "KYC soumis", desc: "Notifier l'équipe conformité à chaque nouveau dossier KYC." })}
-            {ToggleRow({ k: "notify_high_value", label: "Transaction à montant élevé", desc: "Alerter à chaque transaction au-dessus du seuil ANIF." })}
-            {ToggleRow({ k: "notify_failed_payment", label: "Paiement échoué", desc: "Alerter en cas d'échec de recharge/retrait opérateur." })}
+            <h2 style={h2}>{i18n.t('x.set.notifications')}</h2>
+            {ToggleRow({ k: "notify_kyc_submitted", label: i18n.t('x.set.notify_kyc'), desc: i18n.t('x.set.notify_kyc_desc') })}
+            {ToggleRow({ k: "notify_high_value", label: i18n.t('x.set.notify_high'), desc: i18n.t('x.set.notify_high_desc') })}
+            {ToggleRow({ k: "notify_failed_payment", label: i18n.t('x.set.notify_failed'), desc: i18n.t('x.set.notify_failed_desc') })}
           </div>
 
           {/* Intégrations — statut + test de connexion */}
           <div style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <h2 style={{ ...h2, marginBottom: 0 }}>Intégrations</h2>
+              <h2 style={{ ...h2, marginBottom: 0 }}>{i18n.t('x.set.integrations')}</h2>
               <button onClick={() => refetchHealth()} disabled={healthLoading} style={{ fontSize: 12, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>
-                {healthLoading ? 'Test…' : '↻ Tester les connexions'}
+                {healthLoading ? i18n.t('x.set.testing') : i18n.t('x.set.test_connections')}
               </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
@@ -3524,7 +3516,7 @@ function SettingsPage() {
                 <div key={i.name} style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }}>
                   <span style={{ width: 9, height: 9, borderRadius: 5, background: col, flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: 13, color: C.text, fontWeight: 600 }}>{i.name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: col }}>{HEALTH_LABEL[i.status] ?? i.status}{i.latency != null ? ` · ${i.latency}ms` : ''}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: col }}>{i18n.t('health_status.' + i.status)}{i.latency != null ? ` · ${i.latency}ms` : ''}</span>
                 </div>
               )})}
             </div>
@@ -3532,12 +3524,12 @@ function SettingsPage() {
 
           {/* Historique des modifications */}
           <div style={card}>
-            <h2 style={h2}>Historique des modifications</h2>
-            {(history ?? []).length === 0 && <div style={{ fontSize: 13, color: C.textMuted }}>Aucune modification enregistrée.</div>}
+            <h2 style={h2}>{i18n.t('x.set.history')}</h2>
+            {(history ?? []).length === 0 && <div style={{ fontSize: 13, color: C.textMuted }}>{i18n.t('x.set.no_history')}</div>}
             {(history ?? []).map((e) => (
               <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
                 <span style={{ width: 24, height: 24, borderRadius: 12, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.purple + '22', color: C.purple }}>{initials(e.user?.email ?? 'SYS')}</span>
-                <span style={{ color: C.textSoft, flex: 1 }}>{e.user?.email ?? 'Système'} — {e.metadata ? Object.keys((e.metadata as any).updates ?? e.metadata).join(', ') : 'paramètres'}</span>
+                <span style={{ color: C.textSoft, flex: 1 }}>{e.user?.email ?? i18n.t('x.audit.system')} — {e.metadata ? Object.keys((e.metadata as any).updates ?? e.metadata).join(', ') : i18n.t('x.set.settings_word')}</span>
                 <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }} title={fmtDate(e.createdAt)}>{relativeTime(e.createdAt)}</span>
               </div>
             ))}
@@ -3547,47 +3539,47 @@ function SettingsPage() {
           {dirty && !isReadOnly() && (
             <div style={{ position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 40, display: 'flex', alignItems: 'center', gap: 14, background: C.card, border: `1px solid ${C.green}60`, borderRadius: 12, padding: '12px 18px', boxShadow: '0 12px 40px -12px rgba(0,0,0,.6)' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.text, fontWeight: 600 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 4, background: C.yellow }} />{dirtyKeys.length} modification(s) non sauvegardée(s)
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: C.yellow }} />{i18n.t('x.set.unsaved', { count: dirtyKeys.length })}
               </span>
-              <button onClick={() => data && setForm(data)} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
-              <button onClick={handleSave} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saved ? '✓ Sauvegardé' : 'Sauvegarder'}</button>
+              <button onClick={() => data && setForm(data)} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('common.cancel')}</button>
+              <button onClick={handleSave} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer', fontWeight: 700 }}>{saved ? i18n.t('x.set.saved_btn') : i18n.t('x.set.save_btn')}</button>
             </div>
           )}
 
           {/* Banniere mot de passe expire */}
           {data && data['admin_password_expired'] === 'true' && (
             <div style={{ background: '#FF4D6D15', border: `1px solid ${C.red}40`, borderRadius: 14, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ color: C.red, fontSize: 13, fontWeight: 600 }}>Le mot de passe administrateur n'a pas ete change depuis plus de 90 jours.</span>
+              <span style={{ color: C.red, fontSize: 13, fontWeight: 600 }}>{i18n.t('x.set.pwd_expired')}</span>
             </div>
           )}
 
           {/* Section 2FA */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
-            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Authentification à deux facteurs (TOTP)</h2>
+            <h2 style={{ color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{i18n.t('x.set.twofa_title')}</h2>
             {twoFAStatus?.totpEnabled ? (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                  <span style={{ fontSize: 12, color: C.green, background: C.greenLight, padding: '3px 10px', borderRadius: 20, fontWeight: 700 }}>2FA actif</span>
+                  <span style={{ fontSize: 12, color: C.green, background: C.greenLight, padding: '3px 10px', borderRadius: 20, fontWeight: 700 }}>{i18n.t('x.set.twofa_active')}</span>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP pour désactiver" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
-                  <button onClick={handleDisable2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.redLight, border: 'none', borderRadius: 8, color: C.red, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Désactiver la 2FA</button>
+                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder={i18n.t('x.set.twofa_disable_ph')} style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
+                  <button onClick={handleDisable2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.redLight, border: 'none', borderRadius: 8, color: C.red, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>{i18n.t('x.set.twofa_disable_btn')}</button>
                 </div>
               </div>
             ) : twoFASetup ? (
               <div>
-                <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>Scannez ce QR code avec votre application TOTP (Google Authenticator, Authy)</p>
+                <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>{i18n.t('x.set.twofa_scan')}</p>
                 <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFASetup.otpauthUrl)}`} alt="QR 2FA" style={{ width: 200, height: 200, borderRadius: 8, marginBottom: 12 }} />
-                <div style={{ color: C.textMuted, fontSize: 12, fontFamily: 'monospace', background: C.surface, padding: '6px 10px', borderRadius: 6, marginBottom: 14, wordBreak: 'break-all' }}>Secret: {twoFASetup.secret}</div>
+                <div style={{ color: C.textMuted, fontSize: 12, fontFamily: 'monospace', background: C.surface, padding: '6px 10px', borderRadius: 6, marginBottom: 14, wordBreak: 'break-all' }}>{i18n.t('x.set.twofa_secret')} {twoFASetup.secret}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder="Code TOTP de vérification" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
-                  <button onClick={handleVerify2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Activer</button>
+                  <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder={i18n.t('x.set.twofa_verify_ph')} style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
+                  <button onClick={handleVerify2FA} disabled={twoFAActing || !twoFACode.trim()} style={{ padding: '9px 18px', background: C.green, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>{i18n.t('x.set.twofa_activate')}</button>
                 </div>
               </div>
             ) : (
               <div>
-                <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>La 2FA n'est pas encore activee. Configurez-la pour renforcer la securite du compte admin.</p>
-                <button onClick={handleSetup2FA} disabled={twoFAActing} style={{ padding: '9px 18px', background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, color: C.blue, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>Configurer la 2FA (TOTP)</button>
+                <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>{i18n.t('x.set.twofa_not_set')}</p>
+                <button onClick={handleSetup2FA} disabled={twoFAActing} style={{ padding: '9px 18px', background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, color: C.blue, fontWeight: 700, fontSize: 13, cursor: twoFAActing ? 'wait' : 'pointer' }}>{i18n.t('x.set.twofa_setup')}</button>
               </div>
             )}
           </div>
@@ -3596,10 +3588,10 @@ function SettingsPage() {
           <div style={{ background: C.blueLight, border: `1px solid ${C.blue}30`, borderRadius: 14, padding: '16px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
               <Info size={18} color={C.blue} />
-              <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>Credentials API</span>
+              <span style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{i18n.t('x.set.api_creds')}</span>
             </div>
             <p style={{ color: C.textSoft, fontSize: 13, lineHeight: 1.6, margin: 0 }}>
-              Les credentials API sont gérés via les variables d'environnement du serveur. Contactez l'administrateur système pour une rotation.
+              {i18n.t('x.set.api_creds_body')}
             </p>
           </div>
         </>
@@ -3629,16 +3621,16 @@ function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [busy, setBusy] = useState(false)
 
   const submit = async () => {
-    if (fullName.trim().length < 2) { toast('Nom complet requis', 'error'); return }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast('Email invalide', 'error'); return }
-    if (password.length < 8) { toast('Mot de passe trop court (min. 8)', 'error'); return }
+    if (fullName.trim().length < 2) { toast(i18n.t('x.opmod.name_required'), 'error'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { toast(i18n.t('x.opmod.email_invalid'), 'error'); return }
+    if (password.length < 8) { toast(i18n.t('x.opmod.pwd_short'), 'error'); return }
     setBusy(true)
     try {
       await createAdminOperator({ fullName: fullName.trim(), email: email.trim(), adminRole, password })
-      toast('Opérateur créé — communiquez-lui ses identifiants', 'success')
+      toast(i18n.t('x.opmod.operator_created'), 'success')
       onCreated(); onClose()
     } catch (e) {
-      toast(e instanceof Error ? e.message : 'Erreur', 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error')
     } finally { setBusy(false) }
   }
 
@@ -3649,20 +3641,20 @@ function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreat
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Ajouter un opérateur</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{i18n.t('x.opmod.add_title')}</h2>
           <button onClick={onClose} className="cw-iconbtn" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex' }}><X size={18} /></button>
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Prénom &amp; nom</label>
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jean Mballa" style={field} autoFocus />
+          <label style={labelStyle}>{i18n.t('x.opmod.name_label')}</label>
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={i18n.t('x.opmod.name_ph')} style={field} autoFocus />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jean@camwallet.cm" style={field} />
+          <label style={labelStyle}>{i18n.t('x.opmod.email_label')}</label>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={i18n.t('x.opmod.email_ph')} style={field} />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Rôle</label>
+          <label style={labelStyle}>{i18n.t('x.opmod.role_label')}</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {ROLE_ORDER.map((r) => {
               const sel = adminRole === r
@@ -3681,8 +3673,8 @@ function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreat
                 >
                   <span style={{ width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0, background: ROLE_COLORS[r] }} />
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: sel ? ROLE_COLORS[r] : C.text }}>{ROLE_LABELS[r]}</div>
-                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: sel ? ROLE_COLORS[r] : C.text }}>{i18n.t('roles.' + r)}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{i18n.t('roles.desc_' + r)}</div>
                   </div>
                 </button>
               )
@@ -3690,17 +3682,17 @@ function AddOperatorModal({ onClose, onCreated }: { onClose: () => void; onCreat
           </div>
         </div>
         <div style={{ marginBottom: 22 }}>
-          <label style={labelStyle}>Mot de passe temporaire</label>
+          <label style={labelStyle}>{i18n.t('x.opmod.temp_pwd')}</label>
           <div style={{ display: 'flex', gap: 8 }}>
             <input value={password} onChange={(e) => setPassword(e.target.value)} style={{ ...field, fontFamily: 'monospace', letterSpacing: 1 }} />
-            <button onClick={() => setPassword(genTempPassword())} title="Régénérer" className="cw-btn" style={{ flexShrink: 0, padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.surface, color: C.textSoft, cursor: 'pointer' }}><RefreshCw size={15} /></button>
+            <button onClick={() => setPassword(genTempPassword())} title={i18n.t('x.opmod.regen')} className="cw-btn" style={{ flexShrink: 0, padding: '0 12px', border: `1px solid ${C.border}`, borderRadius: 8, background: C.surface, color: C.textSoft, cursor: 'pointer' }}><RefreshCw size={15} /></button>
           </div>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>À communiquer à l'opérateur ; il pourra le changer ensuite.</div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 6 }}>{i18n.t('x.opmod.pwd_hint')}</div>
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} className="cw-btn" style={{ padding: '9px 16px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Annuler</button>
-          <button onClick={submit} disabled={busy} className="cw-btn" style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? .6 : 1 }}>Créer l'opérateur</button>
+          <button onClick={onClose} className="cw-btn" style={{ padding: '9px 16px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>{i18n.t('common.cancel')}</button>
+          <button onClick={submit} disabled={busy} className="cw-btn" style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? .6 : 1 }}>{i18n.t('x.opmod.create')}</button>
         </div>
       </div>
     </div>
@@ -3714,8 +3706,8 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
 
   const handleSave = async () => {
     setSaving(true)
-    try { await setAdminRole(member.id, role); toast('Rôle mis à jour', 'success'); onSaved(); onClose() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+    try { await setAdminRole(member.id, role); toast(i18n.t('x.opmod.role_updated'), 'success'); onSaved(); onClose() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error') }
     finally { setSaving(false) }
   }
 
@@ -3723,7 +3715,7 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 440, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Modifier l'opérateur</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{i18n.t('x.opmod.edit_title')}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex' }}><X size={18} /></button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: C.surface, borderRadius: 10, marginBottom: 20 }}>
@@ -3733,7 +3725,7 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
             <div style={{ fontSize: 12, color: C.textMuted }}>{member.email}</div>
           </div>
         </div>
-        <div style={{ fontSize: 11, color: C.textSoft, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Rôle</div>
+        <div style={{ fontSize: 11, color: C.textSoft, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>{i18n.t('x.opmod.role_label')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
           {ROLE_ORDER.map((r) => {
             const sel = role === r
@@ -3742,16 +3734,16 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
                 style={{ display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left', width: '100%', padding: '10px 12px', borderRadius: 10, cursor: 'pointer', background: sel ? ROLE_COLORS[r] + '14' : C.surface, border: `1px solid ${sel ? ROLE_COLORS[r] : C.border}` }}>
                 <span style={{ width: 10, height: 10, borderRadius: 5, marginTop: 4, flexShrink: 0, background: ROLE_COLORS[r] }} />
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: sel ? ROLE_COLORS[r] : C.text }}>{ROLE_LABELS[r]}</div>
-                  <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: sel ? ROLE_COLORS[r] : C.text }}>{i18n.t('roles.' + r)}</div>
+                  <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{i18n.t('roles.desc_' + r)}</div>
                 </div>
               </button>
             )
           })}
         </div>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '9px 16px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>Annuler</button>
-          <button onClick={handleSave} disabled={saving} style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .6 : 1 }}>{saving ? 'Enregistrement…' : 'Enregistrer'}</button>
+          <button onClick={onClose} style={{ padding: '9px 16px', border: `1px solid ${C.border}`, borderRadius: 8, background: 'none', color: C.textSoft, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>{i18n.t('common.cancel')}</button>
+          <button onClick={handleSave} disabled={saving} style={{ padding: '9px 18px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? .6 : 1 }}>{saving ? i18n.t('x.opmod.saving') : i18n.t('x.opmod.save')}</button>
         </div>
       </div>
     </div>
@@ -3761,28 +3753,28 @@ function EditOperatorModal({ member, onClose, onSaved }: { member: AdminTeamMemb
 // Panneau d'activité d'un opérateur (chargé à l'expansion).
 function MemberActivityPanel({ userId }: { userId: string }) {
   const { data, loading } = useFetch(() => getMemberActivity(userId), [userId])
-  if (loading) return <div style={{ padding: '14px 18px', color: C.textMuted, fontSize: 12 }}>Chargement…</div>
+  if (loading) return <div style={{ padding: '14px 18px', color: C.textMuted, fontSize: 12 }}>{i18n.t('common.loading')}</div>
   if (!data) return null
   return (
     <div style={{ padding: '14px 18px', background: C.bg, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
       {/* Connexion */}
       <div>
-        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Dernière connexion</div>
-        <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{data.lastLoginAt ? fmtDate(data.lastLoginAt) : 'Jamais'}</div>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{i18n.t('x.opmod.last_login')}</div>
+        <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{data.lastLoginAt ? fmtDate(data.lastLoginAt) : i18n.t('x.opmod.never')}</div>
         {data.lastLoginIp && <div style={{ fontSize: 12, color: C.textMuted, fontFamily: 'monospace', marginTop: 2 }}>IP {data.lastLoginIp}</div>}
       </div>
       {/* Stats 30j */}
       <div>
-        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Statistiques (30j)</div>
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{i18n.t('x.opmod.stats_30d')}</div>
         <div style={{ display: 'flex', gap: 18 }}>
-          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{data.stats.actions30d}</div><div style={{ fontSize: 11, color: C.textMuted }}>actions</div></div>
-          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.purple }}>{data.stats.kycHandled}</div><div style={{ fontSize: 11, color: C.textMuted }}>KYC traités</div></div>
+          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{data.stats.actions30d}</div><div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.opmod.actions')}</div></div>
+          <div><div style={{ fontSize: 18, fontWeight: 900, color: C.purple }}>{data.stats.kycHandled}</div><div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.opmod.kyc_handled')}</div></div>
         </div>
       </div>
       {/* Activité récente */}
       <div style={{ gridColumn: '1 / -1' }}>
-        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>5 dernières actions</div>
-        {data.recent.length === 0 && <div style={{ fontSize: 12, color: C.textMuted }}>Aucune action enregistrée</div>}
+        <div style={{ fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{i18n.t('x.opmod.recent_5')}</div>
+        {data.recent.length === 0 && <div style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.opmod.no_actions')}</div>}
         {data.recent.map((a) => { const cat = auditCategory(a.action); return (
           <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
             <span style={{ fontSize: 10, fontWeight: 700, color: cat.color, background: cat.color + '20', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap' }}>{a.action}</span>
@@ -3814,28 +3806,28 @@ function TeamPage() {
   const lastActivity = list.map((m) => m.lastLoginAt).filter(Boolean).sort().slice(-1)[0] as string | undefined
 
   const handleSetPassword = async (m: AdminTeamMember) => {
-    const pwd = window.prompt(`Nouveau mot de passe pour ${m.email ?? 'cet admin'} (min. 8) :`, genTempPassword())
+    const pwd = window.prompt(i18n.t('x.team.pwd_prompt', { who: m.email ?? i18n.t('x.team.this_admin') }), genTempPassword())
     if (pwd == null) return
-    if (pwd.length < 8) { toast('Mot de passe trop court (min. 8)', 'error'); return }
-    try { await setAdminPassword(m.id, pwd); toast('Mot de passe défini', 'success') }
-    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+    if (pwd.length < 8) { toast(i18n.t('x.team.pwd_short'), 'error'); return }
+    try { await setAdminPassword(m.id, pwd); toast(i18n.t('x.team.pwd_set'), 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error') }
   }
   const handleToggleStatus = async (m: AdminTeamMember) => {
     const activate = m.status !== 'ACTIVE'
-    try { await setAdminStatus(m.id, activate); toast(activate ? 'Compte réactivé' : 'Compte désactivé', 'success'); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+    try { await setAdminStatus(m.id, activate); toast(activate ? i18n.t('x.team.reactivated') : i18n.t('x.team.deactivated'), 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error') }
   }
   const handleDelete = async (m: AdminTeamMember) => {
-    if (!window.confirm(`Supprimer définitivement ${m.fullName ?? m.email ?? 'cet opérateur'} ?`)) return
-    try { await deleteAdmin(m.id); toast('Opérateur supprimé', 'success'); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Erreur', 'error') }
+    if (!window.confirm(i18n.t('x.team.delete_confirm', { who: m.fullName ?? m.email ?? i18n.t('x.team.this_operator') }))) return
+    try { await deleteAdmin(m.id); toast(i18n.t('x.team.operator_deleted'), 'success'); refetch() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error') }
   }
 
   const stats: { label: string; value: string; icon: LucideIcon; color: string }[] = [
-    { label: 'Total opérateurs', value: String(list.length), icon: UsersIcon, color: C.green },
-    { label: 'Connectés aujourd\'hui', value: String(connectedToday), icon: Activity, color: C.blue },
-    { label: 'Rôles actifs', value: String(activeRoles), icon: Shield, color: C.purple },
-    { label: 'Dernière activité', value: lastActivity ? fmtDate(lastActivity) : '—', icon: Clock, color: C.yellow },
+    { label: i18n.t('x.team.kpi_total'), value: String(list.length), icon: UsersIcon, color: C.green },
+    { label: i18n.t('x.team.kpi_today'), value: String(connectedToday), icon: Activity, color: C.blue },
+    { label: i18n.t('x.team.kpi_roles'), value: String(activeRoles), icon: Shield, color: C.purple },
+    { label: i18n.t('x.team.kpi_last'), value: lastActivity ? fmtDate(lastActivity) : '—', icon: Clock, color: C.yellow },
   ]
   const iconBtn = (color: string): CSSProperties => ({ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, color, cursor: 'pointer' })
 
@@ -3844,12 +3836,12 @@ function TeamPage() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 22 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>Équipe Administration</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>Opérateurs, rôles et accès du back-office</p>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('x.team.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.team.subtitle')}</p>
         </div>
         {isSuper && (
           <button onClick={() => setShowAdd(true)} className="cw-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 16px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-            <Plus size={16} /> Ajouter un opérateur
+            <Plus size={16} /> {i18n.t('x.team.add_operator')}
           </button>
         )}
       </div>
@@ -3875,7 +3867,7 @@ function TeamPage() {
           <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
               <tr>
-                {['Opérateur', 'Email', 'Rôle', 'Dernière connexion', 'Statut', 'Actions'].map((h) => (
+                {[i18n.t('x.team.col_operator'), i18n.t('x.team.col_email'), i18n.t('x.team.col_role'), i18n.t('x.team.col_last_login'), i18n.t('x.team.col_status'), i18n.t('x.team.col_actions')].map((h) => (
                   <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
                 ))}
               </tr>
@@ -3893,33 +3885,33 @@ function TeamPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         {isOpen ? <ChevronUp size={14} color={C.textMuted} /> : <ChevronDown size={14} color={C.textMuted} />}
                         <span style={{ width: 32, height: 32, borderRadius: 16, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, background: color + '22', color }}>{initials(m.fullName ?? m.email)}</span>
-                        <span style={{ color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}{isSelf && <span style={{ color: C.textMuted, fontWeight: 400, fontSize: 11 }}> (vous)</span>}</span>
+                        <span style={{ color: C.text, fontWeight: 600 }}>{m.fullName ?? '—'}{isSelf && <span style={{ color: C.textMuted, fontWeight: 400, fontSize: 11 }}>{i18n.t('x.team.you')}</span>}</span>
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px', color: C.textSoft }}>{m.email ?? '—'}</td>
                     <td style={{ padding: '12px 14px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: color + '20', color }}>
                         <span style={{ width: 6, height: 6, borderRadius: 3, background: color, flexShrink: 0 }} />
-                        {m.adminRole ? (ROLE_LABELS[m.adminRole] ?? m.adminRole) : '—'}
+                        {m.adminRole ? i18n.t('roles.' + m.adminRole) : '—'}
                       </span>
                     </td>
-                    <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{m.lastLoginAt ? fmtDate(m.lastLoginAt) : 'Jamais'}</td>
+                    <td style={{ padding: '12px 14px', color: C.textMuted, fontSize: 12 }}>{m.lastLoginAt ? fmtDate(m.lastLoginAt) : i18n.t('x.team.never')}</td>
                     <td style={{ padding: '12px 14px' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: active ? C.green : C.red }}>
-                        <span style={{ width: 7, height: 7, borderRadius: 4, background: active ? C.green : C.red }} />{active ? 'Actif' : 'Inactif'}
+                        <span style={{ width: 7, height: 7, borderRadius: 4, background: active ? C.green : C.red }} />{active ? i18n.t('x.team.active') : i18n.t('x.team.inactive')}
                       </span>
                     </td>
                     <td style={{ padding: '12px 14px' }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {isSuper && !isSelf && (
-                          <button onClick={() => setEditTarget(m)} title="Modifier le rôle" style={iconBtn(C.blue)}><Pencil size={14} /></button>
+                          <button onClick={() => setEditTarget(m)} title={i18n.t('x.team.edit_role')} style={iconBtn(C.blue)}><Pencil size={14} /></button>
                         )}
-                        <button onClick={() => handleSetPassword(m)} title="Définir / réinitialiser le mot de passe" style={iconBtn(C.textSoft)}><Lock size={14} /></button>
+                        <button onClick={() => handleSetPassword(m)} title={i18n.t('x.team.set_pwd')} style={iconBtn(C.textSoft)}><Lock size={14} /></button>
                         {isSuper && !isSelf && (
-                          <button onClick={() => handleToggleStatus(m)} title={active ? 'Désactiver' : 'Réactiver'} style={iconBtn(active ? C.yellow : C.green)}>{active ? <WifiOff size={14} /> : <Wifi size={14} />}</button>
+                          <button onClick={() => handleToggleStatus(m)} title={active ? i18n.t('x.team.deactivate') : i18n.t('x.team.reactivate')} style={iconBtn(active ? C.yellow : C.green)}>{active ? <WifiOff size={14} /> : <Wifi size={14} />}</button>
                         )}
                         {isSuper && !isSelf && (
-                          <button onClick={() => handleDelete(m)} title="Supprimer" style={iconBtn(C.red)}><X size={14} /></button>
+                          <button onClick={() => handleDelete(m)} title={i18n.t('x.team.delete')} style={iconBtn(C.red)}><X size={14} /></button>
                         )}
                       </div>
                     </td>
@@ -3938,14 +3930,14 @@ function TeamPage() {
           </table>
         </div>
         {!loading && !error && list.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun opérateur</div>
+          <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{i18n.t('x.team.no_operators')}</div>
         )}
       </div>
 
       {/* Permissions par rôle (dépliable) */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <button onClick={() => setShowPerms((v) => !v)} className="cw-btn" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: 'none', border: 'none', cursor: 'pointer', color: C.text, fontWeight: 700, fontSize: 14 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Shield size={16} color={C.green} /> Permissions par rôle</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Shield size={16} color={C.green} /> {i18n.t('x.team.perms_by_role')}</span>
           {showPerms ? <ChevronUp size={18} color={C.textMuted} /> : <ChevronDown size={18} color={C.textMuted} />}
         </button>
         {showPerms && (
@@ -3953,7 +3945,7 @@ function TeamPage() {
             <table style={{ width: '100%', minWidth: 820, borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr style={{ background: C.surface }}>
-                  <th style={{ textAlign: 'left', padding: '10px 14px', color: C.textMuted, fontWeight: 600 }}>Rôle</th>
+                  <th style={{ textAlign: 'left', padding: '10px 14px', color: C.textMuted, fontWeight: 600 }}>{i18n.t('x.team.role')}</th>
                   {NAV.map((n) => <th key={n.id} style={{ padding: '10px 8px', color: C.textMuted, fontWeight: 600, fontSize: 11 }}>{t(`nav.${n.id}`)}</th>)}
                 </tr>
               </thead>
@@ -3961,7 +3953,7 @@ function TeamPage() {
                 {ROLE_ORDER.map((r) => (
                   <tr key={r} style={{ borderTop: `1px solid ${C.border}` }}>
                     <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: ROLE_COLORS[r] + '20', color: ROLE_COLORS[r] }}>{ROLE_LABELS[r]}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, whiteSpace: 'nowrap', background: ROLE_COLORS[r] + '20', color: ROLE_COLORS[r] }}>{i18n.t('roles.' + r)}</span>
                     </td>
                     {NAV.map((n) => (
                       <td key={n.id} style={{ padding: '10px 8px', textAlign: 'center' }}>
@@ -3984,16 +3976,16 @@ function TeamPage() {
 
 // ── Support & Tickets ─────────────────────────────────────
 const TICKET_CAT: Record<string, { label: string; color: string }> = {
-  PAYMENT: { label: 'Paiement', color: C.blue }, ACCOUNT: { label: 'Compte', color: C.purple },
-  KYC: { label: 'KYC', color: '#EC4899' }, TECHNICAL: { label: 'Technique', color: '#22D3EE' }, OTHER: { label: 'Autre', color: C.textMuted },
+  PAYMENT: { label: 'x.sup.cat_payment', color: C.blue }, ACCOUNT: { label: 'x.sup.cat_account', color: C.purple },
+  KYC: { label: 'x.sup.cat_kyc', color: '#EC4899' }, TECHNICAL: { label: 'x.sup.cat_technical', color: '#22D3EE' }, OTHER: { label: 'x.sup.cat_other', color: C.textMuted },
 }
 const TICKET_PRIO: Record<string, { label: string; color: string }> = {
-  CRITICAL: { label: 'Critique', color: C.red }, HIGH: { label: 'Élevée', color: '#FB923C' },
-  MEDIUM: { label: 'Moyenne', color: C.yellow }, LOW: { label: 'Faible', color: C.textMuted },
+  CRITICAL: { label: 'x.sup.prio_critical', color: C.red }, HIGH: { label: 'x.sup.prio_high', color: '#FB923C' },
+  MEDIUM: { label: 'x.sup.prio_medium', color: C.yellow }, LOW: { label: 'x.sup.prio_low', color: C.textMuted },
 }
 const TICKET_STATUS: Record<string, { label: string; color: string }> = {
-  OPEN: { label: 'Ouvert', color: C.blue }, IN_PROGRESS: { label: 'En cours', color: '#FB923C' },
-  RESOLVED: { label: 'Résolu', color: C.green }, CLOSED: { label: 'Clôturé', color: C.textMuted },
+  OPEN: { label: 'x.sup.st_open', color: C.blue }, IN_PROGRESS: { label: 'x.sup.st_in_progress', color: '#FB923C' },
+  RESOLVED: { label: 'x.sup.st_resolved', color: C.green }, CLOSED: { label: 'x.sup.st_closed', color: C.textMuted },
 }
 const fmtDuration = (ms: number) => {
   const min = Math.round(ms / 60000)
@@ -4003,7 +3995,7 @@ const fmtDuration = (ms: number) => {
   return `${Math.floor(h / 24)}j ${h % 24}h`
 }
 function Pill({ meta }: { meta: { label: string; color: string } }) {
-  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: meta.color + '20', color: meta.color, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}><span style={{ width: 6, height: 6, borderRadius: 3, background: meta.color }} />{meta.label}</span>
+  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: meta.color + '20', color: meta.color, padding: '3px 9px', borderRadius: 20, whiteSpace: 'nowrap' }}><span style={{ width: 6, height: 6, borderRadius: 3, background: meta.color }} />{i18n.t(meta.label)}</span>
 }
 
 function SupportPage() {
@@ -4028,10 +4020,10 @@ function SupportPage() {
   const refreshAll = () => { refetch(); refetchStats() }
 
   const statCards = stats ? [
-    { label: 'Tickets ouverts', value: stats.open.toLocaleString('fr-FR'), sub: `${stats.openUnassigned} non assigné(s)`, icon: LifeBuoy, color: C.blue },
-    { label: 'En cours', value: stats.inProgress.toLocaleString('fr-FR'), sub: 'en traitement', icon: MessageSquare, color: '#FB923C' },
-    { label: "Résolus aujourd'hui", value: stats.resolvedToday.toLocaleString('fr-FR'), sub: 'clôturés ce jour', icon: CheckCircle2, color: C.green },
-    { label: 'Temps moyen résolution', value: stats.avgResolutionMs == null ? '—' : fmtDuration(stats.avgResolutionMs), sub: '100 derniers résolus', icon: Clock, color: C.purple },
+    { label: i18n.t('x.sup.kpi_open'), value: stats.open.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_unassigned', { count: stats.openUnassigned }), icon: LifeBuoy, color: C.blue },
+    { label: i18n.t('x.sup.kpi_in_progress'), value: stats.inProgress.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_processing'), icon: MessageSquare, color: '#FB923C' },
+    { label: i18n.t('x.sup.kpi_resolved_today'), value: stats.resolvedToday.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_closed_today'), icon: CheckCircle2, color: C.green },
+    { label: i18n.t('x.sup.kpi_avg'), value: stats.avgResolutionMs == null ? '—' : fmtDuration(stats.avgResolutionMs), sub: i18n.t('x.sup.kpi_avg_sub'), icon: Clock, color: C.purple },
   ] : []
   const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 13 }
 
@@ -4039,11 +4031,11 @@ function SupportPage() {
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}><LifeBuoy size={22} color={C.green} /> Support & Tickets</h1>
-          <p style={{ color: C.textMuted, fontSize: 13 }}>{total} ticket(s) — assistance clients</p>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}><LifeBuoy size={22} color={C.green} /> {i18n.t('x.sup.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.sup.subtitle', { count: total })}</p>
         </div>
         {!isReadOnly() && (
-          <button onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}><Plus size={16} /> Nouveau ticket</button>
+          <button onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', border: 'none', borderRadius: 8, background: C.green, color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}><Plus size={16} /> {i18n.t('x.sup.new_ticket')}</button>
         )}
       </div>
 
@@ -4064,25 +4056,25 @@ function SupportPage() {
       {/* Filtres */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={status} onChange={(e) => setStatus(e.target.value)} style={inputStyle}>
-          <option value="">Tous statuts</option>
-          {Object.entries(TICKET_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="">{i18n.t('x.sup.all_statuses')}</option>
+          {Object.entries(TICKET_STATUS).map(([k, v]) => <option key={k} value={k}>{i18n.t(v.label)}</option>)}
         </select>
         <select value={priority} onChange={(e) => setPriority(e.target.value)} style={inputStyle}>
-          <option value="">Toutes priorités</option>
-          {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="">{i18n.t('x.sup.all_priorities')}</option>
+          {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{i18n.t(v.label)}</option>)}
         </select>
         <select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>
-          <option value="">Toutes catégories</option>
-          {Object.entries(TICKET_CAT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          <option value="">{i18n.t('x.sup.all_categories')}</option>
+          {Object.entries(TICKET_CAT).map(([k, v]) => <option key={k} value={k}>{i18n.t(v.label)}</option>)}
         </select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={inputStyle}>
-          <option value="">Tous assignés</option>
-          <option value="unassigned">Non assignés</option>
+          <option value="">{i18n.t('x.sup.all_assignees')}</option>
+          <option value="unassigned">{i18n.t('x.sup.unassigned_opt')}</option>
           {(team ?? []).map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
         </select>
         <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
           <Search size={15} color={C.textMuted} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
-          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder="Référence, titre, client…" style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
+          <input value={searchRaw} onChange={(e) => setSearchRaw(e.target.value)} placeholder={i18n.t('x.sup.search_ph')} style={{ ...inputStyle, width: '100%', paddingLeft: 34 }} />
         </div>
       </div>
 
@@ -4091,7 +4083,7 @@ function SupportPage() {
         <div className="cw-tablewrap">
           <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
             <thead style={{ background: C.surface }}>
-              <tr>{['Réf.', 'Client', 'Sujet', 'Catégorie', 'Priorité', 'Statut', 'Assigné', 'Créé', 'Activité'].map(h => (
+              <tr>{[i18n.t('x.sup.col_ref'), i18n.t('x.sup.col_client'), i18n.t('x.sup.col_subject'), i18n.t('x.sup.col_category'), i18n.t('x.sup.col_priority'), i18n.t('x.sup.col_status'), i18n.t('x.sup.col_assigned'), i18n.t('x.sup.col_created'), i18n.t('x.sup.col_activity')].map(h => (
                 <th key={h} style={{ textAlign: 'left', fontSize: 11, fontWeight: 500, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '12px 14px' }}>{h}</th>
               ))}</tr>
             </thead>
@@ -4109,7 +4101,7 @@ function SupportPage() {
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} title={tk.assignee.fullName ?? tk.assignee.email ?? ''}>
                         <span style={{ width: 24, height: 24, borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(tk.assignee.fullName ?? tk.assignee.email)}</span>
                       </span>
-                    ) : <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>Non assigné</span>}
+                    ) : <span style={{ fontSize: 11, color: C.red, fontWeight: 600 }}>{i18n.t('x.sup.unassigned')}</span>}
                   </td>
                   <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tk.createdAt)}>{relativeTime(tk.createdAt)}</td>
                   <td style={{ padding: '11px 14px', color: C.textMuted, fontSize: 12, whiteSpace: 'nowrap' }} title={fmtDate(tk.updatedAt)}>{relativeTime(tk.updatedAt)}</td>
@@ -4118,7 +4110,7 @@ function SupportPage() {
             </tbody>
           </table>
         </div>
-        {!loading && !error && tickets.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>Aucun ticket</div>}
+        {!loading && !error && tickets.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: C.textMuted }}>{i18n.t('x.sup.no_tickets')}</div>}
         <StateRow loading={loading} error={error} />
       </div>
 
@@ -4148,13 +4140,13 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
 
   const patch = async (dto: { status?: string; priority?: string; assignedTo?: string | null }, msg: string) => {
     try { await updateSupportTicket(ticketId, dto); toast(msg, 'success'); refetch(); onChanged() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
   const send = async () => {
     if (!reply.trim()) return
     setSending(true)
     try { await addSupportMessage(ticketId, reply.trim(), internal); setReply(''); setInternal(false); refetch(); onChanged() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
     finally { setSending(false) }
   }
   // Suppression définitive réservée au SUPER_ADMIN (action destructive + auditée).
@@ -4162,10 +4154,10 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
   const [deleting, setDeleting] = useState(false)
   const del = async () => {
     if (!tk) return
-    if (!window.confirm(`Supprimer définitivement le ticket ${tk.reference} et tous ses messages ?\nCette action est irréversible.`)) return
+    if (!window.confirm(i18n.t('x.sup.delete_confirm', { ref: tk.reference }))) return
     setDeleting(true)
-    try { await deleteSupportTicket(ticketId); toast(`Ticket ${tk.reference} supprimé`, 'success'); onChanged(); onClose() }
-    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error'); setDeleting(false) }
+    try { await deleteSupportTicket(ticketId); toast(i18n.t('x.sup.deleted', { ref: tk.reference }), 'success'); onChanged(); onClose() }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error'); setDeleting(false) }
   }
 
   const overlay: CSSProperties = { position: 'fixed', inset: 0, background: '#000A', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }
@@ -4189,7 +4181,7 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   </div>
                   <div style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{tk.title}</div>
                 </div>
-                <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 4 }}><X size={20} /></button>
+                <button onClick={onClose} aria-label={i18n.t('common.close')} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: 4 }}><X size={20} /></button>
               </div>
               {/* Client + assignation + actions */}
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginTop: 14 }}>
@@ -4197,17 +4189,17 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   <span style={{ width: 30, height: 30, borderRadius: 15, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(tk.user?.fullName ?? tk.user?.phone)}</span>
                   <div>
                     <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{tk.user?.fullName ?? tk.user?.phone}</div>
-                    <button onClick={() => onViewUser(tk.userId)} style={{ fontSize: 11, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Voir la fiche client →</button>
+                    <button onClick={() => onViewUser(tk.userId)} style={{ fontSize: 11, color: C.blue, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{i18n.t('x.sup.view_client')}</button>
                   </div>
                 </div>
                 <div style={{ flex: 1 }} />
                 {!isReadOnly() && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <select value={tk.assignedTo ?? ''} onChange={(e) => patch({ assignedTo: e.target.value || null }, 'Assignation mise à jour')} style={inputStyle}>
-                      <option value="">Non assigné</option>
+                    <select value={tk.assignedTo ?? ''} onChange={(e) => patch({ assignedTo: e.target.value || null }, i18n.t('x.sup.assign_updated'))} style={inputStyle}>
+                      <option value="">{i18n.t('x.sup.unassigned')}</option>
                       {team.map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}
                     </select>
-                    {tk.assignedTo !== myId && <button onClick={() => patch({ assignedTo: myId }, 'Ticket pris en charge')} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>S'assigner</button>}
+                    {tk.assignedTo !== myId && <button onClick={() => patch({ assignedTo: myId }, i18n.t('x.sup.taken'))} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.assign_self')}</button>}
                   </div>
                 )}
               </div>
@@ -4215,20 +4207,20 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   priorité). Seule la suppression reste réservée au SUPER_ADMIN.
                   L'opérateur Support reste en lecture seule ailleurs (cf. isReadOnly). */}
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, 'Pris en charge')} style={{ fontSize: 12, color: '#FB923C', background: '#FB923C18', border: '1px solid #FB923C40', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Prendre en charge</button>}
-                {tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'RESOLVED' }, 'Ticket résolu')} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Résoudre</button>}
-                {tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket clôturé')} style={{ fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>}
+                {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, i18n.t('x.sup.taken_short'))} style={{ fontSize: 12, color: '#FB923C', background: '#FB923C18', border: '1px solid #FB923C40', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.take_charge')}</button>}
+                {tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'RESOLVED' }, i18n.t('x.sup.resolved'))} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.resolve')}</button>}
+                {tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'CLOSED' }, i18n.t('x.sup.closed'))} style={{ fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.close')}</button>}
                 <span style={{ width: 1, height: 22, background: C.border }} />
-                <span style={{ fontSize: 11, color: C.textMuted }}>Priorité</span>
-                <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
-                  {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                <span style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.sup.priority')}</span>
+                <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, i18n.t('x.sup.prio_updated'))} style={inputStyle}>
+                  {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{i18n.t(v.label)}</option>)}
                 </select>
                 {isSuper && (
                   <>
                     <div style={{ flex: 1 }} />
-                    <button onClick={del} disabled={deleting} title="Supprimer définitivement ce ticket"
+                    <button onClick={del} disabled={deleting} title={i18n.t('x.sup.delete_title')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.red, background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 8, padding: '7px 12px', cursor: deleting ? 'wait' : 'pointer', fontWeight: 600 }}>
-                      <Trash2 size={14} /> {deleting ? 'Suppression…' : 'Supprimer'}
+                      <Trash2 size={14} /> {deleting ? i18n.t('x.sup.deleting') : i18n.t('x.sup.delete')}
                     </button>
                   </>
                 )}
@@ -4246,9 +4238,9 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                     <div style={{ maxWidth: '78%', background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '9px 13px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: mine ? C.green : C.text }}>{m.author?.fullName ?? m.author?.email ?? (mine ? 'Support' : 'Client')}</span>
-                        <span style={{ fontSize: 10, color: C.textMuted }}>{mine ? (m.author?.adminRole ? ROLE_LABELS[m.author.adminRole] ?? 'Admin' : 'Admin') : 'Client'}</span>
-                        {m.internal && <span style={{ fontSize: 9, fontWeight: 800, color: '#B89000', background: C.yellow + '25', borderRadius: 5, padding: '1px 6px' }}>NOTE INTERNE</span>}
+                        <span style={{ fontSize: 12, fontWeight: 700, color: mine ? C.green : C.text }}>{m.author?.fullName ?? m.author?.email ?? (mine ? i18n.t('x.sup.support_word') : i18n.t('x.sup.client_word'))}</span>
+                        <span style={{ fontSize: 10, color: C.textMuted }}>{mine ? (m.author?.adminRole ? i18n.t('roles.' + m.author.adminRole) : i18n.t('x.sup.admin_word')) : i18n.t('x.sup.client_word')}</span>
+                        {m.internal && <span style={{ fontSize: 9, fontWeight: 800, color: '#B89000', background: C.yellow + '25', borderRadius: 5, padding: '1px 6px' }}>{i18n.t('x.sup.internal_note')}</span>}
                       </div>
                       <div style={{ fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
                       <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, textAlign: 'right' }} title={fmtDate(m.createdAt)}>{relativeTime(m.createdAt)}</div>
@@ -4262,16 +4254,16 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                 l'opérateur Support (lecture seule ailleurs). */}
             {(
               <div style={{ borderTop: `1px solid ${C.border}`, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={internal ? 'Note interne (visible admins uniquement)…' : 'Répondre au client…'} rows={2}
+                <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={internal ? i18n.t('x.sup.reply_internal_ph') : i18n.t('x.sup.reply_ph')} rows={2}
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
                   style={{ ...inputStyle, width: '100%', resize: 'vertical', background: internal ? C.yellowLight : C.surface }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button onClick={() => setInternal((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: internal ? '#B89000' : C.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                     <span style={{ position: 'relative', width: 34, height: 18, borderRadius: 9, background: internal ? C.yellow : C.border }}><span style={{ position: 'absolute', top: 2, left: internal ? 18 : 2, width: 14, height: 14, borderRadius: 7, background: '#fff', transition: 'left .15s' }} /></span>
-                    Note interne
+                    {i18n.t('x.sup.internal_toggle')}
                   </button>
                   <div style={{ flex: 1 }} />
-                  <button onClick={send} disabled={sending || !reply.trim()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#fff', background: reply.trim() ? C.green : C.border, border: 'none', borderRadius: 8, padding: '8px 18px', cursor: reply.trim() ? 'pointer' : 'default', fontWeight: 700 }}><Send size={14} /> {sending ? 'Envoi…' : 'Envoyer'}</button>
+                  <button onClick={send} disabled={sending || !reply.trim()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#fff', background: reply.trim() ? C.green : C.border, border: 'none', borderRadius: 8, padding: '8px 18px', cursor: reply.trim() ? 'pointer' : 'default', fontWeight: 700 }}><Send size={14} /> {sending ? i18n.t('x.sup.sending') : i18n.t('x.sup.send')}</button>
                 </div>
               </div>
             )}
@@ -4298,13 +4290,13 @@ function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { te
   const [saving, setSaving] = useState(false)
 
   const submit = async () => {
-    if (!client) { toast('Sélectionnez un client', 'error'); return }
-    if (!title.trim() || !description.trim()) { toast('Titre et description requis', 'error'); return }
+    if (!client) { toast(i18n.t('x.sup.select_client'), 'error'); return }
+    if (!title.trim() || !description.trim()) { toast(i18n.t('x.sup.title_desc_required'), 'error'); return }
     setSaving(true)
     try {
       const t = await createSupportTicket({ userId: client.id, title: title.trim(), description: description.trim(), category, priority, assignedTo: assignedTo || undefined })
-      toast('Ticket créé', 'success'); onCreated((t as any).id)
-    } catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
+      toast(i18n.t('x.sup.created'), 'success'); onCreated((t as any).id)
+    } catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
     finally { setSaving(false) }
   }
   const inputStyle: CSSProperties = { background: C.surface, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 12px', fontSize: 13, width: '100%' }
@@ -4314,12 +4306,12 @@ function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { te
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#000A', zIndex, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, width: 'min(540px, 100%)', padding: 22 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Nouveau ticket</h2>
-          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}><X size={20} /></button>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>{i18n.t('x.sup.new_title')}</h2>
+          <button onClick={onClose} aria-label={i18n.t('common.close')} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer' }}><X size={20} /></button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            {label('Client')}
+            {label(i18n.t('x.sup.client'))}
             {client ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.surface, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '8px 12px' }}>
                 <span style={{ width: 26, height: 26, borderRadius: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(client.fullName ?? client.phone)}</span>
@@ -4328,13 +4320,13 @@ function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { te
               </div>
             ) : (
               <div style={{ position: 'relative' }}>
-                <input value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} placeholder="Rechercher un client (nom/téléphone)…" style={inputStyle} />
+                <input value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} placeholder={i18n.t('x.sup.client_search_ph')} style={inputStyle} />
                 {(clientResults?.data?.length ?? 0) > 0 && (
                   <div style={{ marginTop: 4, background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, maxHeight: 180, overflowY: 'auto' }}>
                     {clientResults!.data.map((u) => (
                       <button key={u.id} onClick={() => { setClient({ id: u.id, fullName: u.fullName, phone: u.phone }); setClientSearch('') }} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${C.border}`, padding: '8px 12px', cursor: 'pointer' }}>
                         <span style={{ width: 24, height: 24, borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, background: C.green + '22', color: C.green }}>{initials(u.fullName ?? u.phone)}</span>
-                        <span style={{ fontSize: 13, color: C.text }}>{u.fullName ?? 'Sans nom'}<span style={{ color: C.textMuted, fontSize: 11 }}> · {u.phone}</span></span>
+                        <span style={{ fontSize: 13, color: C.text }}>{u.fullName ?? i18n.t('common.no_name')}<span style={{ color: C.textMuted, fontSize: 11 }}> · {u.phone}</span></span>
                       </button>
                     ))}
                   </div>
@@ -4342,16 +4334,16 @@ function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { te
               </div>
             )}
           </div>
-          <div>{label('Titre')}<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Résumé du problème" style={inputStyle} /></div>
+          <div>{label(i18n.t('x.sup.ticket_title'))}<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={i18n.t('x.sup.title_ph')} style={inputStyle} /></div>
           <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ flex: 1 }}>{label('Catégorie')}<select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>{Object.entries(TICKET_CAT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
-            <div style={{ flex: 1 }}>{label('Priorité')}<select value={priority} onChange={(e) => setPriority(e.target.value)} style={inputStyle}>{Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+            <div style={{ flex: 1 }}>{label(i18n.t('x.sup.category'))}<select value={category} onChange={(e) => setCategory(e.target.value)} style={inputStyle}>{Object.entries(TICKET_CAT).map(([k, v]) => <option key={k} value={k}>{i18n.t(v.label)}</option>)}</select></div>
+            <div style={{ flex: 1 }}>{label(i18n.t('x.sup.priority_l'))}<select value={priority} onChange={(e) => setPriority(e.target.value)} style={inputStyle}>{Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{i18n.t(v.label)}</option>)}</select></div>
           </div>
-          <div>{label('Assigner à (optionnel)')}<select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={inputStyle}><option value="">Laisser non assigné</option>{team.map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}</select></div>
-          <div>{label('Description')}<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Détails du problème…" style={{ ...inputStyle, resize: 'vertical' }} /></div>
+          <div>{label(i18n.t('x.sup.assign_opt'))}<select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={inputStyle}><option value="">{i18n.t('x.sup.leave_unassigned')}</option>{team.map((m) => <option key={m.id} value={m.id}>{m.fullName ?? m.email}</option>)}</select></div>
+          <div>{label(i18n.t('x.sup.description'))}<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder={i18n.t('x.sup.desc_ph')} style={{ ...inputStyle, resize: 'vertical' }} /></div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={onClose} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>Annuler</button>
-            <button onClick={submit} disabled={saving} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 20px', cursor: saving ? 'wait' : 'pointer', fontWeight: 700 }}>{saving ? 'Création…' : 'Créer le ticket'}</button>
+            <button onClick={onClose} style={{ fontSize: 13, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('common.cancel')}</button>
+            <button onClick={submit} disabled={saving} style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 20px', cursor: saving ? 'wait' : 'pointer', fontWeight: 700 }}>{saving ? i18n.t('x.sup.creating') : i18n.t('x.sup.create')}</button>
           </div>
         </div>
       </div>
@@ -4392,14 +4384,6 @@ const ROLE_PAGES: Record<string, string[] | '*'> = {
 }
 // Ordre d'affichage des rôles, du plus au moins privilégié (selects, modal, matrice).
 const ROLE_ORDER = ['SUPER_ADMIN', 'ADMIN', 'COMPLIANCE_OFFICER', 'FINANCE_OFFICER', 'KYC_OFFICER', 'SUPPORT_OPERATOR']
-const ROLE_LABELS: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  ADMIN: 'Admin',
-  COMPLIANCE_OFFICER: 'Conformité',
-  SUPPORT_OPERATOR: 'Support',
-  FINANCE_OFFICER: 'Finance',
-  KYC_OFFICER: 'KYC',
-}
 // Couleurs de badge par rôle (hex exacts demandés).
 const ROLE_COLORS: Record<string, string> = {
   SUPER_ADMIN: '#00C896',
@@ -4408,14 +4392,6 @@ const ROLE_COLORS: Record<string, string> = {
   SUPPORT_OPERATOR: '#F59E0B',
   FINANCE_OFFICER: '#06B6D4',
   KYC_OFFICER: '#EC4899',
-}
-const ROLE_DESCRIPTIONS: Record<string, string> = {
-  SUPER_ADMIN: 'Accès total, gestion de l\'équipe',
-  ADMIN: 'Accès total sauf équipe et paramètres critiques',
-  COMPLIANCE_OFFICER: 'Conformité ANIF + Journal Audit uniquement',
-  SUPPORT_OPERATOR: 'Tickets : gestion complète (sauf suppression) · Utilisateurs/Transactions : lecture',
-  FINANCE_OFFICER: 'Finances + Recharges & Retraits',
-  KYC_OFFICER: 'Vérification KYC uniquement',
 }
 function canAccess(role: string | null, page: string): boolean {
   const allowed = ROLE_PAGES[role ?? ''] ?? '*'
@@ -4509,9 +4485,9 @@ export default function App() {
 
   // ── SSE global : toasts pour les événements temps réel ──
   const handleGlobalEvent = useCallback((event: { type: string; payload?: any }) => {
-    if (event.type === 'transaction') showToast('Nouvelle transaction reçue')
-    if (event.type === 'user') showToast('Nouvel utilisateur inscrit')
-    if (event.type === 'kyc') showToast('Nouvelle demande KYC')
+    if (event.type === 'transaction') showToast(i18n.t('live_events.new_transaction'))
+    if (event.type === 'user') showToast(i18n.t('live_events.new_user'))
+    if (event.type === 'kyc') showToast(i18n.t('live_events.new_kyc'))
   }, [showToast])
 
   useLiveEvents(handleGlobalEvent)
@@ -4657,7 +4633,7 @@ export default function App() {
                 <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Admin</div>
                 {adminRole && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: ROLE_COLORS[adminRole] ?? C.textMuted }}>
-                    {ROLE_LABELS[adminRole] ?? adminRole}
+                    {i18n.t('roles.' + adminRole)}
                   </div>
                 )}
               </div>

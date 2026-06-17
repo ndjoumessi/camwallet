@@ -41,11 +41,18 @@
     .brand-name { font-size: 19px; font-weight: 700; }
     .brand-name span { color: var(--green); }
     .brand-sub { font-size: 11px; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+    .header-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--soft); }
     .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 0 transparent; }
     .dot.ok { background: var(--green); animation: pulse 2.2s infinite; }
     .dot.down { background: #FF4D6D; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 #00c89666; } 70% { box-shadow: 0 0 0 8px #00c89600; } 100% { box-shadow: 0 0 0 0 #00c89600; } }
+
+    /* ── Sélecteur de langue ── */
+    .lang { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--surface); }
+    .lang button { background: none; border: none; color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; padding: 7px 13px; cursor: pointer; transition: color .12s, background .12s; }
+    .lang button:hover { color: var(--soft); }
+    .lang button.active { background: var(--green-soft); color: var(--green); }
 
     /* ── Hero ── */
     .hero { padding: 72px 0 56px; text-align: center; }
@@ -125,23 +132,29 @@
         <div class="logo">₩</div>
         <div>
           <div class="brand-name">Cam<span>Wallet</span></div>
-          <div class="brand-sub">Portail opérateurs</div>
+          <div class="brand-sub" data-i18n="brand_sub">Portail opérateurs</div>
         </div>
       </div>
-      <div class="status-pill"><span id="apiDot" class="dot"></span><span id="apiText">Vérification de l'API…</span></div>
+      <div class="header-tools">
+        <div class="lang" role="group" aria-label="Langue / Language">
+          <button type="button" data-lang="fr">FR</button>
+          <button type="button" data-lang="en">EN</button>
+        </div>
+        <div class="status-pill"><span id="apiDot" class="dot"></span><span id="apiText" data-i18n="api_checking">Vérification de l'API…</span></div>
+      </div>
     </div>
   </header>
 
   <!-- ── Hero ── -->
   <div class="hero wrap">
-    <div class="vault-badge">🔐 La Chambre Forte</div>
-    <h1>Le poste de commande<br />de la <span class="vault">Chambre Forte</span></h1>
-    <p>Console d'administration de CamWallet, le portefeuille QR prépayé adossé à Orange Money et MTN Mobile Money. Pilotez utilisateurs, conformité et flux financiers depuis un cockpit unique, cloisonné par rôle.</p>
+    <div class="vault-badge" data-i18n="vault_badge">🔐 La Chambre Forte</div>
+    <h1 data-i18n-html="hero_title">Le poste de commande<br />de la <span class="vault">Chambre Forte</span></h1>
+    <p data-i18n="hero_sub">Console d'administration de CamWallet, le portefeuille QR prépayé adossé à Orange Money et MTN Mobile Money. Pilotez utilisateurs, conformité et flux financiers depuis un cockpit unique, cloisonné par rôle.</p>
     <div class="hero-cta">
-      <a class="btn btn-primary" href="/admin">Ouvrir le dashboard
+      <a class="btn btn-primary" href="/admin"><span data-i18n="cta_dashboard">Ouvrir le dashboard</span>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
       </a>
-      <a class="btn btn-ghost" href="#demo">Comptes de démonstration</a>
+      <a class="btn btn-ghost" href="#demo" data-i18n="cta_demo">Comptes de démonstration</a>
     </div>
   </div>
 
@@ -149,9 +162,9 @@
   <section class="block" id="modules">
     <div class="wrap">
       <div class="sec-head">
-        <div class="sec-kicker">Les 6 modules</div>
-        <div class="sec-title">Tout le coffre, organisé</div>
-        <div class="sec-desc">Six modules opérationnels couvrent l'intégralité du cycle de vie : du compte client au reporting de conformité ANIF.</div>
+        <div class="sec-kicker" data-i18n="modules_kicker">Les 6 modules</div>
+        <div class="sec-title" data-i18n="modules_title">Tout le coffre, organisé</div>
+        <div class="sec-desc" data-i18n="modules_desc">Six modules opérationnels couvrent l'intégralité du cycle de vie : du compte client au reporting de conformité ANIF.</div>
       </div>
       <div class="grid grid-3" id="modulesGrid"></div>
     </div>
@@ -161,14 +174,14 @@
   <section class="block" id="roles">
     <div class="wrap">
       <div class="sec-head">
-        <div class="sec-kicker">Habilitations</div>
-        <div class="sec-title">Six rôles, accès cloisonné</div>
-        <div class="sec-desc">Chaque opérateur n'accède qu'à son périmètre. Le cloisonnement est appliqué côté serveur (permissions par sous-rôle), pas seulement masqué dans l'interface.</div>
+        <div class="sec-kicker" data-i18n="roles_kicker">Habilitations</div>
+        <div class="sec-title" data-i18n="roles_title">Six rôles, accès cloisonné</div>
+        <div class="sec-desc" data-i18n="roles_desc">Chaque opérateur n'accède qu'à son périmètre. Le cloisonnement est appliqué côté serveur (permissions par sous-rôle), pas seulement masqué dans l'interface.</div>
       </div>
       <div class="grid grid-3" id="rolesGrid"></div>
       <div class="rbac-note">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span><strong>Sécurité serveur.</strong> Les écritures et les ressources sensibles (KYC, audit, paramètres, équipe, suppression de ticket) sont protégées par un guard de permissions : un opérateur ne peut pas contourner l'interface via l'API. La gestion de l'équipe et la suppression de tickets sont réservées au Super Admin.</span>
+        <span data-i18n-html="rbac_note"><strong>Sécurité serveur.</strong> Les écritures et les ressources sensibles (KYC, audit, paramètres, équipe, suppression de ticket) sont protégées par un guard de permissions : un opérateur ne peut pas contourner l'interface via l'API. La gestion de l'équipe et la suppression de tickets sont réservées au Super Admin.</span>
       </div>
     </div>
   </section>
@@ -177,9 +190,9 @@
   <section class="block" id="integrations">
     <div class="wrap">
       <div class="sec-head">
-        <div class="sec-kicker">État des intégrations</div>
-        <div class="sec-title">Les rouages de la Chambre Forte</div>
-        <div class="sec-desc">L'API est sondée en direct ci-dessous. Les passerelles opérateurs sont supervisées en continu depuis l'onglet « Santé des intégrations » du dashboard.</div>
+        <div class="sec-kicker" data-i18n="integ_kicker">État des intégrations</div>
+        <div class="sec-title" data-i18n="integ_title">Les rouages de la Chambre Forte</div>
+        <div class="sec-desc" data-i18n="integ_desc">L'API est sondée en direct ci-dessous. Les passerelles opérateurs sont supervisées en continu depuis l'onglet « Santé des intégrations » du dashboard.</div>
       </div>
       <div class="card api-card" style="margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:14px">
@@ -190,9 +203,9 @@
           </div>
         </div>
         <div class="api-meta">
-          <div><div class="k">Statut</div><div class="v" id="apiStatus">…</div></div>
-          <div><div class="k">Version</div><div class="v mono" id="apiVersion">…</div></div>
-          <div><div class="k">Uptime</div><div class="v mono" id="apiUptime">…</div></div>
+          <div><div class="k" data-i18n="api_status">Statut</div><div class="v" id="apiStatus">…</div></div>
+          <div><div class="k" data-i18n="api_version">Version</div><div class="v mono" id="apiVersion">…</div></div>
+          <div><div class="k" data-i18n="api_uptime">Uptime</div><div class="v mono" id="apiUptime">…</div></div>
         </div>
       </div>
       <div class="grid grid-2" id="integGrid"></div>
@@ -203,13 +216,13 @@
   <section class="block" id="demo">
     <div class="wrap">
       <div class="sec-head">
-        <div class="sec-kicker">Accès rapide</div>
-        <div class="sec-title">Comptes de démonstration</div>
-        <div class="sec-desc">Identifiants de l'environnement de démonstration pour explorer le dashboard et l'application mobile.</div>
+        <div class="sec-kicker" data-i18n="demo_kicker">Accès rapide</div>
+        <div class="sec-title" data-i18n="demo_title">Comptes de démonstration</div>
+        <div class="sec-desc" data-i18n="demo_desc">Identifiants de l'environnement de démonstration pour explorer le dashboard et l'application mobile.</div>
       </div>
       <div class="demo-warn">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-        <span>Environnement de <strong>démonstration</strong> uniquement. La production utilise des identifiants distincts ; ne réutilisez jamais ces comptes en conditions réelles.</span>
+        <span data-i18n-html="demo_warn">Environnement de <strong>démonstration</strong> uniquement. La production utilise des identifiants distincts ; ne réutilisez jamais ces comptes en conditions réelles.</span>
       </div>
       <div class="grid grid-3" id="demoGrid"></div>
     </div>
@@ -217,15 +230,99 @@
 
   <footer>
     <div class="wrap foot-row">
-      <div>© <span id="year"></span> CamWallet · Crédit QR adossé à Orange Money &amp; MTN MoMo. Cameroun.</div>
-      <div>La Chambre Forte · Portail opérateurs</div>
+      <div data-i18n-html="footer_left">© <span id="year"></span> CamWallet · Crédit QR adossé à Orange Money &amp; MTN MoMo. Cameroun.</div>
+      <div data-i18n="footer_right">La Chambre Forte · Portail opérateurs</div>
     </div>
   </footer>
 
-  <div class="toast" id="toast">Copié ✓</div>
+  <div class="toast" id="toast" data-i18n="toast_copied">Copié ✓</div>
 
   <script>
-    // ── Données (alignées sur le RBAC et l'architecture du backend) ──
+    // ── i18n : textes statiques FR/EN ──
+    var I18N = {
+      fr: {
+        html_lang: 'fr',
+        brand_sub: 'Portail opérateurs',
+        api_checking: "Vérification de l'API…",
+        vault_badge: '🔐 La Chambre Forte',
+        hero_title: 'Le poste de commande<br />de la <span class="vault">Chambre Forte</span>',
+        hero_sub: "Console d'administration de CamWallet, le portefeuille QR prépayé adossé à Orange Money et MTN Mobile Money. Pilotez utilisateurs, conformité et flux financiers depuis un cockpit unique, cloisonné par rôle.",
+        cta_dashboard: 'Ouvrir le dashboard',
+        cta_demo: 'Comptes de démonstration',
+        modules_kicker: 'Les 6 modules',
+        modules_title: 'Tout le coffre, organisé',
+        modules_desc: "Six modules opérationnels couvrent l'intégralité du cycle de vie : du compte client au reporting de conformité ANIF.",
+        roles_kicker: 'Habilitations',
+        roles_title: 'Six rôles, accès cloisonné',
+        roles_desc: "Chaque opérateur n'accède qu'à son périmètre. Le cloisonnement est appliqué côté serveur (permissions par sous-rôle), pas seulement masqué dans l'interface.",
+        rbac_note: "<strong>Sécurité serveur.</strong> Les écritures et les ressources sensibles (KYC, audit, paramètres, équipe, suppression de ticket) sont protégées par un guard de permissions : un opérateur ne peut pas contourner l'interface via l'API. La gestion de l'équipe et la suppression de tickets sont réservées au Super Admin.",
+        integ_kicker: 'État des intégrations',
+        integ_title: 'Les rouages de la Chambre Forte',
+        integ_desc: "L'API est sondée en direct ci-dessous. Les passerelles opérateurs sont supervisées en continu depuis l'onglet « Santé des intégrations » du dashboard.",
+        api_status: 'Statut',
+        api_version: 'Version',
+        api_uptime: 'Uptime',
+        integ_configured: 'Configurée',
+        demo_kicker: 'Accès rapide',
+        demo_title: 'Comptes de démonstration',
+        demo_desc: "Identifiants de l'environnement de démonstration pour explorer le dashboard et l'application mobile.",
+        demo_warn: "Environnement de <strong>démonstration</strong> uniquement. La production utilise des identifiants distincts ; ne réutilisez jamais ces comptes en conditions réelles.",
+        footer_left: '© <span id="year"></span> CamWallet · Crédit QR adossé à Orange Money &amp; MTN MoMo. Cameroun.',
+        footer_right: 'La Chambre Forte · Portail opérateurs',
+        toast_copied: 'Copié ✓',
+        copy_prefix: 'Copié : ',
+        copy_aria: 'Copier ',
+        api_operational: 'API opérationnelle',
+        api_unavailable: 'API indisponible',
+        api_unreachable: 'API injoignable',
+        st_online: 'En ligne',
+        st_offline: 'Hors ligne',
+        st_unreachable: 'Injoignable',
+        st_na: 'n/d'
+      },
+      en: {
+        html_lang: 'en',
+        brand_sub: 'Operator portal',
+        api_checking: 'Checking the API…',
+        vault_badge: '🔐 The Vault',
+        hero_title: 'The command post<br />of the <span class="vault">Vault</span>',
+        hero_sub: "CamWallet's admin console — the prepaid QR wallet backed by Orange Money and MTN Mobile Money. Manage users, compliance and financial flows from a single, role-partitioned cockpit.",
+        cta_dashboard: 'Open the dashboard',
+        cta_demo: 'Demo accounts',
+        modules_kicker: 'The 6 modules',
+        modules_title: 'The whole vault, organized',
+        modules_desc: 'Six operational modules cover the entire lifecycle: from the customer account to AML (ANIF) compliance reporting.',
+        roles_kicker: 'Permissions',
+        roles_title: 'Six roles, partitioned access',
+        roles_desc: 'Each operator only accesses their own scope. Partitioning is enforced server-side (per-sub-role permissions), not merely hidden in the UI.',
+        rbac_note: "<strong>Server-side security.</strong> Writes and sensitive resources (KYC, audit, settings, team, ticket deletion) are protected by a permissions guard: an operator cannot bypass the UI via the API. Team management and ticket deletion are reserved for the Super Admin.",
+        integ_kicker: 'Integration status',
+        integ_title: 'The gears of the Vault',
+        integ_desc: 'The API is probed live below. Operator gateways are continuously monitored from the dashboard’s “Integration health” tab.',
+        api_status: 'Status',
+        api_version: 'Version',
+        api_uptime: 'Uptime',
+        integ_configured: 'Configured',
+        demo_kicker: 'Quick access',
+        demo_title: 'Demo accounts',
+        demo_desc: 'Demo environment credentials to explore the dashboard and the mobile app.',
+        demo_warn: 'Demo environment <strong>only</strong>. Production uses separate credentials; never reuse these accounts in real conditions.',
+        footer_left: '© <span id="year"></span> CamWallet · QR Credit backed by Orange Money &amp; MTN MoMo. Cameroon.',
+        footer_right: 'The Vault · Operator portal',
+        toast_copied: 'Copied ✓',
+        copy_prefix: 'Copied: ',
+        copy_aria: 'Copy ',
+        api_operational: 'API operational',
+        api_unavailable: 'API unavailable',
+        api_unreachable: 'API unreachable',
+        st_online: 'Online',
+        st_offline: 'Offline',
+        st_unreachable: 'Unreachable',
+        st_na: 'n/a'
+      }
+    };
+
+    // ── Données bilingues (alignées sur le RBAC et l'architecture du backend) ──
     var ICONS = {
       users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
       kyc: '<path d="M3 5h18v14H3z"/><circle cx="9" cy="12" r="2.5"/><path d="M14 10h4M14 14h4M5.5 16.5a3.5 3.5 0 0 1 7 0"/>',
@@ -235,68 +332,152 @@
       support: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .8-1 1.7M12 17h.01"/>'
     };
     var MODULES = [
-      { ic:'users', t:'Utilisateurs & Comptes', d:"Recherche, fiche détaillée, blocage / réactivation, réinitialisation du PIN et notes internes sur chaque client.", tag:'users' },
-      { ic:'kyc', t:'Vérification KYC', d:"File d'attente des pièces (CNI recto/verso + selfie), validation par signature et approbation ou rejet tracés.", tag:'kyc' },
-      { ic:'tx', t:'Transactions & Finances', d:"Flux P2P et paiements QR, volumes, frais perçus, revenus de la plateforme et séries temporelles.", tag:'transactions' },
-      { ic:'ops', t:'Recharges & Retraits', d:"Opérations Orange Money / MTN MoMo, statut des webhooks et relance des opérations en attente.", tag:'operations' },
-      { ic:'anif', t:'Conformité ANIF & Audit', d:"Alertes anti-blanchiment (seuils, fréquence), dossiers d'enquête et journal d'audit horodaté.", tag:'anif · audit' },
-      { ic:'support', t:'Support & Tickets', d:"Tickets clients de bout en bout : réponse, prise en charge, priorité, résolution et clôture.", tag:'support' }
+      { ic:'users', tag:'users',
+        t:{fr:'Utilisateurs & Comptes', en:'Users & Accounts'},
+        d:{fr:"Recherche, fiche détaillée, blocage / réactivation, réinitialisation du PIN et notes internes sur chaque client.", en:'Search, detailed profile, block / reactivate, PIN reset and internal notes on every customer.'} },
+      { ic:'kyc', tag:'kyc',
+        t:{fr:'Vérification KYC', en:'KYC Verification'},
+        d:{fr:"File d'attente des pièces (CNI recto/verso + selfie), validation par signature et approbation ou rejet tracés.", en:'Document queue (ID front/back + selfie), signature validation and audited approval or rejection.'} },
+      { ic:'tx', tag:'transactions',
+        t:{fr:'Transactions & Finances', en:'Transactions & Finance'},
+        d:{fr:'Flux P2P et paiements QR, volumes, frais perçus, revenus de la plateforme et séries temporelles.', en:'P2P flows and QR payments, volumes, collected fees, platform revenue and time series.'} },
+      { ic:'ops', tag:'operations',
+        t:{fr:'Recharges & Retraits', en:'Top-ups & Withdrawals'},
+        d:{fr:'Opérations Orange Money / MTN MoMo, statut des webhooks et relance des opérations en attente.', en:'Orange Money / MTN MoMo operations, webhook status and retry of pending operations.'} },
+      { ic:'anif', tag:'anif · audit',
+        t:{fr:'Conformité ANIF & Audit', en:'AML Compliance & Audit'},
+        d:{fr:"Alertes anti-blanchiment (seuils, fréquence), dossiers d'enquête et journal d'audit horodaté.", en:'Anti-money-laundering alerts (thresholds, frequency), investigation cases and timestamped audit log.'} },
+      { ic:'support', tag:'support',
+        t:{fr:'Support & Tickets', en:'Support & Tickets'},
+        d:{fr:'Tickets clients de bout en bout : réponse, prise en charge, priorité, résolution et clôture.', en:'End-to-end customer tickets: reply, assignment, priority, resolution and closing.'} }
     ];
     var ROLES = [
-      { k:'Super Admin', c:'var(--r-super)', i:'SA', s:'Accès total', d:"Toutes les pages, gestion de l'équipe et des paramètres critiques. Seul à pouvoir supprimer un ticket." },
-      { k:'Admin', c:'var(--r-admin)', i:'AD', s:'Quasi-total', d:"Accès complet sauf la gestion d'équipe et les paramètres globaux critiques." },
-      { k:'Conformité', c:'var(--r-comp)', i:'CO', s:'ANIF + Audit', d:"Conformité ANIF et Journal d'audit uniquement, plus les réglages anti-blanchiment." },
-      { k:'Support', c:'var(--r-support)', i:'SU', s:'Tickets + lecture', d:"Gestion complète des tickets (sauf suppression) ; Utilisateurs et Transactions en lecture seule." },
-      { k:'Finance', c:'var(--r-finance)', i:'FI', s:'Flux financiers', d:"Finances & Revenus et Recharges / Retraits opérateurs." },
-      { k:'KYC', c:'var(--r-kyc)', i:'KY', s:'Vérification', d:"Vérification KYC uniquement : approbation des pièces d'identité." }
+      { c:'var(--r-super)', i:'SA',
+        k:{fr:'Super Admin', en:'Super Admin'}, s:{fr:'Accès total', en:'Full access'},
+        d:{fr:"Toutes les pages, gestion de l'équipe et des paramètres critiques. Seul à pouvoir supprimer un ticket.", en:'All pages, team management and critical settings. The only role that can delete a ticket.'} },
+      { c:'var(--r-admin)', i:'AD',
+        k:{fr:'Admin', en:'Admin'}, s:{fr:'Quasi-total', en:'Near-full'},
+        d:{fr:"Accès complet sauf la gestion d'équipe et les paramètres globaux critiques.", en:'Full access except team management and critical global settings.'} },
+      { c:'var(--r-comp)', i:'CO',
+        k:{fr:'Conformité', en:'Compliance'}, s:{fr:'ANIF + Audit', en:'AML + Audit'},
+        d:{fr:"Conformité ANIF et Journal d'audit uniquement, plus les réglages anti-blanchiment.", en:'AML compliance and Audit log only, plus anti-money-laundering settings.'} },
+      { c:'var(--r-support)', i:'SU',
+        k:{fr:'Support', en:'Support'}, s:{fr:'Tickets + lecture', en:'Tickets + read'},
+        d:{fr:'Gestion complète des tickets (sauf suppression) ; Utilisateurs et Transactions en lecture seule.', en:'Full ticket management (except deletion); Users and Transactions read-only.'} },
+      { c:'var(--r-finance)', i:'FI',
+        k:{fr:'Finance', en:'Finance'}, s:{fr:'Flux financiers', en:'Financial flows'},
+        d:{fr:'Finances & Revenus et Recharges / Retraits opérateurs.', en:'Finance & Revenue and operator Top-ups / Withdrawals.'} },
+      { c:'var(--r-kyc)', i:'KY',
+        k:{fr:'KYC', en:'KYC'}, s:{fr:'Vérification', en:'Verification'},
+        d:{fr:"Vérification KYC uniquement : approbation des pièces d'identité.", en:'KYC verification only: approval of identity documents.'} }
     ];
     var INTEG = [
-      { n:'Orange Money', r:'Paiements & crédits entrants (webhooks)', c:'#FF7900' },
-      { n:'MTN Mobile Money', r:'Paiements & crédits entrants (webhooks)', c:'#FFCB05' },
-      { n:'SMS OTP · AfricasTalking', r:"Codes de vérification à l'inscription", c:'#00C896' },
-      { n:'Notifications Push · Expo', r:'Alertes temps réel sur crédit reçu', c:'#3B82F6' }
+      { n:'Orange Money', c:'#FF7900', r:{fr:'Paiements & crédits entrants (webhooks)', en:'Payments & incoming credits (webhooks)'} },
+      { n:'MTN Mobile Money', c:'#FFCB05', r:{fr:'Paiements & crédits entrants (webhooks)', en:'Payments & incoming credits (webhooks)'} },
+      { n:'SMS OTP · AfricasTalking', c:'#00C896', r:{fr:"Codes de vérification à l'inscription", en:'Verification codes at sign-up'} },
+      { n:'Notifications Push · Expo', c:'#3B82F6', r:{fr:'Alertes temps réel sur crédit reçu', en:'Real-time alerts on received credit'} }
     ];
     var DEMO = [
-      { col:'var(--r-admin)', icon:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/>', t:'Dashboard Admin', rows:[['Email','admin@camwallet.cm'],['Mot de passe','Admin@2025!']], cta:{label:'Ouvrir le dashboard',href:'/admin'} },
-      { col:'var(--r-super)', icon:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>', t:'App mobile · Utilisateur', rows:[['Téléphone','+237677000001'],['PIN','123456']] },
-      { col:'var(--r-support)', icon:'<path d="M3 3h18v13H7l-4 4z"/>', t:'App mobile · Marchand', rows:[['Téléphone','+237699000002'],['PIN','123456']] }
+      { col:'var(--r-admin)', icon:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/>',
+        t:{fr:'Dashboard Admin', en:'Admin Dashboard'},
+        rows:[ {l:{fr:'Email', en:'Email'}, v:'admin@camwallet.cm'}, {l:{fr:'Mot de passe', en:'Password'}, v:'Admin@2025!'} ],
+        cta:{ href:'/admin', label:{fr:'Ouvrir le dashboard', en:'Open the dashboard'} } },
+      { col:'var(--r-super)', icon:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>',
+        t:{fr:'App mobile · Utilisateur', en:'Mobile app · User'},
+        rows:[ {l:{fr:'Téléphone', en:'Phone'}, v:'+237677000001'}, {l:{fr:'PIN', en:'PIN'}, v:'123456'} ] },
+      { col:'var(--r-support)', icon:'<path d="M3 3h18v13H7l-4 4z"/>',
+        t:{fr:'App mobile · Marchand', en:'Mobile app · Merchant'},
+        rows:[ {l:{fr:'Téléphone', en:'Phone'}, v:'+237699000002'}, {l:{fr:'PIN', en:'PIN'}, v:'123456'} ] }
     ];
 
     function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
     var svg = function(inner, extra){ return '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"' + (extra||'') + '>' + inner + '</svg>'; };
 
-    // Modules
-    var mg = document.getElementById('modulesGrid');
-    MODULES.forEach(function(m){
-      var c = el('div', 'card module');
-      c.innerHTML = '<div class="ic">' + svg(ICONS[m.ic]) + '</div><h3>' + m.t + '</h3><p>' + m.d + '</p><span class="tag">' + m.tag + '</span>';
-      mg.appendChild(c);
-    });
-    // Rôles
-    var rg = document.getElementById('rolesGrid');
-    ROLES.forEach(function(r){
-      var c = el('div', 'card role'); c.style.setProperty('--rc', r.c);
-      c.innerHTML = '<div class="role-top"><span class="role-chip" style="background:' + r.c + '">' + r.i + '</span><div><h3>' + r.k + '</h3><div class="scope">' + r.s + '</div></div></div><p>' + r.d + '</p>';
-      rg.appendChild(c);
-    });
-    // Intégrations
-    var ig = document.getElementById('integGrid');
-    INTEG.forEach(function(t){
-      var c = el('div', 'card integ');
-      c.innerHTML = '<span class="idot" style="background:' + t.c + '"></span><div><div class="iname">' + t.n + '</div><div class="irole">' + t.r + '</div></div><span class="istate" style="background:var(--green-soft);color:var(--green)">Configurée</span>';
-      ig.appendChild(c);
-    });
-    // Comptes démo
-    var dg = document.getElementById('demoGrid');
-    DEMO.forEach(function(d){
-      var c = el('div', 'card'); c.style.borderTop = '3px solid ' + d.col;
-      var rows = d.rows.map(function(r){
-        return '<div class="cred"><div><div class="cl">' + r[0] + '</div><div class="cv mono">' + r[1] + '</div></div>' +
-          '<button class="copy" data-copy="' + r[1] + '" aria-label="Copier ' + r[0] + '">' + svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>') + '</button></div>';
-      }).join('');
-      var cta = d.cta ? '<a class="btn btn-primary" style="margin-top:16px;width:100%;justify-content:center" href="' + d.cta.href + '">' + d.cta.label + '</a>' : '';
-      c.innerHTML = '<div class="demo-head"><span class="di" style="background:' + d.col + '22">' + svg(d.icon, ' stroke="' + d.col + '"') + '</span><h3>' + d.t + '</h3></div>' + rows + cta;
-      dg.appendChild(c);
+    var SUPPORTED = { fr: 1, en: 1 };
+    var lang = (function(){
+      var saved = localStorage.getItem('opLang');
+      if (saved && SUPPORTED[saved]) return saved;
+      return (navigator.language || 'fr').slice(0, 2) === 'en' ? 'en' : 'fr';
+    })();
+    var lastApi = null; // dernier état /health pour re-rendu lors d'un changement de langue
+
+    function renderGrids() {
+      var T = I18N[lang];
+      // Modules
+      var mg = document.getElementById('modulesGrid'); mg.innerHTML = '';
+      MODULES.forEach(function(m){
+        var c = el('div', 'card module');
+        c.innerHTML = '<div class="ic">' + svg(ICONS[m.ic]) + '</div><h3>' + m.t[lang] + '</h3><p>' + m.d[lang] + '</p><span class="tag">' + m.tag + '</span>';
+        mg.appendChild(c);
+      });
+      // Rôles
+      var rg = document.getElementById('rolesGrid'); rg.innerHTML = '';
+      ROLES.forEach(function(r){
+        var c = el('div', 'card role'); c.style.setProperty('--rc', r.c);
+        c.innerHTML = '<div class="role-top"><span class="role-chip" style="background:' + r.c + '">' + r.i + '</span><div><h3>' + r.k[lang] + '</h3><div class="scope">' + r.s[lang] + '</div></div></div><p>' + r.d[lang] + '</p>';
+        rg.appendChild(c);
+      });
+      // Intégrations
+      var ig = document.getElementById('integGrid'); ig.innerHTML = '';
+      INTEG.forEach(function(t){
+        var c = el('div', 'card integ');
+        c.innerHTML = '<span class="idot" style="background:' + t.c + '"></span><div><div class="iname">' + t.n + '</div><div class="irole">' + t.r[lang] + '</div></div><span class="istate" style="background:var(--green-soft);color:var(--green)">' + T.integ_configured + '</span>';
+        ig.appendChild(c);
+      });
+      // Comptes démo
+      var dg = document.getElementById('demoGrid'); dg.innerHTML = '';
+      DEMO.forEach(function(d){
+        var c = el('div', 'card'); c.style.borderTop = '3px solid ' + d.col;
+        var rows = d.rows.map(function(r){
+          return '<div class="cred"><div><div class="cl">' + r.l[lang] + '</div><div class="cv mono">' + r.v + '</div></div>' +
+            '<button class="copy" data-copy="' + r.v + '" aria-label="' + T.copy_aria + r.l[lang] + '">' + svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>') + '</button></div>';
+        }).join('');
+        var cta = d.cta ? '<a class="btn btn-primary" style="margin-top:16px;width:100%;justify-content:center" href="' + d.cta.href + '">' + d.cta.label[lang] + '</a>' : '';
+        c.innerHTML = '<div class="demo-head"><span class="di" style="background:' + d.col + '22">' + svg(d.icon, ' stroke="' + d.col + '"') + '</span><h3>' + d.t[lang] + '</h3></div>' + rows + cta;
+        dg.appendChild(c);
+      });
+    }
+
+    function applyApiState() {
+      var T = I18N[lang];
+      if (lastApi === null) return; // ping pas encore résolu : le rendu live s'en chargera
+      if (lastApi === 'unreachable') {
+        document.getElementById('apiText').textContent = T.api_unreachable;
+        document.getElementById('apiStatus').textContent = T.st_unreachable;
+        return;
+      }
+      var ok = lastApi.ok;
+      document.getElementById('apiText').textContent = ok ? T.api_operational : T.api_unavailable;
+      document.getElementById('apiStatus').textContent = ok ? T.st_online : T.st_offline;
+      document.getElementById('apiVersion').textContent = lastApi.version ? 'v' + lastApi.version : T.st_na;
+    }
+
+    function applyLang(next) {
+      lang = SUPPORTED[next] ? next : 'fr';
+      localStorage.setItem('opLang', lang);
+      var T = I18N[lang];
+      document.documentElement.lang = T.html_lang;
+      // Textes statiques
+      document.querySelectorAll('[data-i18n]').forEach(function(node){
+        var key = node.getAttribute('data-i18n');
+        if (T[key] != null) node.textContent = T[key];
+      });
+      document.querySelectorAll('[data-i18n-html]').forEach(function(node){
+        var key = node.getAttribute('data-i18n-html');
+        if (T[key] != null) node.innerHTML = T[key];
+      });
+      // L'année est réinjectée car footer_left contient le <span id="year">
+      var y = document.getElementById('year'); if (y) y.textContent = new Date().getFullYear();
+      // Boutons de langue actifs
+      document.querySelectorAll('.lang button').forEach(function(b){
+        b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+      });
+      renderGrids();
+      applyApiState();
+    }
+
+    document.querySelectorAll('.lang button').forEach(function(b){
+      b.addEventListener('click', function(){ applyLang(b.getAttribute('data-lang')); });
     });
 
     // Copier
@@ -305,30 +486,35 @@
       var b = e.target.closest('.copy'); if (!b) return;
       var v = b.getAttribute('data-copy');
       navigator.clipboard.writeText(v).then(function(){
-        toast.textContent = 'Copié : ' + v; toast.classList.add('show');
+        toast.textContent = I18N[lang].copy_prefix + v; toast.classList.add('show');
         setTimeout(function(){ toast.classList.remove('show'); }, 1600);
       });
     });
 
-    document.getElementById('year').textContent = new Date().getFullYear();
+    // Rendu initial
+    applyLang(lang);
 
     // ── Ping API en direct (autorisé par la CSP : connect-src Railway) ──
     var API = 'https://camwallet-production.up.railway.app/api/v1/health';
     function fmtUptime(s){ s = Math.floor(s||0); var h = Math.floor(s/3600), m = Math.floor((s%3600)/60); if (h) return h + 'h ' + m + 'm'; if (m) return m + 'm'; return s + 's'; }
     fetch(API, { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(d){
       var ok = d && d.status === 'ok';
+      lastApi = { ok: ok, version: d && d.version };
+      var T = I18N[lang];
       document.getElementById('apiDot').className = 'dot ' + (ok ? 'ok' : 'down');
-      document.getElementById('apiText').textContent = ok ? 'API opérationnelle' : 'API indisponible';
+      document.getElementById('apiText').textContent = ok ? T.api_operational : T.api_unavailable;
       document.getElementById('apiDot2').style.background = ok ? 'var(--green)' : '#FF4D6D';
-      document.getElementById('apiStatus').textContent = ok ? 'En ligne' : 'Hors ligne';
+      document.getElementById('apiStatus').textContent = ok ? T.st_online : T.st_offline;
       document.getElementById('apiStatus').style.color = ok ? 'var(--green)' : '#FF4D6D';
-      document.getElementById('apiVersion').textContent = d.version ? 'v' + d.version : 'n/d';
+      document.getElementById('apiVersion').textContent = d.version ? 'v' + d.version : T.st_na;
       document.getElementById('apiUptime').textContent = fmtUptime(d.uptime);
     }).catch(function(){
+      lastApi = 'unreachable';
+      var T = I18N[lang];
       document.getElementById('apiDot').className = 'dot down';
-      document.getElementById('apiText').textContent = 'API injoignable';
+      document.getElementById('apiText').textContent = T.api_unreachable;
       document.getElementById('apiDot2').style.background = '#FF4D6D';
-      document.getElementById('apiStatus').textContent = 'Injoignable';
+      document.getElementById('apiStatus').textContent = T.st_unreachable;
       document.getElementById('apiStatus').style.color = '#FF4D6D';
     });
   </script>
