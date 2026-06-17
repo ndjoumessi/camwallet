@@ -2,7 +2,7 @@
   "expo": {
     "name": "CamWallet",
     "slug": "camwallet",
-    "version": "2.3.0",
+    "version": "2.3.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -31,7 +31,7 @@
         "backgroundColor": "#0a0f1e"
       },
       "package": "com.camwallet.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.USE_BIOMETRIC",

@@ -44,6 +44,14 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
   const isPhoneValid = /^\+237[62]\d{8}$/.test(phone.trim().replace(/\s/g, ''));
   const canSubmit = isPhoneValid && pin.length === 6 && !loading;
 
+  // Pré-remplit les identifiants du compte de démonstration (l'utilisateur n'a
+  // plus qu'à appuyer sur « Se connecter »). Disponible y compris en production.
+  const fillDemo = useCallback(() => {
+    setPhone('+237677000001');
+    setPin('123456');
+    pinRef.current?.blur();
+  }, []);
+
   // Vérifie si la biométrie est activée et disponible
   useEffect(() => {
     (async () => {
@@ -259,7 +267,14 @@ export default function LoginScreen({ onSuccess, onRegister }: LoginScreenProps)
             </Pressable>
           ) : null}
 
-          {__DEV__ && <Text style={styles.hint}>Test : +237677000001 · PIN 123456</Text>}
+          <Button
+            label={t('auth.login_screen.demoBtn')}
+            onPress={fillDemo}
+            variant="secondary"
+            icon="flask-outline"
+            disabled={loading}
+            style={styles.demoBtn}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -363,6 +378,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   submit: { marginTop: Spacing.sm },
+  demoBtn: { marginTop: Spacing.lg },
 
   pressed: { opacity: 0.7 },
   registerLink: { alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: Spacing.xl },
