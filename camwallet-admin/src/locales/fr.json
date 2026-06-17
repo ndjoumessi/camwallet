@@ -68,7 +68,7 @@
     "admin_system": "Admin Système",
     "api_operational": "API opérationnelle",
     "admin_panel": "Admin Panel",
-    "back_home": "← Accueil"
+    "back_home": "Accueil"
   },
   "topbar": {
     "refresh_aria": "Actualiser les données",
@@ -430,7 +430,8 @@
     "submit_verify": "Vérifier le code",
     "error_fallback": "Échec de la connexion",
     "show_password": "Afficher le mot de passe",
-    "hide_password": "Masquer le mot de passe"
+    "hide_password": "Masquer le mot de passe",
+    "back_home": "← Retour à l'accueil"
   },
   "live_events": {
     "new_transaction": "Nouvelle transaction reçue",

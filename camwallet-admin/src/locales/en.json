@@ -68,7 +68,7 @@
     "admin_system": "System Admin",
     "api_operational": "API operational",
     "admin_panel": "Admin Panel",
-    "back_home": "← Home"
+    "back_home": "Home"
   },
   "topbar": {
     "refresh_aria": "Refresh data",
@@ -430,7 +430,8 @@
     "submit_verify": "Verify code",
     "error_fallback": "Login failed",
     "show_password": "Show password",
-    "hide_password": "Hide password"
+    "hide_password": "Hide password",
+    "back_home": "← Back to home"
   },
   "live_events": {
     "new_transaction": "New transaction received",

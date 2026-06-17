@@ -165,6 +165,20 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
             </button>
           )
         })()}
+
+        {/* Retour à la landing opérateurs — lien discret */}
+        <a
+          href="/"
+          style={{
+            display: 'block', textAlign: 'center', marginTop: 18,
+            fontSize: 12, color: 'rgba(255,255,255,0.35)', textDecoration: 'none',
+            transition: 'color .15s',
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = C.textSoft }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(255,255,255,0.35)' }}
+        >
+          {t('login.back_home')}
+        </a>
       </form>
     </div>
   )
