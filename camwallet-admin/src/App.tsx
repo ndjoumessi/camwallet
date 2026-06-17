@@ -4231,13 +4231,19 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   )}
                 </div>
               )}
-              {/* Opérateur Support (lecture seule ailleurs) : archivage autorisé. */}
-              {isReadOnly() && tk.status !== 'CLOSED' && (
-                <div style={{ display: 'flex', marginTop: 12 }}>
-                  <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket archivé')} title="Archiver (clôturer) ce ticket"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>
-                    <CheckCircle2 size={14} /> Archiver le ticket
-                  </button>
+              {/* Opérateur Support (lecture seule ailleurs) : archivage + priorité autorisés. */}
+              {isReadOnly() && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {tk.status !== 'CLOSED' && (
+                    <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket archivé')} title="Archiver (clôturer) ce ticket"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>
+                      <CheckCircle2 size={14} /> Archiver le ticket
+                    </button>
+                  )}
+                  <span style={{ fontSize: 11, color: C.textMuted }}>Priorité</span>
+                  <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
+                    {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
                 </div>
               )}
             </div>
@@ -4420,7 +4426,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   SUPER_ADMIN: 'Accès total, gestion de l\'équipe',
   ADMIN: 'Accès total sauf équipe et paramètres critiques',
   COMPLIANCE_OFFICER: 'Conformité ANIF + Journal Audit uniquement',
-  SUPPORT_OPERATOR: 'Support (réponse + archivage tickets) + Utilisateurs/Transactions (lecture)',
+  SUPPORT_OPERATOR: 'Support (réponse + priorité + archivage tickets) + Utilisateurs/Transactions (lecture)',
   FINANCE_OFFICER: 'Finances + Recharges & Retraits',
   KYC_OFFICER: 'Vérification KYC uniquement',
 }
