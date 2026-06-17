@@ -7,7 +7,9 @@ import {
   StatusBar,
   AppState,
   AppStateStatus,
+  BackHandler,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { IconButton } from './components/ui';
@@ -29,6 +31,10 @@ import { initI18n } from '../src/i18n';
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
 
+// Drapeau « onboarding déjà vu » : à la première installation on montre les
+// slides, ensuite on va directement à la connexion (session expirée incluse).
+const ONBOARDING_KEY = 'cw_has_seen_onboarding';
+
 const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { id: 'home', icon: 'home-outline', iconActive: 'home', label: 'Accueil' },
   { id: 'history', icon: 'time-outline', iconActive: 'time', label: 'Historique' },
@@ -39,6 +45,8 @@ function AppContent() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [restoreChecked, setRestoreChecked] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
+  // null = pas encore lu depuis AsyncStorage (on attend avant de router).
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [showMerchant, setShowMerchant] = useState(false);
   const { colors: TC } = useTheme();
@@ -55,6 +63,13 @@ function AppContent() {
   useEffect(() => {
     initSentry();
     initI18n();
+  }, []);
+
+  // Lecture du drapeau « onboarding déjà vu » (AsyncStorage) au démarrage.
+  useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_KEY)
+      .then((v) => setHasSeenOnboarding(v === '1'))
+      .catch(() => setHasSeenOnboarding(false));
   }, []);
 
   // ── Timer d'inactivité (AU-09 CDC) — déconnexion après 15 min sans interaction
@@ -146,23 +161,55 @@ function AppContent() {
     }
   }, [isAuthenticated, phase]);
 
-  // Routage de fin de splash : on attend que l'animation ET la restauration de
-  // session soient terminées, puis on entre directement dans l'app si un token
-  // valide existe, sinon onboarding. Évite tout flash d'onboarding au démarrage.
+  // Routage de fin de splash : on attend que l'animation, la restauration de
+  // session ET le drapeau onboarding soient prêts, puis :
+  //   - token valide                → app (Home), on saute tout
+  //   - sinon, onboarding déjà vu   → login (compte existant / session expirée)
+  //   - sinon (1re installation)    → onboarding
+  // Évite tout flash d'onboarding au démarrage.
   useEffect(() => {
-    if (phase === 'splash' && splashDone && restoreChecked) {
+    if (phase === 'splash' && splashDone && restoreChecked && hasSeenOnboarding !== null) {
       const authed = useStore.getState().isAuthenticated;
-      console.log('[boot] routage splash →', authed ? 'app' : 'onboard');
-      setPhase(authed ? 'app' : 'onboard');
+      const next: Phase = authed ? 'app' : hasSeenOnboarding ? 'login' : 'onboard';
+      console.log('[boot] routage splash →', next);
+      setPhase(next);
     }
-  }, [phase, splashDone, restoreChecked]);
+  }, [phase, splashDone, restoreChecked, hasSeenOnboarding]);
+
+  // Bouton retour matériel Android : désactivé sur la connexion et l'accueil.
+  // Sur l'app, on referme d'abord les vues empilées (détail tx, marchand) et on
+  // ramène vers l'accueil depuis un onglet secondaire, sinon on bloque (true).
+  useEffect(() => {
+    const onBack = () => {
+      if (phase === 'login') return true; // pas de sortie ni de retour onboarding
+      if (phase === 'app') {
+        if (selectedTransaction) { closeTransaction(); return true; }
+        if (showMerchant) { setShowMerchant(false); return true; }
+        if (activeTab !== 'home') { setActiveTab('home'); return true; }
+        return true; // HomeScreen : retour désactivé (ne pas quitter l'app)
+      }
+      return false; // splash / onboarding : comportement par défaut
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [phase, selectedTransaction, showMerchant, activeTab, closeTransaction]);
 
   if (phase === 'splash') {
     return <SplashScreen onFinish={() => setSplashDone(true)} />;
   }
 
   if (phase === 'onboard') {
-    return <OnboardingScreen onComplete={() => setPhase('login')} />;
+    return (
+      <OnboardingScreen
+        onComplete={() => {
+          // Mémorise que l'onboarding a été vu : les prochains démarrages iront
+          // directement à la connexion (jamais re-onboarding).
+          AsyncStorage.setItem(ONBOARDING_KEY, '1').catch(() => {});
+          setHasSeenOnboarding(true);
+          setPhase('login');
+        }}
+      />
+    );
   }
 
   if (phase === 'login') {

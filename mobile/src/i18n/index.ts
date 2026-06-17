@@ -18,20 +18,28 @@ function deviceLang(): Lang {
   return 'fr';
 }
 
+// Initialisation SYNCHRONE au chargement du module : les ressources de
+// traduction sont disponibles dès le tout premier rendu. Sinon `t('clé')`
+// renvoie la clé brute le temps que l'init asynchrone se termine — c'est ce qui
+// affichait « splash.tagline » sur le SplashScreen. On démarre avec la langue
+// du téléphone ; la préférence sauvegardée (AsyncStorage, asynchrone) est
+// appliquée juste après par initI18n().
+i18n.use(initReactI18next).init({
+  resources: { fr: { translation: fr }, en: { translation: en } },
+  lng: deviceLang(),
+  fallbackLng: 'fr',
+  interpolation: { escapeValue: false },
+});
+
 export async function initI18n() {
-  // Priorité : préférence sauvegardée > langue du téléphone > français (fallback).
-  let lang: Lang = deviceLang();
+  // Applique la préférence de langue sauvegardée si elle diffère de la langue
+  // du téléphone utilisée à l'initialisation synchrone ci-dessus.
   try {
     const saved = await AsyncStorage.getItem(LANG_KEY);
-    if (saved && (SUPPORTED as readonly string[]).includes(saved)) lang = saved as Lang;
+    if (saved && (SUPPORTED as readonly string[]).includes(saved) && saved !== i18n.language) {
+      await i18n.changeLanguage(saved);
+    }
   } catch {}
-
-  await i18n.use(initReactI18next).init({
-    resources: { fr: { translation: fr }, en: { translation: en } },
-    lng: lang,
-    fallbackLng: 'fr',
-    interpolation: { escapeValue: false },
-  });
 }
 
 export async function setLanguage(lang: 'fr' | 'en') {

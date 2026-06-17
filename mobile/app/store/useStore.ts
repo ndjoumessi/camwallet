@@ -301,7 +301,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   logout: async () => {
-    await authApi.logout(); // invalide le refresh token côté serveur puis vide SecureStore
+    // Réinitialise l'état AVANT l'appel réseau : `isAuthenticated` passe à false
+    // de façon synchrone, sinon l'effet de routage (app/index.tsx) renvoie vers
+    // l'app tant que authApi.logout() (asynchrone) n'a pas résolu — c'est ce qui
+    // empêchait la déconnexion de rediriger vers l'écran de connexion.
     set({
       isAuthenticated: false,
       user: GUEST,
@@ -312,6 +315,11 @@ export const useStore = create<AppState>((set, get) => ({
       disputedTxIds: [],
       error: null,
     });
+    try {
+      await authApi.logout(); // invalide le refresh token côté serveur puis vide SecureStore
+    } catch {
+      // Échec réseau : la session locale est déjà vidée, on ignore.
+    }
   },
 
   // Restaure une session existante (tokens en SecureStore) au démarrage.
