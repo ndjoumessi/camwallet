@@ -2169,6 +2169,9 @@ function TransactionsPage() {
 function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransaction; onClose: () => void; onRetried: () => void }) {
   const toast = useToast()
   const [retrying, setRetrying] = useState(false)
+  const [showTicket, setShowTicket] = useState(false)
+  // Équipe chargée à l'ouverture (nécessaire au formulaire de ticket pour l'assignation).
+  const { data: team } = useFetch(() => getAdminTeam(), [])
 
   const phase = TX_STATUS_BADGE[tx.status] ?? tx.status
   const failed = phase === 'failed'
@@ -2176,6 +2179,27 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
   const isOperatorTx = tx.type === 'RECHARGE' || tx.type === 'WITHDRAWAL'
   // Relance possible uniquement pour une recharge/retrait opérateur en attente.
   const canRetry = tx.status === 'PENDING' && isOperatorTx
+
+  // Client rattaché à la transaction : l'émetteur en priorité, sinon le destinataire
+  // (cas d'une recharge opérateur où l'émetteur est null).
+  const ticketClient = tx.senderId
+    ? { id: tx.senderId, fullName: tx.sender?.fullName ?? null, phone: tx.sender?.phone ?? '' }
+    : tx.receiverId
+      ? { id: tx.receiverId, fullName: tx.receiver?.fullName ?? null, phone: tx.receiver?.phone ?? '' }
+      : null
+  // Contexte pré-rempli pour un ticket ouvert depuis cette transaction.
+  const ticketInitial = ticketClient ? {
+    client: ticketClient,
+    title: `Litige transaction ${tx.reference}`,
+    category: 'PAYMENT',
+    description:
+      `Transaction concernée : ${tx.reference}\n` +
+      `Type : ${TX_TYPE_LABEL[tx.type] ?? tx.type}\n` +
+      `Montant : ${formatFCFA(tx.amount)}\n` +
+      `Statut : ${tx.status}\n` +
+      `Date : ${fmtDate(tx.createdAt)}\n\n` +
+      `Description du problème :\n`,
+  } : undefined
 
   // Timeline avec horodatages réels : created → processing → final.
   const finalTime = tx.processedAt ?? tx.updatedAt ?? null
@@ -2345,6 +2369,12 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
               style={{ fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
               ⬇ Reçu PDF
             </button>
+            {!isReadOnly() && ticketClient && (
+              <button className="cw-btn" onClick={() => setShowTicket(true)}
+                style={{ fontSize: 13, color: C.purple, background: C.purple + '18', border: `1px solid ${C.purple}40`, borderRadius: 8, padding: '9px 16px', cursor: 'pointer', fontWeight: 600 }}>
+                🎫 Ouvrir un ticket
+              </button>
+            )}
             {!isReadOnly() && canRetry && (
               <button className="cw-btn" onClick={handleRetry} disabled={retrying}
                 style={{ fontSize: 13, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '9px 18px', cursor: retrying ? 'wait' : 'pointer', fontWeight: 700 }}>
@@ -2354,6 +2384,15 @@ function TransactionDetailModal({ tx, onClose, onRetried }: { tx: AdminTransacti
           </div>
         </div>
       </div>
+      {showTicket && ticketInitial && (
+        <NewTicketModal
+          team={team ?? []}
+          initial={ticketInitial}
+          zIndex={320}
+          onClose={() => setShowTicket(false)}
+          onCreated={(id) => { setShowTicket(false); toast(`Ticket créé pour ${tx.reference}`, 'success'); void id }}
+        />
+      )}
     </div>
   )
 }
@@ -4222,16 +4261,17 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
 }
 
 // Modale de création d'un ticket.
-function NewTicketModal({ team, onClose, onCreated }: { team: AdminTeamMember[]; onClose: () => void; onCreated: (id: string) => void }) {
+function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { team: AdminTeamMember[]; onClose: () => void; onCreated: (id: string) => void; initial?: { client?: { id: string; fullName: string | null; phone: string }; title?: string; description?: string; category?: string; priority?: string }; zIndex?: number }) {
   const toast = useToast()
   const [clientSearch, setClientSearch] = useState('')
   const debSearch = useDebounced(clientSearch.trim(), 350)
   const { data: clientResults } = useFetch(() => (debSearch ? getUsers({ limit: 6, search: debSearch }) : Promise.resolve(null)), [debSearch])
-  const [client, setClient] = useState<{ id: string; fullName: string | null; phone: string } | null>(null)
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('OTHER')
-  const [priority, setPriority] = useState('MEDIUM')
+  // Valeurs initiales (ex. ticket ouvert depuis une transaction : client + contexte pré-remplis).
+  const [client, setClient] = useState<{ id: string; fullName: string | null; phone: string } | null>(initial?.client ?? null)
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [description, setDescription] = useState(initial?.description ?? '')
+  const [category, setCategory] = useState(initial?.category ?? 'OTHER')
+  const [priority, setPriority] = useState(initial?.priority ?? 'MEDIUM')
   const [assignedTo, setAssignedTo] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -4249,7 +4289,7 @@ function NewTicketModal({ team, onClose, onCreated }: { team: AdminTeamMember[];
   const label = (s: string) => <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 5 }}>{s}</label>
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#000A', zIndex: 70, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: '#000A', zIndex, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, width: 'min(540px, 100%)', padding: 22 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h2 style={{ fontSize: 17, fontWeight: 800, color: C.text }}>Nouveau ticket</h2>
