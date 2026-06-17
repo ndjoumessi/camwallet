@@ -8,6 +8,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { normalizeCameroonPhone } from '../common/phone.util';
 import { TransactionType, TransactionStatus } from '@prisma/client';
 
 @Injectable()
@@ -24,8 +25,9 @@ export class TransactionsService {
   async p2p(senderId: string, receiverPhone: string, amount: bigint, description?: string) {
     if (amount <= 0n) throw new BadRequestException('Montant invalide');
 
+    const phone = normalizeCameroonPhone(receiverPhone) ?? receiverPhone;
     const receiver = await this.prisma.user.findUnique({
-      where: { phone: receiverPhone },
+      where: { phone },
     });
     if (!receiver) throw new NotFoundException('Destinataire introuvable');
     if (receiver.id === senderId) throw new BadRequestException('Vous ne pouvez pas vous envoyer de l\'argent');

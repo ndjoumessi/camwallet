@@ -14,6 +14,7 @@ import { authenticator } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from './otp.service';
 import { SupportedLang } from '../common/i18n/i18n.util';
+import { normalizeCameroonPhone } from '../common/phone.util';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { SetPinDto } from './dto/set-pin.dto';
@@ -99,8 +100,16 @@ export class AuthService {
 
   // ─── Étape 1 : Inscription — envoi OTP ────────────────────────────────────
   async register(dto: RegisterDto, lang: SupportedLang = 'fr') {
+    // Normaliser en E.164 (+237XXXXXXXXX) — requis pour la livraison SMS live.
+    const phone = normalizeCameroonPhone(dto.phone);
+    if (!phone) {
+      throw new BadRequestException(
+        'Numéro de téléphone invalide (format attendu : +237 suivi de 9 chiffres).',
+      );
+    }
+
     const existing = await this.prisma.user.findUnique({
-      where: { phone: dto.phone },
+      where: { phone },
     });
 
     if (existing) {
@@ -109,7 +118,7 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: {
-        phone: dto.phone,
+        phone,
         fullName: dto.fullName,
         pinHash: '', // Sera défini à l'étape 3
         wallet: { create: {} },
@@ -117,7 +126,7 @@ export class AuthService {
     });
 
     // Événement temps réel pour le dashboard admin (non bloquant).
-    this.eventEmitter.emit('user.registered', { phone: dto.phone });
+    this.eventEmitter.emit('user.registered', { phone });
 
     await this.otpService.sendOtp(user.id, OtpPurpose.REGISTRATION, lang);
     this.logger.log(`Nouveau compte créé : ${user.phone}`);
@@ -143,8 +152,10 @@ export class AuthService {
 
   // ─── Connexion avec PIN ────────────────────────────────────────────────────
   async login(dto: LoginDto) {
+    // Normaliser pour retrouver le compte quelle que soit la saisie (espaces, 237…).
+    const phone = normalizeCameroonPhone(dto.phone) ?? dto.phone;
     const user = await this.prisma.user.findUnique({
-      where: { phone: dto.phone },
+      where: { phone },
     });
 
     if (!user) throw new UnauthorizedException('Numéro introuvable');
@@ -446,7 +457,8 @@ export class AuthService {
 
   // ─── Reset PIN via OTP ────────────────────────────────────────────────────
   async requestPinReset(phone: string, lang: SupportedLang = 'fr') {
-    const user = await this.prisma.user.findUnique({ where: { phone } });
+    const normalized = normalizeCameroonPhone(phone) ?? phone;
+    const user = await this.prisma.user.findUnique({ where: { phone: normalized } });
     if (!user) throw new BadRequestException('Numéro introuvable');
     await this.otpService.sendOtp(user.id, OtpPurpose.PIN_RESET, lang);
     return { message: 'Code OTP envoyé', userId: user.id };
