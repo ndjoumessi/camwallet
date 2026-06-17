@@ -11,7 +11,9 @@ const C = {
 }
 
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const lang = (i18n.language || 'fr').split('-')[0]
+  const changeLang = (lng: 'fr' | 'en') => { if (lng !== lang) { localStorage.setItem('lang', lng); i18n.changeLanguage(lng) } }
   const [email, setEmail] = useState('admin@camwallet.cm')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -54,6 +56,21 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         width: 360, background: C.card, border: `1px solid ${C.border}`,
         borderRadius: 18, padding: '32px 28px',
       }}>
+        {/* Sélecteur de langue (avant connexion) */}
+        <div role="group" aria-label="Langue / Language" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+          <div style={{ display: 'flex', border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            {(['fr', 'en'] as const).map((lng) => (
+              <button
+                key={lng} type="button" onClick={() => changeLang(lng)} aria-pressed={lang === lng}
+                style={{
+                  padding: '5px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer', border: 'none',
+                  background: lang === lng ? C.green + '20' : 'none', color: lang === lng ? C.green : C.textMuted,
+                }}
+              >{lng.toUpperCase()}</button>
+            ))}
+          </div>
+        </div>
+
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
           <div style={{
