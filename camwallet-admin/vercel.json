@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
+    { "source": "/operateurs", "destination": "/index-operateurs.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

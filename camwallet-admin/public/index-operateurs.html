@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="CamWallet · La Chambre Forte. Portail opérateurs : modules, rôles, intégrations et comptes de démonstration." />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>CamWallet · La Chambre Forte · Portail opérateurs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0A0F1E; --surface: #111827; --card: #161D2F; --border: #1E2D45;
+      --green: #00C896; --green-soft: #00C89618; --gold: #F5C542; --gold-soft: #F5C54214;
+      --text: #EEF2FF; --muted: #64748B; --soft: #94A3B8;
+      --r-super: #00C896; --r-admin: #3B82F6; --r-comp: #8B5CF6;
+      --r-support: #F59E0B; --r-finance: #06B6D4; --r-kyc: #EC4899;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      background-image:
+        radial-gradient(900px 500px at 50% -200px, #00c89610, transparent),
+        radial-gradient(700px 400px at 100% 0, #f5c5420a, transparent);
+      background-attachment: fixed;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+    h1, h2, h3, .brand-name { font-family: 'Bricolage Grotesque', sans-serif; letter-spacing: -0.02em; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    a { color: inherit; text-decoration: none; }
+
+    /* ── Header ── */
+    header { padding: 22px 0; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; background: rgba(10,15,30,0.82); backdrop-filter: blur(14px); }
+    .header-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .logo { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(140deg, var(--green), #008f6a); display: grid; place-items: center; font-weight: 900; font-size: 20px; color: #001b13; box-shadow: 0 6px 20px #00c89640; }
+    .brand-name { font-size: 19px; font-weight: 700; }
+    .brand-name span { color: var(--green); }
+    .brand-sub { font-size: 11px; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+    .status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--soft); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 0 transparent; }
+    .dot.ok { background: var(--green); animation: pulse 2.2s infinite; }
+    .dot.down { background: #FF4D6D; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 #00c89666; } 70% { box-shadow: 0 0 0 8px #00c89600; } 100% { box-shadow: 0 0 0 0 #00c89600; } }
+
+    /* ── Hero ── */
+    .hero { padding: 72px 0 56px; text-align: center; }
+    .vault-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 16px; border: 1px solid var(--gold); border-radius: 999px; background: var(--gold-soft); color: var(--gold); font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 26px; }
+    .hero h1 { font-size: clamp(38px, 6vw, 62px); font-weight: 700; line-height: 1.04; }
+    .hero h1 .vault { color: var(--gold); }
+    .hero p { max-width: 620px; margin: 22px auto 0; color: var(--soft); font-size: 17px; }
+    .hero-cta { margin-top: 34px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 9px; padding: 13px 24px; border-radius: 12px; font-weight: 700; font-size: 14.5px; cursor: pointer; border: 1px solid transparent; transition: transform .12s ease, box-shadow .12s ease; }
+    .btn:hover { transform: translateY(-2px); }
+    .btn-primary { background: var(--green); color: #001b13; box-shadow: 0 8px 26px #00c89636; }
+    .btn-ghost { background: var(--surface); border-color: var(--border); color: var(--text); }
+
+    /* ── Sections ── */
+    section.block { padding: 52px 0; border-top: 1px solid var(--border); }
+    .sec-head { margin-bottom: 32px; }
+    .sec-kicker { color: var(--green); font-size: 12.5px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+    .sec-title { font-size: 28px; font-weight: 700; margin-top: 8px; }
+    .sec-desc { color: var(--soft); margin-top: 8px; max-width: 640px; font-size: 15px; }
+
+    .grid { display: grid; gap: 16px; }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px; transition: border-color .15s ease, transform .15s ease; }
+    .module:hover { border-color: #2a3b58; transform: translateY(-3px); }
+    .module .ic { width: 46px; height: 46px; border-radius: 12px; background: var(--green-soft); display: grid; place-items: center; margin-bottom: 16px; }
+    .module .ic svg { width: 24px; height: 24px; stroke: var(--green); }
+    .module h3 { font-size: 17px; font-weight: 700; }
+    .module p { color: var(--soft); font-size: 14px; margin-top: 7px; }
+    .module .tag { display: inline-block; margin-top: 14px; font-size: 11px; font-weight: 700; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; letter-spacing: 0.04em; }
+
+    /* ── Rôles ── */
+    .role-top { display: flex; align-items: center; gap: 12px; }
+    .role-chip { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; }
+    .role h3 { font-size: 16px; font-weight: 700; }
+    .role .scope { font-size: 11.5px; font-weight: 600; color: var(--rc); text-transform: uppercase; letter-spacing: 0.06em; }
+    .role p { color: var(--soft); font-size: 13.5px; margin-top: 12px; }
+    .rbac-note { margin-top: 20px; display: flex; gap: 10px; align-items: flex-start; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; color: var(--soft); font-size: 13.5px; }
+    .rbac-note svg { width: 18px; height: 18px; stroke: var(--gold); flex-shrink: 0; margin-top: 1px; }
+
+    /* ── Intégrations ── */
+    .integ { display: flex; align-items: center; gap: 14px; }
+    .integ .idot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+    .integ .iname { font-weight: 700; font-size: 15px; }
+    .integ .irole { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .integ .istate { margin-left: auto; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+    .api-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: linear-gradient(135deg, #10261f, var(--card)); border-color: #1c4a3a; }
+    .api-meta { display: flex; gap: 26px; flex-wrap: wrap; }
+    .api-meta .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .api-meta .v { font-size: 18px; font-weight: 700; margin-top: 2px; }
+
+    /* ── Comptes démo ── */
+    .demo-warn { display: flex; gap: 10px; align-items: center; background: var(--gold-soft); border: 1px solid #f5c54240; color: #e6c668; border-radius: 12px; padding: 12px 16px; font-size: 13.5px; margin-bottom: 22px; }
+    .demo-warn svg { width: 18px; height: 18px; stroke: var(--gold); flex-shrink: 0; }
+    .cred { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-top: 10px; }
+    .cred .cl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .cred .cv { font-size: 14.5px; font-weight: 600; margin-top: 2px; }
+    .copy { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--soft); cursor: pointer; padding: 7px 9px; display: grid; place-items: center; transition: all .12s; }
+    .copy:hover { border-color: var(--green); color: var(--green); }
+    .copy svg { width: 16px; height: 16px; stroke: currentColor; }
+    .demo-head { display: flex; align-items: center; gap: 11px; margin-bottom: 6px; }
+    .demo-head .di { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; }
+    .demo-head .di svg { width: 19px; height: 19px; stroke: var(--text); }
+    .demo-head h3 { font-size: 16px; }
+
+    footer { border-top: 1px solid var(--border); padding: 34px 0 48px; color: var(--muted); font-size: 13px; }
+    .foot-row { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+    .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--green); color: #001b13; font-weight: 700; font-size: 13.5px; padding: 11px 20px; border-radius: 10px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 50; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap header-row">
+      <div class="brand">
+        <div class="logo">₩</div>
+        <div>
+          <div class="brand-name">Cam<span>Wallet</span></div>
+          <div class="brand-sub">Portail opérateurs</div>
+        </div>
+      </div>
+      <div class="status-pill"><span id="apiDot" class="dot"></span><span id="apiText">Vérification de l'API…</span></div>
+    </div>
+  </header>
+
+  <!-- ── Hero ── -->
+  <div class="hero wrap">
+    <div class="vault-badge">🔐 La Chambre Forte</div>
+    <h1>Le poste de commande<br />de la <span class="vault">Chambre Forte</span></h1>
+    <p>Console d'administration de CamWallet, le portefeuille QR prépayé adossé à Orange Money et MTN Mobile Money. Pilotez utilisateurs, conformité et flux financiers depuis un cockpit unique, cloisonné par rôle.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="/">Ouvrir le dashboard
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <a class="btn btn-ghost" href="#demo">Comptes de démonstration</a>
+    </div>
+  </div>
+
+  <!-- ── 6 modules ── -->
+  <section class="block" id="modules">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-kicker">Les 6 modules</div>
+        <div class="sec-title">Tout le coffre, organisé</div>
+        <div class="sec-desc">Six modules opérationnels couvrent l'intégralité du cycle de vie : du compte client au reporting de conformité ANIF.</div>
+      </div>
+      <div class="grid grid-3" id="modulesGrid"></div>
+    </div>
+  </section>
+
+  <!-- ── Rôles ── -->
+  <section class="block" id="roles">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-kicker">Habilitations</div>
+        <div class="sec-title">Six rôles, accès cloisonné</div>
+        <div class="sec-desc">Chaque opérateur n'accède qu'à son périmètre. Le cloisonnement est appliqué côté serveur (permissions par sous-rôle), pas seulement masqué dans l'interface.</div>
+      </div>
+      <div class="grid grid-3" id="rolesGrid"></div>
+      <div class="rbac-note">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span><strong>Sécurité serveur.</strong> Les écritures et les ressources sensibles (KYC, audit, paramètres, équipe, suppression de ticket) sont protégées par un guard de permissions : un opérateur ne peut pas contourner l'interface via l'API. La gestion de l'équipe et la suppression de tickets sont réservées au Super Admin.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Intégrations ── -->
+  <section class="block" id="integrations">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-kicker">État des intégrations</div>
+        <div class="sec-title">Les rouages de la Chambre Forte</div>
+        <div class="sec-desc">L'API est sondée en direct ci-dessous. Les passerelles opérateurs sont supervisées en continu depuis l'onglet « Santé des intégrations » du dashboard.</div>
+      </div>
+      <div class="card api-card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:14px">
+          <span id="apiDot2" class="idot" style="background:var(--muted);width:13px;height:13px"></span>
+          <div>
+            <div class="iname">API CamWallet</div>
+            <div class="irole mono" id="apiOrigin">camwallet-production.up.railway.app</div>
+          </div>
+        </div>
+        <div class="api-meta">
+          <div><div class="k">Statut</div><div class="v" id="apiStatus">…</div></div>
+          <div><div class="k">Version</div><div class="v mono" id="apiVersion">…</div></div>
+          <div><div class="k">Uptime</div><div class="v mono" id="apiUptime">…</div></div>
+        </div>
+      </div>
+      <div class="grid grid-2" id="integGrid"></div>
+    </div>
+  </section>
+
+  <!-- ── Comptes démo ── -->
+  <section class="block" id="demo">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="sec-kicker">Accès rapide</div>
+        <div class="sec-title">Comptes de démonstration</div>
+        <div class="sec-desc">Identifiants de l'environnement de démonstration pour explorer le dashboard et l'application mobile.</div>
+      </div>
+      <div class="demo-warn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span>Environnement de <strong>démonstration</strong> uniquement. La production utilise des identifiants distincts ; ne réutilisez jamais ces comptes en conditions réelles.</span>
+      </div>
+      <div class="grid grid-3" id="demoGrid"></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap foot-row">
+      <div>© <span id="year"></span> CamWallet · Crédit QR adossé à Orange Money &amp; MTN MoMo. Cameroun.</div>
+      <div>La Chambre Forte · Portail opérateurs</div>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast">Copié ✓</div>
+
+  <script>
+    // ── Données (alignées sur le RBAC et l'architecture du backend) ──
+    var ICONS = {
+      users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+      kyc: '<path d="M3 5h18v14H3z"/><circle cx="9" cy="12" r="2.5"/><path d="M14 10h4M14 14h4M5.5 16.5a3.5 3.5 0 0 1 7 0"/>',
+      tx: '<path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/>',
+      ops: '<path d="M7 10V6a5 5 0 0 1 10 0M5 10h14l-1 11H6z"/>',
+      anif: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+      support: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.4-1 .8-1 1.7M12 17h.01"/>'
+    };
+    var MODULES = [
+      { ic:'users', t:'Utilisateurs & Comptes', d:"Recherche, fiche détaillée, blocage / réactivation, réinitialisation du PIN et notes internes sur chaque client.", tag:'users' },
+      { ic:'kyc', t:'Vérification KYC', d:"File d'attente des pièces (CNI recto/verso + selfie), validation par signature et approbation ou rejet tracés.", tag:'kyc' },
+      { ic:'tx', t:'Transactions & Finances', d:"Flux P2P et paiements QR, volumes, frais perçus, revenus de la plateforme et séries temporelles.", tag:'transactions' },
+      { ic:'ops', t:'Recharges & Retraits', d:"Opérations Orange Money / MTN MoMo, statut des webhooks et relance des opérations en attente.", tag:'operations' },
+      { ic:'anif', t:'Conformité ANIF & Audit', d:"Alertes anti-blanchiment (seuils, fréquence), dossiers d'enquête et journal d'audit horodaté.", tag:'anif · audit' },
+      { ic:'support', t:'Support & Tickets', d:"Tickets clients de bout en bout : réponse, prise en charge, priorité, résolution et clôture.", tag:'support' }
+    ];
+    var ROLES = [
+      { k:'Super Admin', c:'var(--r-super)', i:'SA', s:'Accès total', d:"Toutes les pages, gestion de l'équipe et des paramètres critiques. Seul à pouvoir supprimer un ticket." },
+      { k:'Admin', c:'var(--r-admin)', i:'AD', s:'Quasi-total', d:"Accès complet sauf la gestion d'équipe et les paramètres globaux critiques." },
+      { k:'Conformité', c:'var(--r-comp)', i:'CO', s:'ANIF + Audit', d:"Conformité ANIF et Journal d'audit uniquement, plus les réglages anti-blanchiment." },
+      { k:'Support', c:'var(--r-support)', i:'SU', s:'Tickets + lecture', d:"Gestion complète des tickets (sauf suppression) ; Utilisateurs et Transactions en lecture seule." },
+      { k:'Finance', c:'var(--r-finance)', i:'FI', s:'Flux financiers', d:"Finances & Revenus et Recharges / Retraits opérateurs." },
+      { k:'KYC', c:'var(--r-kyc)', i:'KY', s:'Vérification', d:"Vérification KYC uniquement : approbation des pièces d'identité." }
+    ];
+    var INTEG = [
+      { n:'Orange Money', r:'Paiements & crédits entrants (webhooks)', c:'#FF7900' },
+      { n:'MTN Mobile Money', r:'Paiements & crédits entrants (webhooks)', c:'#FFCB05' },
+      { n:'SMS OTP · AfricasTalking', r:"Codes de vérification à l'inscription", c:'#00C896' },
+      { n:'Notifications Push · Expo', r:'Alertes temps réel sur crédit reçu', c:'#3B82F6' }
+    ];
+    var DEMO = [
+      { col:'var(--r-admin)', icon:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 9h18"/>', t:'Dashboard Admin', rows:[['Email','admin@camwallet.cm'],['Mot de passe','Admin@2025!']], cta:{label:'Ouvrir le dashboard',href:'/'} },
+      { col:'var(--r-super)', icon:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>', t:'App mobile · Utilisateur', rows:[['Téléphone','+237677000001'],['PIN','123456']] },
+      { col:'var(--r-support)', icon:'<path d="M3 3h18v13H7l-4 4z"/>', t:'App mobile · Marchand', rows:[['Téléphone','+237699000002'],['PIN','123456']] }
+    ];
+
+    function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+    var svg = function(inner, extra){ return '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"' + (extra||'') + '>' + inner + '</svg>'; };
+
+    // Modules
+    var mg = document.getElementById('modulesGrid');
+    MODULES.forEach(function(m){
+      var c = el('div', 'card module');
+      c.innerHTML = '<div class="ic">' + svg(ICONS[m.ic]) + '</div><h3>' + m.t + '</h3><p>' + m.d + '</p><span class="tag">' + m.tag + '</span>';
+      mg.appendChild(c);
+    });
+    // Rôles
+    var rg = document.getElementById('rolesGrid');
+    ROLES.forEach(function(r){
+      var c = el('div', 'card role'); c.style.setProperty('--rc', r.c);
+      c.innerHTML = '<div class="role-top"><span class="role-chip" style="background:' + r.c + '">' + r.i + '</span><div><h3>' + r.k + '</h3><div class="scope">' + r.s + '</div></div></div><p>' + r.d + '</p>';
+      rg.appendChild(c);
+    });
+    // Intégrations
+    var ig = document.getElementById('integGrid');
+    INTEG.forEach(function(t){
+      var c = el('div', 'card integ');
+      c.innerHTML = '<span class="idot" style="background:' + t.c + '"></span><div><div class="iname">' + t.n + '</div><div class="irole">' + t.r + '</div></div><span class="istate" style="background:var(--green-soft);color:var(--green)">Configurée</span>';
+      ig.appendChild(c);
+    });
+    // Comptes démo
+    var dg = document.getElementById('demoGrid');
+    DEMO.forEach(function(d){
+      var c = el('div', 'card'); c.style.borderTop = '3px solid ' + d.col;
+      var rows = d.rows.map(function(r){
+        return '<div class="cred"><div><div class="cl">' + r[0] + '</div><div class="cv mono">' + r[1] + '</div></div>' +
+          '<button class="copy" data-copy="' + r[1] + '" aria-label="Copier ' + r[0] + '">' + svg('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>') + '</button></div>';
+      }).join('');
+      var cta = d.cta ? '<a class="btn btn-primary" style="margin-top:16px;width:100%;justify-content:center" href="' + d.cta.href + '">' + d.cta.label + '</a>' : '';
+      c.innerHTML = '<div class="demo-head"><span class="di" style="background:' + d.col + '22">' + svg(d.icon, ' stroke="' + d.col + '"') + '</span><h3>' + d.t + '</h3></div>' + rows + cta;
+      dg.appendChild(c);
+    });
+
+    // Copier
+    var toast = document.getElementById('toast');
+    document.addEventListener('click', function(e){
+      var b = e.target.closest('.copy'); if (!b) return;
+      var v = b.getAttribute('data-copy');
+      navigator.clipboard.writeText(v).then(function(){
+        toast.textContent = 'Copié : ' + v; toast.classList.add('show');
+        setTimeout(function(){ toast.classList.remove('show'); }, 1600);
+      });
+    });
+
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // ── Ping API en direct (autorisé par la CSP : connect-src Railway) ──
+    var API = 'https://camwallet-production.up.railway.app/api/v1/health';
+    function fmtUptime(s){ s = Math.floor(s||0); var h = Math.floor(s/3600), m = Math.floor((s%3600)/60); if (h) return h + 'h ' + m + 'm'; if (m) return m + 'm'; return s + 's'; }
+    fetch(API, { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(d){
+      var ok = d && d.status === 'ok';
+      document.getElementById('apiDot').className = 'dot ' + (ok ? 'ok' : 'down');
+      document.getElementById('apiText').textContent = ok ? 'API opérationnelle' : 'API indisponible';
+      document.getElementById('apiDot2').style.background = ok ? 'var(--green)' : '#FF4D6D';
+      document.getElementById('apiStatus').textContent = ok ? 'En ligne' : 'Hors ligne';
+      document.getElementById('apiStatus').style.color = ok ? 'var(--green)' : '#FF4D6D';
+      document.getElementById('apiVersion').textContent = d.version ? 'v' + d.version : 'n/d';
+      document.getElementById('apiUptime').textContent = fmtUptime(d.uptime);
+    }).catch(function(){
+      document.getElementById('apiDot').className = 'dot down';
+      document.getElementById('apiText').textContent = 'API injoignable';
+      document.getElementById('apiDot2').style.background = '#FF4D6D';
+      document.getElementById('apiStatus').textContent = 'Injoignable';
+      document.getElementById('apiStatus').style.color = '#FF4D6D';
+    });
+  </script>
+</body>
+</html>
