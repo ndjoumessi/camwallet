@@ -67,7 +67,8 @@
     "group_compliance": "Compliance",
     "admin_system": "System Admin",
     "api_operational": "API operational",
-    "admin_panel": "Admin Panel"
+    "admin_panel": "Admin Panel",
+    "back_home": "← Home"
   },
   "topbar": {
     "refresh_aria": "Refresh data",

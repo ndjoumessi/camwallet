@@ -13,7 +13,7 @@ import {
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
-  LifeBuoy, Send, MessageSquare, Trash2,
+  LifeBuoy, Send, MessageSquare, Trash2, Home,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -4606,6 +4606,18 @@ export default function App() {
             </div>
           ))}
         </nav>
+
+        {/* Retour à la landing opérateurs */}
+        <a
+          href="/"
+          title={t('nav.back_home')}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderTop: `1px solid ${C.border}`, color: 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: 500, textDecoration: 'none', transition: 'color .15s' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = '#fff' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(255,255,255,0.4)' }}
+        >
+          <Home size={14} />
+          <span className="cw-navlabel">{t('nav.back_home')}</span>
+        </a>
 
         {/* Footer */}
         <div className="cw-compact-hide" style={{ padding: '12px 16px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.textMuted }}>
