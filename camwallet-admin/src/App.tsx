@@ -13,7 +13,7 @@ import {
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
-  LifeBuoy, Send, MessageSquare,
+  LifeBuoy, Send, MessageSquare, Trash2,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -32,7 +32,7 @@ import {
   AdminTeamMember, getAdminTeam, getMemberActivity, setAdminRole, setAdminPassword,
   createAdminOperator, deleteAdmin, setAdminStatus, getAdminId,
   getSseTicket, API_ORIGIN,
-  getSupportStats, getSupportTickets, getSupportTicket, updateSupportTicket, addSupportMessage, createSupportTicket,
+  getSupportStats, getSupportTickets, getSupportTicket, updateSupportTicket, addSupportMessage, createSupportTicket, deleteSupportTicket,
   SupportTicket, SupportTicketDetail,
 } from './lib/api'
 
@@ -4156,6 +4156,16 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
     catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error') }
     finally { setSending(false) }
   }
+  // Suppression définitive réservée au SUPER_ADMIN (action destructive + auditée).
+  const isSuper = (() => { const r = getAdminRole(); return !r || r === 'SUPER_ADMIN' })()
+  const [deleting, setDeleting] = useState(false)
+  const del = async () => {
+    if (!tk) return
+    if (!window.confirm(`Supprimer définitivement le ticket ${tk.reference} et tous ses messages ?\nCette action est irréversible.`)) return
+    setDeleting(true)
+    try { await deleteSupportTicket(ticketId); toast(`Ticket ${tk.reference} supprimé`, 'success'); onChanged(); onClose() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Échec', 'error'); setDeleting(false) }
+  }
 
   const overlay: CSSProperties = { position: 'fixed', inset: 0, background: '#000A', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }
   const panel: CSSProperties = { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, width: 'min(760px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }
@@ -4210,6 +4220,15 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
                     {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
+                  {isSuper && (
+                    <>
+                      <div style={{ flex: 1 }} />
+                      <button onClick={del} disabled={deleting} title="Supprimer définitivement ce ticket"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.red, background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 8, padding: '7px 12px', cursor: deleting ? 'wait' : 'pointer', fontWeight: 600 }}>
+                        <Trash2 size={14} /> {deleting ? 'Suppression…' : 'Supprimer'}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

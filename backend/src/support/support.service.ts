@@ -147,6 +147,30 @@ export class SupportService {
     });
   }
 
+  // Suppression définitive d'un ticket (messages compris). Action destructive
+  // journalisée dans l'AuditLog pour la traçabilité ANIF.
+  async deleteTicket(adminId: string, id: string) {
+    const ticket = await this.prisma.supportTicket.findUnique({
+      where: { id },
+      select: { id: true, reference: true, title: true, status: true, userId: true, _count: { select: { messages: true } } },
+    });
+    if (!ticket) throw new NotFoundException('Ticket introuvable');
+
+    await this.prisma.$transaction([
+      this.prisma.supportMessage.deleteMany({ where: { ticketId: id } }),
+      this.prisma.supportTicket.delete({ where: { id } }),
+      this.prisma.auditLog.create({
+        data: {
+          userId: adminId && adminId !== 'admin' ? adminId : null,
+          action: 'SUPPORT_TICKET_DELETE',
+          resource: `support_ticket:${ticket.reference}`,
+          metadata: { reference: ticket.reference, title: ticket.title, status: ticket.status, messages: ticket._count.messages, clientId: ticket.userId },
+        },
+      }),
+    ]);
+    return { deleted: true, reference: ticket.reference };
+  }
+
   async getStats() {
     const startToday = new Date();
     startToday.setHours(0, 0, 0, 0);
