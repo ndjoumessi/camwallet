@@ -1004,7 +1004,7 @@ function AlertsPage() {
 }
 
 // ── Vue détail utilisateur (modal) ────────────────────────
-function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClose: () => void; onChanged: () => void }) {
+function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: string; onClose: () => void; onChanged: () => void; zIndex?: number }) {
   const { data, loading, error, refetch } = useFetch(() => getUserDetail(userId), [userId])
   const [acting, setActing] = useState(false)
   const [confirmingPinReset, setConfirmingPinReset] = useState(false)
@@ -1066,7 +1066,7 @@ function UserDetailModal({ userId, onClose, onChanged }: { userId: string; onClo
   }
 
   const overlay: CSSProperties = {
-    position: 'fixed', inset: 0, background: '#000A', zIndex: 50,
+    position: 'fixed', inset: 0, background: '#000A', zIndex,
     display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto',
   }
   const panel: CSSProperties = {
@@ -4124,7 +4124,8 @@ function SupportPage() {
 
       {selected && <TicketDetailModal ticketId={selected} team={team ?? []} onClose={() => setSelected(null)} onChanged={refreshAll} onViewUser={setViewUser} />}
       {showNew && <NewTicketModal team={team ?? []} onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); refreshAll(); setSelected(id) }} />}
-      {viewUser && <UserDetailModal userId={viewUser} onClose={() => setViewUser(null)} onChanged={() => {}} />}
+      {/* z-index 70 : au-dessus de la modale ticket (60) ; fermer la fiche ramène au ticket. */}
+      {viewUser && <UserDetailModal userId={viewUser} onClose={() => setViewUser(null)} onChanged={() => {}} zIndex={70} />}
     </div>
   )
 }
