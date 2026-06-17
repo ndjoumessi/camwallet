@@ -351,6 +351,7 @@ export class AdminService {
         { action: { startsWith: 'OPERATION_' } },
         { action: { startsWith: 'TRANSACTION_' } },
         { action: { startsWith: 'ADMIN_' } },
+        { action: { startsWith: 'SUPPORT_' } },
         { action: 'USER_PIN_RESET' },
         { action: 'SETTINGS_UPDATE' },
       ];

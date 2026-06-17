@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Query, Body, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from '../admin/guards/admin.guard';
@@ -66,5 +66,11 @@ export class SupportController {
     @Body() body: { content: string; internal?: boolean },
   ) {
     return this.support.addMessage(req.user.id, id, body.content, !!body.internal);
+  }
+
+  @Delete('tickets/:id')
+  @ApiOperation({ summary: 'Supprimer définitivement un ticket (messages compris) — audité' })
+  remove(@Request() req: any, @Param('id') id: string) {
+    return this.support.deleteTicket(req.user.id, id);
   }
 }

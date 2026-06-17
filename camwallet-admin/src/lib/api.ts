@@ -674,3 +674,5 @@ export const addSupportMessage = (id: string, content: string, internal = false)
   request<SupportMessage>(`/admin/support/tickets/${id}/messages`, { method: 'POST', body: JSON.stringify({ content, internal }) })
 export const createSupportTicket = (dto: { userId: string; title: string; description: string; category?: string; priority?: string; assignedTo?: string }) =>
   request<SupportTicket>('/admin/support/tickets', { method: 'POST', body: JSON.stringify(dto) })
+export const deleteSupportTicket = (id: string) =>
+  request<{ deleted: boolean; reference: string }>(`/admin/support/tickets/${id}`, { method: 'DELETE' })
