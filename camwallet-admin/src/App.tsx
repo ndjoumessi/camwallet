@@ -4210,42 +4210,28 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   </div>
                 )}
               </div>
-              {!isReadOnly() && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, 'Pris en charge')} style={{ fontSize: 12, color: '#FB923C', background: '#FB923C18', border: '1px solid #FB923C40', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Prendre en charge</button>}
-                  {tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'RESOLVED' }, 'Ticket résolu')} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Résoudre</button>}
-                  {tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket clôturé')} style={{ fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>}
-                  <span style={{ width: 1, height: 22, background: C.border }} />
-                  <span style={{ fontSize: 11, color: C.textMuted }}>Priorité</span>
-                  <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
-                    {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                  {isSuper && (
-                    <>
-                      <div style={{ flex: 1 }} />
-                      <button onClick={del} disabled={deleting} title="Supprimer définitivement ce ticket"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.red, background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 8, padding: '7px 12px', cursor: deleting ? 'wait' : 'pointer', fontWeight: 600 }}>
-                        <Trash2 size={14} /> {deleting ? 'Suppression…' : 'Supprimer'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-              {/* Opérateur Support (lecture seule ailleurs) : archivage + priorité autorisés. */}
-              {isReadOnly() && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {tk.status !== 'CLOSED' && (
-                    <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket archivé')} title="Archiver (clôturer) ce ticket"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>
-                      <CheckCircle2 size={14} /> Archiver le ticket
+              {/* Barre d'actions ticket — ouverte à tous les rôles admin (statut,
+                  priorité). Seule la suppression reste réservée au SUPER_ADMIN.
+                  L'opérateur Support reste en lecture seule ailleurs (cf. isReadOnly). */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, 'Pris en charge')} style={{ fontSize: 12, color: '#FB923C', background: '#FB923C18', border: '1px solid #FB923C40', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Prendre en charge</button>}
+                {tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'RESOLVED' }, 'Ticket résolu')} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Résoudre</button>}
+                {tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'CLOSED' }, 'Ticket clôturé')} style={{ fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>Clôturer</button>}
+                <span style={{ width: 1, height: 22, background: C.border }} />
+                <span style={{ fontSize: 11, color: C.textMuted }}>Priorité</span>
+                <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
+                  {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                {isSuper && (
+                  <>
+                    <div style={{ flex: 1 }} />
+                    <button onClick={del} disabled={deleting} title="Supprimer définitivement ce ticket"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.red, background: C.redLight, border: `1px solid ${C.red}40`, borderRadius: 8, padding: '7px 12px', cursor: deleting ? 'wait' : 'pointer', fontWeight: 600 }}>
+                      <Trash2 size={14} /> {deleting ? 'Suppression…' : 'Supprimer'}
                     </button>
-                  )}
-                  <span style={{ fontSize: 11, color: C.textMuted }}>Priorité</span>
-                  <select value={tk.priority} onChange={(e) => patch({ priority: e.target.value }, 'Priorité mise à jour')} style={inputStyle}>
-                    {Object.entries(TICKET_PRIO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Fil de messages (chat) */}
@@ -4426,7 +4412,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   SUPER_ADMIN: 'Accès total, gestion de l\'équipe',
   ADMIN: 'Accès total sauf équipe et paramètres critiques',
   COMPLIANCE_OFFICER: 'Conformité ANIF + Journal Audit uniquement',
-  SUPPORT_OPERATOR: 'Support (réponse + priorité + archivage tickets) + Utilisateurs/Transactions (lecture)',
+  SUPPORT_OPERATOR: 'Tickets : gestion complète (sauf suppression) · Utilisateurs/Transactions : lecture',
   FINANCE_OFFICER: 'Finances + Recharges & Retraits',
   KYC_OFFICER: 'Vérification KYC uniquement',
 }
