@@ -11,6 +11,7 @@ import {
   Platform,
   Animated,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -77,6 +78,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
   // Vrai quand le numéro saisi est déjà inscrit (409) → on propose d'aller se connecter.
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [showTerms, setShowTerms] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const shake = useRef(new Animated.Value(0)).current;
 
@@ -365,8 +367,47 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
 
             <Text style={styles.termsText}>
               {t('onboarding.phone.terms')}{' '}
-              <Text style={styles.termsLink}>{t('onboarding.phone.termsLink')}</Text>
+              <Text
+                style={styles.termsLink}
+                onPress={() => setShowTerms(true)}
+                accessibilityRole="link"
+                accessibilityLabel={t('onboarding.phone.termsLink')}
+              >
+                {t('onboarding.phone.termsLink')}
+              </Text>
             </Text>
+
+            <Modal
+              visible={showTerms}
+              animationType="slide"
+              transparent
+              onRequestClose={() => setShowTerms(false)}
+            >
+              <View style={styles.termsOverlay}>
+                <View style={styles.termsModal}>
+                  <View style={styles.termsHeader}>
+                    <Text style={styles.termsModalTitle}>{t('onboarding.phone.termsTitle')}</Text>
+                    <Pressable
+                      onPress={() => setShowTerms(false)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('onboarding.phone.termsClose')}
+                    >
+                      <Ionicons name="close" size={24} color={Colors.textSoft} />
+                    </Pressable>
+                  </View>
+                  <Text style={styles.termsUpdated}>{t('onboarding.phone.termsUpdated')}</Text>
+                  <ScrollView
+                    style={styles.termsScroll}
+                    contentContainerStyle={styles.termsScrollContent}
+                    showsVerticalScrollIndicator
+                  >
+                    <Text style={styles.termsBody}>{t('onboarding.phone.termsBody')}</Text>
+                  </ScrollView>
+                  <Button label={t('onboarding.phone.termsClose')} onPress={() => setShowTerms(false)} />
+                </View>
+              </View>
+            </Modal>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -699,6 +740,45 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   termsLink: { color: Colors.primary },
+  termsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  termsModal: {
+    backgroundColor: Colors.bg,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xxl,
+    maxHeight: '85%',
+  },
+  termsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  termsModalTitle: {
+    flex: 1,
+    paddingRight: Spacing.md,
+    fontSize: Typography.lg,
+    fontWeight: Typography.black,
+    color: Colors.text,
+  },
+  termsUpdated: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    marginBottom: Spacing.lg,
+  },
+  termsScroll: { marginBottom: Spacing.lg },
+  termsScrollContent: { paddingBottom: Spacing.md },
+  termsBody: {
+    fontSize: Typography.sm,
+    color: Colors.textSoft,
+    lineHeight: Typography.sm * Typography.relaxed,
+  },
   resendBtn: {
     alignItems: 'center',
     justifyContent: 'center',
