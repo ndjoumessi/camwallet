@@ -62,7 +62,7 @@ web-build/
 *.tsbuildinfo
 
 # Impeccable (état d'outillage local)
-.impeccable/config.json
+.impeccable/
 
 # Misc
 .cache/
