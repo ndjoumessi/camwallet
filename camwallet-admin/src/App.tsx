@@ -4265,8 +4265,9 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
               })}
             </div>
 
-            {/* Zone de réponse */}
-            {!isReadOnly() && (
+            {/* Zone de réponse — ouverte à tous les rôles admin, y compris
+                l'opérateur Support (lecture seule ailleurs). */}
+            {(
               <div style={{ borderTop: `1px solid ${C.border}`, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={internal ? 'Note interne (visible admins uniquement)…' : 'Répondre au client…'} rows={2}
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
@@ -4419,7 +4420,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   SUPER_ADMIN: 'Accès total, gestion de l\'équipe',
   ADMIN: 'Accès total sauf équipe et paramètres critiques',
   COMPLIANCE_OFFICER: 'Conformité ANIF + Journal Audit uniquement',
-  SUPPORT_OPERATOR: 'Support (archivage tickets) + Utilisateurs/Transactions (lecture)',
+  SUPPORT_OPERATOR: 'Support (réponse + archivage tickets) + Utilisateurs/Transactions (lecture)',
   FINANCE_OFFICER: 'Finances + Recharges & Retraits',
   KYC_OFFICER: 'Vérification KYC uniquement',
 }
