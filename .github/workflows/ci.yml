@@ -155,6 +155,10 @@ jobs:
         with:
           name: coverage-report
           path: coverage/
+      - name: Archiver le coverage en un seul asset
+        # Les assets de release GitHub sont plats : uploader coverage/**/* fait
+        # entrer en collision les nombreux index.html. On zippe en un seul fichier.
+        run: zip -r coverage.zip coverage/
       - name: Créer la release GitHub
         uses: softprops/action-gh-release@v2
         with:
@@ -167,7 +171,7 @@ jobs:
             - ✅ Tests intégration (Supertest + PostgreSQL)
             - ✅ Build admin (Vite)
             - ✅ TypeCheck mobile
-          files: coverage/**/*
+          files: coverage.zip
 
   # ─── 7. DEPLOY ADMIN (Vercel) ─────────────────────────────────────────────
   # Le backend est déployé automatiquement par l'intégration GitHub de Railway
@@ -206,6 +210,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [integration-tests, build-admin, typecheck-mobile]
     if: startsWith(github.ref, 'refs/tags/v')
+    # Dépend du quota de builds Expo (plan gratuit) : ne doit pas faire échouer
+    # la release si le quota mensuel est épuisé ou EAS indisponible.
+    continue-on-error: true
     # Secrets requis :
     #   EXPO_TOKEN : token Expo (expo.dev → Account → Access Tokens)
     defaults:
