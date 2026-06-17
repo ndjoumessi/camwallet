@@ -50,14 +50,20 @@ There is **no `tsconfig.json`** in the admin project, so the `tsc` step in `buil
 
 ## Backend architecture
 
-NestJS module-per-domain layout under `backend/src/`: `auth`, `users`, `wallets`, `transactions`, `qr`, `webhooks`, `admin`, `kyc`, plus global modules `prisma`, `notifications` (Expo push), and `cloudinary` (image upload). `AppModule` wires them with global `ConfigModule` and `ThrottlerModule` (10 req / 60s).
+NestJS module-per-domain layout under `backend/src/`: `auth`, `users`, `wallets`, `transactions`, `qr`, `webhooks`, `admin`, `kyc`, `merchant`, `disputes`, `support`, `campay` (Orange Money + MTN MoMo PSP client), `sse` (admin real-time), `health`, plus global modules `prisma`, `notifications` (Expo push), `cloudinary` (image upload), and `common` (shared decorators/guards/middleware/i18n). `AppModule` wires them with global `ConfigModule`, `ThrottlerModule` (10 req / 60s), `ScheduleModule` (cron for withdrawal expiry) and `EventEmitterModule` (feeds SSE).
 
 Bootstrap conventions (`main.ts`) that affect every route:
 - Global prefix `api/v1` — all endpoints live under `/api/v1/...`.
-- Global `ValidationPipe` with `whitelist` + `forbidNonWhitelisted` — DTOs reject unknown fields, so request bodies must match the `class-validator` DTOs exactly.
+- Global `ValidationPipe` with `whitelist` + `forbidNonWhitelisted` (+ `transform`) — DTOs reject unknown fields, so request bodies must match the `class-validator` DTOs exactly.
 - A global `BigInt.prototype.toJSON` converts every BigInt to **Number** in JSON responses (so amounts arrive as numbers in centimes — see below).
+- Global `I18nExceptionFilter` translates error messages by the request's `Accept-Language` header (FR default, EN supported) — see *i18n* below.
+- `helmet()` + `compression()` applied; app created with `rawBody: true` (needed for webhook signature verification).
+- `TRUST_PROXY` env controls Express `trust proxy` (off by default; set when behind Nginx/Railway edge so `req.ip` is trustworthy and X-Forwarded-For is not spoofable).
+- `keepAliveTimeout` (90s) / `headersTimeout` (95s) are raised above the edge proxy's idle timeout to avoid intermittent 502s on reused keep-alive sockets (Railway).
 - Swagger UI is mounted at `/api/docs` only when `NODE_ENV !== 'production'`.
 - CORS is `*` in dev, locked to `admin.camwallet.cm` / `app.camwallet.cm` in production.
+- **Admin routes hardening**: `IpWhitelistMiddleware` + `AdminOriginMiddleware` are applied to `api/v1/admin/*` (env `ADMIN_IP_WHITELIST`, `ADMIN_ALLOWED_ORIGINS`; both no-op when unset, for dev).
+- `GET /api/v1/health` (status/version/uptime) is public and used by the Railway healthcheck.
 
 ### Money is stored as BigInt centimes — this is the #1 gotcha
 All amounts in the database and backend (`Wallet.balance`, `Transaction.amount`/`fee`, limits) are `BigInt` in **centimes of FCFA** (1 FCFA = 100). Example: `10000` = 100 FCFA. This avoids floating-point errors. Always use `bigint` literals (`5n`, `1000n`) in arithmetic. Responses serialize BigInt → Number (centimes); **both frontends convert centimes → whole FCFA at the boundary** (`toFcfa` in each `src/lib/api.ts`). The mobile demo store still uses whole-FCFA numbers.
@@ -88,25 +94,53 @@ Phone + 6-digit PIN for users; email + password for admin. User registration is 
 ### KYC
 `kyc/kyc.service.ts` handles identity verification. `POST /kyc/submit` takes three images (CNI recto + verso + selfie, `FileFieldsInterceptor`), uploads each via `CloudinaryService`, upserts the `KycDocument`, and sets `User.kycStatus = SUBMITTED` (atomic `$transaction`). `GET /kyc/status` returns the caller's status. Admins review via `GET /admin/kyc` (queue with photo URLs) → `PATCH /admin/kyc/:userId` (approve/reject, audited). `KycStatus`: `PENDING → SUBMITTED → APPROVED | REJECTED`.
 
+### Payments via CamPay (recharge & withdrawal)
+`campay/campay.service.ts` is the real PSP client (aggregates Orange Money + MTN MoMo for Cameroon; sandbox `demo.campay.net`, prod `campay.net`). It caches an OAuth token and exposes `collect` (recharge) and `withdraw` (payout). Env: `CAMPAY_BASE_URL`, `CAMPAY_USERNAME`, `CAMPAY_PASSWORD`, `CAMPAY_APP_TOKEN`, `CAMPAY_WEBHOOK_KEY`.
+- **Recharge** (`WalletsService.recharge`): calls CamPay `/collect` to trigger the mobile-money prompt, records a `PENDING` transaction with the CamPay reference, and returns the USSD code. The actual credit is applied **by the CamPay webhook**, never synchronously. Sandbox caps amounts at 25 FCFA (2500 centimes).
+- **Withdrawal** (`WalletsService.withdraw`): reserves (debits) the balance atomically, then fires CamPay `/withdraw` asynchronously (fire-and-forget). If CamPay fails, the withdrawal stays `PENDING` and is later expired + **refunded** by `WithdrawalsExpiryService` (a `@Cron` every 30s, window `WITHDRAWAL_TIMEOUT_MINUTES`).
+
 ### Webhooks
-`webhooks/webhooks.service.ts` ingests Orange Money / MTN MoMo callbacks. Every raw event is persisted to `WebhookEvent` before processing; a `SUCCESSFUL` event matches a `PENDING` transaction by `operatorRef` and credits atomically. **Signature/token verification is still stubbed (`TODO`)** — `OM_WEBHOOK_SECRET` / `MTN_WEBHOOK_SECRET` exist in env but are not validated.
+`webhooks/webhooks.service.ts` ingests CamPay / Orange Money / MTN MoMo callbacks (`POST /webhooks/campay`, `/orange-money`, `/mtn-momo`). Every raw event is persisted to `WebhookEvent` before processing; a `SUCCESSFUL` event matches a `PENDING` transaction by `operatorRef` and credits atomically. **Signature verification is now enforced** (no longer stubbed): CamPay `sha256(token+reference)`, OM HMAC-SHA256 over the raw body, MTN token compare — all timing-safe. In production a missing `OM_WEBHOOK_SECRET` / `MTN_WEBHOOK_SECRET` / `CAMPAY_WEBHOOK_KEY` throws; in dev it logs a `[SÉCU]` warning and skips (which is why `main.ts` enables `rawBody`).
+
+### Real-time (SSE) for the admin
+`sse/sse.service.ts` bridges `EventEmitter` events (`transaction|user|kyc|dispute|ping`) to an RxJS stream. To avoid leaking the JWT in a URL (logs/Referer/history), the admin first calls `POST /admin/sse-ticket` (JWT header → opaque single-use UUID, 60s TTL), then opens `GET /admin/events?ticket=...` (`@Sse()`). The admin "Alertes & Surveillance" page consumes this.
+
+### Merchant & disputes (mobile-facing)
+- **merchant** (JWT + `MerchantGuard`, allows `MERCHANT` or `ADMIN`): `GET /merchant/stats` (revenue day/week/month), `GET /merchant/transactions` (paginated received payments).
+- **disputes** (JWT): `POST /disputes` (contest a transaction → `DisputeRequest`), `GET /disputes/me`. Backed by `TransactionsService.openDispute` / `getUserDisputes`.
+
+### i18n (backend)
+`common/i18n/` translates outbound error messages. `I18nExceptionFilter` (global) reads `Accept-Language`, `resolveLang` picks `fr`|`en` (FR default), and `translateMessage` maps French source strings to English via `error-messages.ts` (exact + interpolated-prefix matching). French is the source language; untranslated strings fall back to French.
 
 ### Data model
-`schema.prisma` is the source of truth. Central tables: `User` → `Wallet` (1:1), `Transaction` (sender/receiver self-relations), `KycDocument` (1:1), `AuditLog` (ANIF traceability; `userId` nullable). `User` carries `role`, `status`, `kycStatus`, plus `pushToken`, `avatarUrl`, `dateOfBirth`, `city`. After editing `schema.prisma`, run a migration + `prisma:generate` and restart the dev server.
+`schema.prisma` is the source of truth. Central tables: `User` → `Wallet` (1:1), `Transaction` (sender/receiver self-relations), `KycDocument` (1:1), `AuditLog` (ANIF traceability; `userId` nullable), plus `WebhookEvent`, `OtpCode`, `QrCode`, `SystemSettings`, `LoyaltyPoints`, `AdminNote`, `DisputeRequest`, and the Support trio `SupportTicket` → `SupportMessage` (with `TicketCategory`/`TicketPriority`/`TicketStatus` enums). `User` carries `role`, `status`, `kycStatus`, `adminRole`, `passwordHash`/`tokenVersion` (operator login), plus `pushToken`, `avatarUrl`, `dateOfBirth`, `city`. After editing `schema.prisma`, run a migration + `prisma:generate` and restart the dev server.
 
 ### API surface (selected)
 - **auth**: `register`, `verify-otp`, `set-pin`, `login`, `login-admin`, `refresh`, `pin-reset/request`.
 - **users** (JWT): `GET /users/me` (profile + wallet + stats: tx count, total sent/received), `PATCH /users/profile` (fullName, email, dateOfBirth, city), `POST /users/avatar` (multipart upload), `POST /users/push-token`.
+- **wallet/transactions** (JWT): P2P send, QR payment, `recharge` (CamPay collect), `withdraw` (CamPay payout).
+- **merchant** (JWT + MerchantGuard): `GET /merchant/stats`, `GET /merchant/transactions`.
+- **disputes** (JWT): `POST /disputes`, `GET /disputes/me`.
 - **kyc** (JWT): `POST /kyc/submit` (3-image multipart upload), `GET /kyc/status`.
-- **admin** (JWT + AdminGuard + `PermissionsGuard`): `GET /admin/stats`, `GET /admin/stats/timeseries?period=7d|30d|90d`, `GET /admin/users` (search + `status` filter), `GET /admin/users/:id` (detail: info, KYC doc, transactions, audit, stats), `PATCH /admin/users/:id/status` (block/unblock), `POST /admin/users/:id/reset-pin`, `GET /admin/kyc` + `PATCH /admin/kyc/:userId` (approve/reject), `GET /admin/transactions`, `GET /admin/alerts`, `GET /admin/audit`, plus `anif/*`, `operations/*`, `settings`, `team/*`, and **`admin/support/*`** (tickets). Routes are gated per sub-role via `@RequirePermission` (see *RBAC backend* above). Admin moderation actions write to `AuditLog`.
+- **webhooks** (public, signed): `POST /webhooks/campay`, `/orange-money`, `/mtn-momo`.
+- **admin** (JWT + AdminGuard + `PermissionsGuard`): `GET /admin/stats`, `GET /admin/stats/timeseries?period=7d|30d|90d`, `GET /admin/users` (search + `status` filter), `GET /admin/users/:id` (detail: info, KYC doc, transactions, audit, stats), `PATCH /admin/users/:id/status` (block/unblock), `POST /admin/users/:id/reset-pin`, `GET /admin/kyc` + `PATCH /admin/kyc/:userId` (approve/reject), `GET /admin/transactions`, `GET /admin/alerts`, `GET /admin/audit`, `POST /admin/sse-ticket` + `GET /admin/events` (SSE), plus `anif/*`, `operations/*`, `settings`, `team/*`, and **`admin/support/*`** (tickets). Routes are gated per sub-role via `@RequirePermission` (see *RBAC backend* above). Admin moderation actions write to `AuditLog`.
 
 ## Frontend integration
 
-Both frontends have a `src/lib/api.ts` client: token storage (mobile = `expo-secure-store`; admin = `localStorage`), Bearer header, and **single-flight refresh on 401**. The admin uses a shared `useFetch(fn, deps)` hook (`App.tsx`) returning `{ data, loading, error, refetch }`, a `RefreshContext` nonce for the "Actualiser" button, and `buildQuery` for query strings. The admin is a single large `App.tsx` with inline styles and a `C` design-token object; convert centimes→FCFA via `toFcfa` and format with `toLocaleString('fr-FR')`.
+Both frontends have a `src/lib/api.ts` client: token storage (mobile = `expo-secure-store`; admin = `localStorage`), Bearer header, and **single-flight refresh on 401**. The admin uses a shared `useFetch(fn, deps)` hook (`App.tsx`) returning `{ data, loading, error, refetch }`, a `RefreshContext` nonce for the "Actualiser" button, and `buildQuery` for query strings. The admin dashboard is still one large `App.tsx` (~4.6k lines) with inline styles and a `C` design-token object, but the login screen is now extracted to `LoginPage.tsx`; convert centimes→FCFA via `toFcfa` and format with `toLocaleString('fr-FR')`.
+
+### Admin i18n & operator landing
+- **i18n**: `src/i18n.ts` wires `react-i18next` with `locales/fr.json` + `locales/en.json` (FR default, persisted in `localStorage['lang']`); the login screen has an FR|EN selector.
+- **Two surfaces, one Vite app**: `/` and `/operateurs` serve the static operator landing **"La Chambre Forte"** (`public/index-operateurs.html`); the dashboard lives under `/admin`. In production this routing is `vercel.json` (which also sets CSP + security headers); in dev the `serveLandingInDev` plugin in `vite.config.ts` rewrites `/` and `/operateurs` to the same HTML (no copy — single source). When touching routing, keep `vercel.json` and the Vite plugin in parity.
+
+## Deployment
+
+- **Backend → Railway**: built/started from the repo root via `railway.json` (and `nixpacks.toml` / root `package.json`): build `cd backend && npm ci && prisma generate && build`, start `prisma migrate deploy && node dist/main`, healthcheck `/api/v1/health`. Railway **auto-deploys** via its GitHub integration — there is **no CI deploy job** (it was removed; CI only lints/tests).
+- **Admin → Vercel**: `vercel build` (vite) per `vercel.json`.
 
 ## Environment
 
-Each sub-project needs a `.env` from its example. `backend/.env.example` and `camwallet-admin/.env.example` are committed. Relevant vars: mobile `EXPO_PUBLIC_API_URL` (origin, `/api/v1` appended), admin `VITE_API_URL` (defaults to `http://localhost:3000`). Backend env: `DATABASE_URL`, JWT secrets, AfricasTalking SMS (OTP), Orange Money + MTN MoMo credentials, Cloudinary, and `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
+Each sub-project needs a `.env` from its example. `backend/.env.example` and `camwallet-admin/.env.example` are committed. Relevant vars: mobile `EXPO_PUBLIC_API_URL` (origin, `/api/v1` appended), admin `VITE_API_URL` (defaults to `http://localhost:3000`). Backend env: `DATABASE_URL`, JWT secrets, AfricasTalking SMS (OTP), **CamPay** credentials (`CAMPAY_*`), webhook secrets (`CAMPAY_WEBHOOK_KEY`, `OM_WEBHOOK_SECRET`, `MTN_WEBHOOK_SECRET`), `WITHDRAWAL_TIMEOUT_MINUTES`, `TRUST_PROXY`, `ADMIN_IP_WHITELIST`, `ADMIN_ALLOWED_ORIGINS`, Cloudinary, and `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 
 Dev test credentials (seed): user `+237677000001`, merchant `+237699000002`, all PIN `123456`; admin `admin@camwallet.cm` / `Admin@2025!`.
 
@@ -117,3 +151,4 @@ Dev test credentials (seed): user `+237677000001`, merchant `+237699000002`, all
 - `mobile/` declares `expo-router` but `app/index.tsx` is a manual `splash → onboard → app` phase + tab-switch state machine, not file-based routing. Don't assume route files map to screens.
 - In zsh, `$UID` is a readonly variable — don't use `UID` as a shell var name when scripting curl tests against user ids.
 - The whole codebase (comments, log messages, user-facing strings) is in French — match that when editing.
+- `DESIGN.md` (design tokens — dark fintech palette, type scale) and `PRODUCT.md` (users, brand, design principles) at the repo root capture the product/visual brief; consult them for UI work.
