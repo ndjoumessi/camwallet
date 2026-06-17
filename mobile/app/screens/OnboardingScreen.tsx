@@ -19,9 +19,13 @@ import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { Button } from '../components/ui';
 import { authApi } from '../../src/lib/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 const RESEND_COOLDOWN_S = 60;
+// Marqueur « intro vue » : une fois posé, le prochain lancement saute l'onboarding
+// et route directement vers le LoginScreen (cf. routage dans app/index.tsx).
+const ONBOARDING_SEEN_KEY = 'cw_has_seen_onboarding';
 
 function isPhoneValid(phone: string): boolean {
   return /^[62]\d{8}$/.test(phone);
@@ -92,13 +96,19 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
     ]).start();
   }, [shake]);
 
+  // Quitte les slides d'intro vers l'inscription en marquant l'onboarding comme vu.
+  const startRegistration = useCallback(() => {
+    void AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+    setStep('phone');
+  }, []);
+
   const slideToNext = () => {
     if (slideIndex < SLIDES.length - 1) {
       const next = slideIndex + 1;
       setSlideIndex(next);
       scrollRef.current?.scrollTo({ x: next * width, animated: true });
     } else {
-      setStep('phone');
+      startRegistration();
     }
   };
 
@@ -284,7 +294,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
             />
             {slideIndex === 0 && (
               <Pressable
-                onPress={() => setStep('phone')}
+                onPress={startRegistration}
                 style={({ pressed }) => [styles.skipBtn, pressed && styles.pressed]}
                 accessibilityRole="button"
                 accessibilityLabel={t('onboarding.a11y.skipIntro')}

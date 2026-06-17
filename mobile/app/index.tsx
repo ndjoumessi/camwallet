@@ -25,9 +25,14 @@ import { registerForPushNotifications, addNotificationTapHandler } from '../src/
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { initSentry } from '../src/lib/sentry';
 import { initI18n } from '../src/i18n';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
+
+// Marqueur « intro vue » posé par l'OnboardingScreen — décide, sans session
+// valide, entre onboarding (jamais vu) et LoginScreen (déjà inscrit).
+const ONBOARDING_SEEN_KEY = 'cw_has_seen_onboarding';
 
 const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { id: 'home', icon: 'home-outline', iconActive: 'home', label: 'Accueil' },
@@ -38,7 +43,9 @@ const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: key
 function AppContent() {
   const [phase, setPhase] = useState<Phase>('splash');
   const [restoreChecked, setRestoreChecked] = useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
+  const hasSeenOnboardingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [showMerchant, setShowMerchant] = useState(false);
   const { colors: TC } = useTheme();
@@ -139,6 +146,17 @@ function AppContent() {
     return () => { cancelled = true; };
   }, [restoreSession]);
 
+  // Au démarrage : lit le marqueur d'onboarding. En l'absence de session valide,
+  // il décide entre l'onboarding (jamais vu) et le LoginScreen (déjà inscrit).
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(ONBOARDING_SEEN_KEY)
+      .then((v) => { if (!cancelled) hasSeenOnboardingRef.current = v === 'true'; })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setOnboardingChecked(true); });
+    return () => { cancelled = true; };
+  }, []);
+
   // Si la session est restaurée pendant l'onboarding/login, on entre dans l'app.
   useEffect(() => {
     if (isAuthenticated && (phase === 'login' || phase === 'onboard')) {
@@ -146,16 +164,29 @@ function AppContent() {
     }
   }, [isAuthenticated, phase]);
 
+  // Tout utilisateur authentifié (login, inscription ou session restaurée) est par
+  // définition « inscrit » : on marque l'onboarding comme vu pour qu'une éventuelle
+  // déconnexion le ramène au LoginScreen, jamais à l'onboarding. Couvre aussi les
+  // installations antérieures à l'introduction du flag.
+  useEffect(() => {
+    if (isAuthenticated) {
+      hasSeenOnboardingRef.current = true;
+      void AsyncStorage.setItem(ONBOARDING_SEEN_KEY, 'true');
+    }
+  }, [isAuthenticated]);
+
   // Routage de fin de splash : on attend que l'animation ET la restauration de
   // session soient terminées, puis on entre directement dans l'app si un token
   // valide existe, sinon onboarding. Évite tout flash d'onboarding au démarrage.
   useEffect(() => {
-    if (phase === 'splash' && splashDone && restoreChecked) {
+    if (phase === 'splash' && splashDone && restoreChecked && onboardingChecked) {
       const authed = useStore.getState().isAuthenticated;
-      console.log('[boot] routage splash →', authed ? 'app' : 'onboard');
-      setPhase(authed ? 'app' : 'onboard');
+      // Session valide → app ; sinon déjà inscrit (intro vue) → login ; sinon onboarding.
+      const next: Phase = authed ? 'app' : hasSeenOnboardingRef.current ? 'login' : 'onboard';
+      console.log('[boot] routage splash →', next);
+      setPhase(next);
     }
-  }, [phase, splashDone, restoreChecked]);
+  }, [phase, splashDone, restoreChecked, onboardingChecked]);
 
   if (phase === 'splash') {
     return <SplashScreen onFinish={() => setSplashDone(true)} />;
@@ -166,7 +197,12 @@ function AppContent() {
   }
 
   if (phase === 'login') {
-    return <LoginScreen onSuccess={() => setPhase('app')} />;
+    return (
+      <LoginScreen
+        onSuccess={() => setPhase('app')}
+        onRegister={() => setPhase('onboard')}
+      />
+    );
   }
 
   return (
