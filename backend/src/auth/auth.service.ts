@@ -63,6 +63,39 @@ export class AuthService {
     return crypto.createHash('sha256').update(`${email}:${password}`).digest('hex');
   }
 
+  // ─── Pepper du PIN (défense en profondeur) ────────────────────────────────
+  // Applique HMAC-SHA256(pin, PIN_PEPPER) AVANT bcrypt. Le pepper vit uniquement
+  // dans l'environnement (jamais en base) : un vol de la seule base (hashes
+  // bcrypt) ne permet donc pas de bruteforcer les PIN sans connaître le pepper.
+  // Si PIN_PEPPER n'est pas configuré (dev/local), on retombe sur le PIN brut —
+  // comportement legacy, sans rupture.
+  private pepperPin(pin: string): string {
+    const secret = this.config.get<string>('PIN_PEPPER');
+    if (!secret) return pin;
+    return crypto.createHmac('sha256', secret).update(pin).digest('hex');
+  }
+
+  // Compare un PIN au hash stocké. Chemin nominal : PIN peppered. Repli legacy :
+  // ancien hash du PIN brut (créé avant le pepper) — si la correspondance passe
+  // et qu'un userId est fourni, on re-hash au nouveau format (pepper + coût
+  // courant) pour migrer l'utilisateur de façon transparente à la connexion.
+  // Sans userId (ex. vérification d'historique), aucune migration.
+  private async comparePin(pin: string, hash: string, userId?: string): Promise<boolean> {
+    if (!hash) return false;
+    if (await bcrypt.compare(this.pepperPin(pin), hash)) return true;
+    // Repli utile seulement si un pepper est actif (sinon pepperPin = identité).
+    const peppered = !!this.config.get<string>('PIN_PEPPER');
+    if (peppered && (await bcrypt.compare(pin, hash))) {
+      if (userId) {
+        const migrated = await bcrypt.hash(this.pepperPin(pin), PIN_BCRYPT_COST);
+        await this.prisma.user.update({ where: { id: userId }, data: { pinHash: migrated } });
+        this.logger.log(`PIN migré vers le format peppered (user ${userId})`);
+      }
+      return true;
+    }
+    return false;
+  }
+
   // ─── Étape 1 : Inscription — envoi OTP ────────────────────────────────────
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({
@@ -99,7 +132,7 @@ export class AuthService {
 
   // ─── Étape 3 : Création PIN ────────────────────────────────────────────────
   async setPin(dto: SetPinDto) {
-    const pinHash = await bcrypt.hash(dto.pin, PIN_BCRYPT_COST);
+    const pinHash = await bcrypt.hash(this.pepperPin(dto.pin), PIN_BCRYPT_COST);
     const user = await this.prisma.user.update({
       where: { id: dto.userId },
       data: { pinHash },
@@ -123,7 +156,7 @@ export class AuthService {
       );
     }
 
-    const pinValid = await bcrypt.compare(dto.pin, user.pinHash);
+    const pinValid = await this.comparePin(dto.pin, user.pinHash, user.id);
 
     if (!pinValid) {
       const attempts = user.pinAttempts + 1;
@@ -359,18 +392,19 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
 
-    const pinValid = await bcrypt.compare(currentPin, user.pinHash);
+    const pinValid = await this.comparePin(currentPin, user.pinHash, user.id);
     if (!pinValid) throw new UnauthorizedException('PIN actuel incorrect');
 
-    // Vérifier que le nouveau PIN n'est pas parmi les 3 derniers utilisés
+    // Vérifier que le nouveau PIN n'est pas parmi les 3 derniers utilisés.
+    // comparePin (sans userId → sans migration) gère les hash peppered ET legacy.
     const hashesToCheck = [user.pinHash, ...user.previousPinHashes];
     for (const oldHash of hashesToCheck) {
-      if (await bcrypt.compare(newPin, oldHash)) {
+      if (await this.comparePin(newPin, oldHash)) {
         throw new BadRequestException('Ce PIN a déjà été utilisé récemment. Choisissez un PIN différent.');
       }
     }
 
-    const newPinHash = await bcrypt.hash(newPin, PIN_BCRYPT_COST);
+    const newPinHash = await bcrypt.hash(this.pepperPin(newPin), PIN_BCRYPT_COST);
     // Conserver les 2 anciens hashes + l'actuel = 3 entrées dans l'historique
     const previousPinHashes = [user.pinHash, ...user.previousPinHashes].slice(0, 3);
 
@@ -389,7 +423,7 @@ export class AuthService {
   async verifyPin(userId: string, pin: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-    const valid = await bcrypt.compare(pin ?? '', user.pinHash);
+    const valid = await this.comparePin(pin ?? '', user.pinHash, user.id);
     if (!valid) throw new UnauthorizedException('PIN incorrect');
     return { valid: true };
   }

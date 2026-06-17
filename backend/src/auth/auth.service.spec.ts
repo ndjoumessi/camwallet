@@ -11,6 +11,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 
 const makePrismaMock = () => ({
   user: {
@@ -383,6 +384,101 @@ describe('AuthService', () => {
       await expect(service.changePin('user-1', '123456', '654321')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  // ─── Pepper HMAC du PIN ─────────────────────────────────────────────────────
+
+  describe('PIN pepper (HMAC)', () => {
+    const PEPPER = 'pepper-de-test-32-octets-aaaaaaaa';
+    const peppered = (pin: string) =>
+      crypto.createHmac('sha256', PEPPER).update(pin).digest('hex');
+
+    beforeEach(() => {
+      // Active le pepper pour ce bloc.
+      configService.get.mockImplementation((key: string) =>
+        ({
+          ADMIN_EMAIL: 'admin@camwallet.cm',
+          ADMIN_PASSWORD: 'Admin@2025!',
+          JWT_REFRESH_SECRET: 'refresh-secret',
+          JWT_REFRESH_EXPIRES_IN: '7d',
+          PIN_PEPPER: PEPPER,
+        })[key],
+      );
+    });
+
+    it('setPin hashe le PIN peppered (pas le PIN brut)', async () => {
+      let stored: string | undefined;
+      prisma.user.update.mockImplementation(({ data }: any) => {
+        stored = data.pinHash;
+        return Promise.resolve({ id: 'user-1', role: 'USER', tokenVersion: 0 });
+      });
+
+      await service.setPin({ userId: 'user-1', pin: '123456' });
+
+      expect(stored).toBeDefined();
+      // Le hash correspond au PIN peppered, jamais au PIN brut.
+      expect(bcrypt.compareSync(peppered('123456'), stored!)).toBe(true);
+      expect(bcrypt.compareSync('123456', stored!)).toBe(false);
+    });
+
+    it('connecte avec le PIN peppered', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        phone: '+237677000001',
+        pinHash: bcrypt.hashSync(peppered('123456'), 1),
+        pinAttempts: 0,
+        lockedUntil: null,
+        tokenVersion: 0,
+        role: 'USER',
+      });
+      prisma.user.update.mockResolvedValue({});
+
+      const result = await service.login({ phone: '+237677000001', pin: '123456' });
+      expect(result).toHaveProperty('accessToken');
+    });
+
+    it('migre de façon transparente un hash legacy (PIN brut) à la connexion', async () => {
+      // Hash hérité : PIN brut, sans pepper (créé avant la feature).
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        phone: '+237677000001',
+        pinHash: bcrypt.hashSync('123456', 1),
+        pinAttempts: 0,
+        lockedUntil: null,
+        tokenVersion: 0,
+        role: 'USER',
+      });
+      const updates: any[] = [];
+      prisma.user.update.mockImplementation((arg: any) => {
+        updates.push(arg);
+        return Promise.resolve({});
+      });
+
+      const result = await service.login({ phone: '+237677000001', pin: '123456' });
+      expect(result).toHaveProperty('accessToken');
+
+      // Une mise à jour ré-écrit le hash au format peppered (migration).
+      const migrated = updates.find((u) => typeof u.data?.pinHash === 'string');
+      expect(migrated).toBeDefined();
+      expect(bcrypt.compareSync(peppered('123456'), migrated.data.pinHash)).toBe(true);
+    });
+
+    it('rejette un PIN incorrect même avec pepper', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        phone: '+237677000001',
+        pinHash: bcrypt.hashSync(peppered('123456'), 1),
+        pinAttempts: 0,
+        lockedUntil: null,
+        tokenVersion: 0,
+        role: 'USER',
+      });
+      prisma.user.update.mockResolvedValue({});
+
+      await expect(
+        service.login({ phone: '+237677000001', pin: '000000' }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });
