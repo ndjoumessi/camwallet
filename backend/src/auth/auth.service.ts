@@ -192,12 +192,21 @@ export class AuthService {
       );
     }
 
-    // Succès : réinitialiser les tentatives
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
-    });
-    const tWrite = timed ? performance.now() : 0;
+    // Succès. La remise à zéro du verrou anti brute-force et l'horodatage de
+    // connexion ne conditionnent pas l'authentification (déjà acquise) : on les
+    // écrit en fire-and-forget pour sortir cet aller-retour DB du chemin critique
+    // (~160 ms de moins sur le p95). Un échec d'écriture est journalisé sans
+    // impacter la réponse.
+    void this.prisma.user
+      .update({
+        where: { id: user.id },
+        data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `MAJ post-connexion échouée (user ${user.id}) : ${err?.message ?? err}`,
+        ),
+      );
 
     const tokens = this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
 
@@ -205,8 +214,8 @@ export class AuthService {
       const ms = (a: number, b: number) => (b - a).toFixed(1);
       this.logger.log(
         `[login-timing] db_read=${ms(t0, tRead)}ms pin_cmp=${ms(tRead, tPin)}ms ` +
-          `db_write=${ms(tPin, tWrite)}ms tokens=${ms(tWrite, performance.now())}ms ` +
-          `total=${ms(t0, performance.now())}ms`,
+          `tokens=${ms(tPin, performance.now())}ms total=${ms(t0, performance.now())}ms ` +
+          `(db_write hors chemin critique)`,
       );
     }
 
