@@ -13,6 +13,7 @@ import * as crypto from 'crypto';
 import { authenticator } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from './otp.service';
+import { SupportedLang } from '../common/i18n/i18n.util';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { SetPinDto } from './dto/set-pin.dto';
@@ -97,7 +98,7 @@ export class AuthService {
   }
 
   // ─── Étape 1 : Inscription — envoi OTP ────────────────────────────────────
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, lang: SupportedLang = 'fr') {
     const existing = await this.prisma.user.findUnique({
       where: { phone: dto.phone },
     });
@@ -118,7 +119,7 @@ export class AuthService {
     // Événement temps réel pour le dashboard admin (non bloquant).
     this.eventEmitter.emit('user.registered', { phone: dto.phone });
 
-    await this.otpService.sendOtp(user.id, OtpPurpose.REGISTRATION);
+    await this.otpService.sendOtp(user.id, OtpPurpose.REGISTRATION, lang);
     this.logger.log(`Nouveau compte créé : ${user.phone}`);
 
     return { message: 'Code OTP envoyé par SMS', userId: user.id };
@@ -444,10 +445,10 @@ export class AuthService {
   }
 
   // ─── Reset PIN via OTP ────────────────────────────────────────────────────
-  async requestPinReset(phone: string) {
+  async requestPinReset(phone: string, lang: SupportedLang = 'fr') {
     const user = await this.prisma.user.findUnique({ where: { phone } });
     if (!user) throw new BadRequestException('Numéro introuvable');
-    await this.otpService.sendOtp(user.id, OtpPurpose.PIN_RESET);
+    await this.otpService.sendOtp(user.id, OtpPurpose.PIN_RESET, lang);
     return { message: 'Code OTP envoyé', userId: user.id };
   }
 

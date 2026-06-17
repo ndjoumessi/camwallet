@@ -1,11 +1,11 @@
 import { Global, Module } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
-import { AuthModule } from '../auth/auth.module';
+import { SmsModule } from '../sms/sms.module';
 
 // Global : injectable dans transactions / webhooks sans import explicite.
 @Global()
 @Module({
-  imports: [AuthModule],
+  imports: [SmsModule],
   providers: [NotificationsService],
   exports: [NotificationsService],
 })

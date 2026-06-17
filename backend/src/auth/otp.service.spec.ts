@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OtpService } from './otp.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConfigService } from '@nestjs/config';
+import { SmsService } from '../sms/sms.service';
 import { BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 
@@ -20,24 +20,17 @@ const makePrismaMock = () => ({
 describe('OtpService', () => {
   let service: OtpService;
   let prisma: ReturnType<typeof makePrismaMock>;
+  let sms: { sendSms: jest.Mock };
 
   beforeEach(async () => {
     prisma = makePrismaMock();
+    sms = { sendSms: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OtpService,
         { provide: PrismaService, useValue: prisma },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: jest.fn((key: string) => {
-              if (key === 'AT_API_KEY') return undefined;
-              if (key === 'AT_USERNAME') return 'sandbox';
-              return undefined;
-            }),
-          },
-        },
+        { provide: SmsService, useValue: sms },
       ],
     }).compile();
 
@@ -61,6 +54,30 @@ describe('OtpService', () => {
           }),
         }),
       );
+    });
+
+    it('envoie le SMS OTP en français par défaut', async () => {
+      prisma.user.findUnique.mockResolvedValue({ phone: '+237677000001' });
+
+      await service.sendOtp('user-1', 'REGISTRATION');
+
+      expect(sms.sendSms).toHaveBeenCalledWith(
+        '+237677000001',
+        expect.stringContaining('Votre code CamWallet'),
+      );
+      expect(sms.sendSms.mock.calls[0][1]).toContain('Valable 10 minutes');
+    });
+
+    it('envoie le SMS OTP en anglais quand lang=en', async () => {
+      prisma.user.findUnique.mockResolvedValue({ phone: '+237677000001' });
+
+      await service.sendOtp('user-1', 'REGISTRATION', 'en');
+
+      expect(sms.sendSms).toHaveBeenCalledWith(
+        '+237677000001',
+        expect.stringContaining('Your CamWallet code'),
+      );
+      expect(sms.sendSms.mock.calls[0][1]).toContain('Valid for 10 minutes');
     });
   });
 

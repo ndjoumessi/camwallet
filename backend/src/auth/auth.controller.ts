@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Patch, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Headers, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
+import { resolveLang } from '../common/i18n/i18n.util';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { SetPinDto } from './dto/set-pin.dto';
@@ -19,8 +20,8 @@ export class AuthController {
   @Throttle({ default: { ttl: 60000, limit: 3 } })
   @ApiOperation({ summary: 'Inscription — envoi OTP SMS' })
   @ApiResponse({ status: 201, description: 'OTP envoyé' })
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  register(@Body() dto: RegisterDto, @Headers('accept-language') acceptLanguage?: string) {
+    return this.authService.register(dto, resolveLang(acceptLanguage));
   }
 
   @Post('verify-otp')
@@ -64,8 +65,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 2 } })
   @ApiOperation({ summary: 'Demande de reset PIN via SMS' })
-  requestPinReset(@Body('phone') phone: string) {
-    return this.authService.requestPinReset(phone);
+  requestPinReset(@Body('phone') phone: string, @Headers('accept-language') acceptLanguage?: string) {
+    return this.authService.requestPinReset(phone, resolveLang(acceptLanguage));
   }
 
   @Post('logout')

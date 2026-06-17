@@ -3,13 +3,21 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { SmsService } from '../sms/sms.service';
+import { SupportedLang } from '../common/i18n/i18n.util';
 import { OtpPurpose } from '@prisma/client';
 
 const OTP_EXPIRY_MINUTES = 10;
 const MAX_OTP_ATTEMPTS = 3;
+
+// Message OTP localisé (FR par défaut, EN si la langue de l'utilisateur l'exige).
+function otpMessage(code: string, lang: SupportedLang): string {
+  return lang === 'en'
+    ? `Your CamWallet code: ${code}. Valid for ${OTP_EXPIRY_MINUTES} minutes.`
+    : `Votre code CamWallet : ${code}. Valable ${OTP_EXPIRY_MINUTES} minutes.`;
+}
 
 @Injectable()
 export class OtpService {
@@ -17,10 +25,14 @@ export class OtpService {
 
   constructor(
     private prisma: PrismaService,
-    private config: ConfigService,
+    private sms: SmsService,
   ) {}
 
-  async sendOtp(userId: string, purpose: OtpPurpose): Promise<void> {
+  async sendOtp(
+    userId: string,
+    purpose: OtpPurpose,
+    lang: SupportedLang = 'fr',
+  ): Promise<void> {
     // Générer code 6 chiffres
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const codeHash = await bcrypt.hash(code, 10);
@@ -43,8 +55,8 @@ export class OtpService {
       select: { phone: true },
     });
 
-    // Envoyer SMS (AfricasTalking)
-    await this.sendSms(user!.phone, `Votre code CamWallet : ${code}. Valable ${OTP_EXPIRY_MINUTES} min.`);
+    // Envoyer SMS (AfricasTalking via SmsService)
+    await this.sms.sendSms(user!.phone, otpMessage(code, lang));
     this.logger.log(`OTP envoyé pour userId=${userId} purpose=${purpose}`);
   }
 
@@ -82,40 +94,5 @@ export class OtpService {
       where: { id: otp.id },
       data: { usedAt: new Date() },
     });
-  }
-
-  // ─── SMS via AfricasTalking API ───────────────────────────────────────────
-  async sendSms(phone: string, message: string): Promise<void> {
-    const apiKey = this.config.get('AT_API_KEY');
-    const username = this.config.get('AT_USERNAME');
-
-    if (!apiKey || username === 'sandbox') {
-      // Mode développement : log seulement
-      this.logger.warn(`[SMS SANDBOX] → ${phone} : ${message}`);
-      return;
-    }
-
-    try {
-      const { default: axios } = await import('axios');
-      await axios.post(
-        'https://api.africastalking.com/version1/messaging',
-        new URLSearchParams({
-          username,
-          to: phone,
-          message,
-          from: this.config.get('AT_SENDER_ID', 'CamWallet'),
-        }),
-        {
-          headers: {
-            apiKey,
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        },
-      );
-    } catch (err) {
-      this.logger.error(`Échec envoi SMS vers ${phone}`, err);
-      throw new BadRequestException('Erreur envoi SMS. Réessayez.');
-    }
   }
 }

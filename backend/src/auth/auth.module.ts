@@ -6,10 +6,12 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { OtpService } from './otp.service';
+import { SmsModule } from '../sms/sms.module';
 
 @Module({
   imports: [
     PassportModule,
+    SmsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -20,6 +22,7 @@ import { OtpService } from './otp.service';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, OtpService],
-  exports: [AuthService, OtpService],
+  // SmsModule réexporté pour qu'AdminModule (qui importe AuthModule) y accède.
+  exports: [AuthService, OtpService, SmsModule],
 })
 export class AuthModule {}

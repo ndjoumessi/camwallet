@@ -87,7 +87,7 @@ describe('AuthService', () => {
       expect(prisma.user.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ phone: '+237677000001' }) }),
       );
-      expect(otpService.sendOtp).toHaveBeenCalledWith('user-1', 'REGISTRATION');
+      expect(otpService.sendOtp).toHaveBeenCalledWith('user-1', 'REGISTRATION', 'fr');
       expect(result).toHaveProperty('userId', 'user-1');
     });
 

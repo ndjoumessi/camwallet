@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OtpService } from '../auth/otp.service';
+import { SmsService } from '../sms/sms.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -24,6 +25,7 @@ export class AdminService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private otpService: OtpService,
+    private sms: SmsService,
     private config: ConfigService,
   ) {}
 
@@ -526,7 +528,7 @@ export class AdminService {
     if (notif) {
       void this.notifications.sendToUser(userId, notif.title, notif.body, { type: 'KYC', status: newStatus });
       const smsUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
-      if (smsUser) void this.otpService.sendSms(smsUser.phone, notif.sms);
+      if (smsUser) void this.sms.sendSms(smsUser.phone, notif.sms);
     }
 
     return user;
@@ -1175,10 +1177,13 @@ export class AdminService {
     ]);
 
     // Santé opérateur sur 7 jours (le sandbox a peu de trafic sur 24h → souvent « Non testé »).
-    const [om, mtn] = await Promise.all([
+    // Ping AfricasTalking en parallèle (no-op si la clé API n'est pas configurée).
+    const [om, mtn, smsPing] = await Promise.all([
       this.operatorHealth('ORANGE_MONEY', d7d, gateway.reachable),
       this.operatorHealth('MTN_MOMO', d7d, gateway.reachable),
+      this.sms.ping(),
     ]);
+    const smsConfigured = this.sms.isConfigured();
 
     return {
       integrations: [
@@ -1206,12 +1211,18 @@ export class AdminService {
         {
           name: 'SMS OTP',
           key: 'sms_otp',
-          status: 'SIMULATED',
-          latency: null,
+          // Configuré (AT_API_KEY présent) → « UP » si le ping répond, sinon
+          // « DOWN ». Non configuré → « SIMULATED » (mode sandbox, log console).
+          status: smsConfigured ? (smsPing.reachable ? 'UP' : 'DOWN') : 'SIMULATED',
+          latency: smsPing.latency,
           txCount7d: null,
           lastSuccess: null,
           uptime: null,
-          note: 'Simulation (AfricasTalking en prod)',
+          note: smsConfigured
+            ? smsPing.reachable
+              ? 'AfricasTalking opérationnel'
+              : 'AfricasTalking injoignable'
+            : 'Simulation (AfricasTalking en prod)',
         },
         {
           name: 'Push Expo',

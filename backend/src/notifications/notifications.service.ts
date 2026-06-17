@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { OtpService } from '../auth/otp.service';
+import { SmsService } from '../sms/sms.service';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -17,7 +17,7 @@ export class NotificationsService {
 
   constructor(
     private prisma: PrismaService,
-    private otpService: OtpService,
+    private sms: SmsService,
   ) {}
 
   // Notification « argent reçu » après crédit d'un portefeuille.
@@ -69,7 +69,7 @@ export class NotificationsService {
       const phone = user.phone;
       const smsText = `CamWallet : ${title}. ${body}`;
       setTimeout(() => {
-        void this.otpService
+        void this.sms
           .sendSms(phone, smsText)
           .catch((err: any) =>
             this.logger.warn(`Échec SMS backup pour ${phone} : ${err?.message ?? err}`),
