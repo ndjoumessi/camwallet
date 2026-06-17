@@ -61,6 +61,9 @@ web-build/
 # TypeScript
 *.tsbuildinfo
 
+# Impeccable (état d'outillage local)
+.impeccable/config.json
+
 # Misc
 .cache/
 tmp/
