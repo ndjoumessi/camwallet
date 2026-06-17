@@ -177,8 +177,11 @@ model Transaction {
   updatedAt   DateTime  @updatedAt
 
   @@map("transactions")
-  @@index([senderId])
-  @@index([receiverId])
+  // Index composés : l'historique filtre par (senderId OR receiverId) et trie par
+  // createdAt DESC. Les index [colonne, createdAt] couvrent chaque branche du OR
+  // ET l'ordre, et rendent les index simples [senderId]/[receiverId] redondants.
+  @@index([senderId, createdAt])
+  @@index([receiverId, createdAt])
   @@index([status])
   @@index([type])
   @@index([createdAt])
