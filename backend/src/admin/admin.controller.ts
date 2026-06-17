@@ -22,6 +22,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { SseService } from '../sse/sse.module';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminGuard } from './guards/admin.guard';
+import { PermissionsGuard } from './rbac/permissions.guard';
+import { RequirePermission } from './rbac/require-permission.decorator';
 import { AdminService } from './admin.service';
 import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
@@ -33,7 +35,7 @@ import { SetAdminStatusDto } from './dto/set-admin-status.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'), AdminGuard)
+@UseGuards(AuthGuard('jwt'), AdminGuard, PermissionsGuard)
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -42,24 +44,28 @@ export class AdminController {
   ) {}
 
   @Get('stats')
+  @RequirePermission('metrics:read')
   @ApiOperation({ summary: 'Statistiques globales de la plateforme' })
   stats() {
     return this.adminService.getStats();
   }
 
   @Get('stats/timeseries')
+  @RequirePermission('metrics:read')
   @ApiOperation({ summary: 'Séries temporelles par jour (7d | 30d | 90d)' })
   timeseries(@Query('period') period = '7d') {
     return this.adminService.getTimeseries(period);
   }
 
   @Get('stats/operator-rates')
+  @RequirePermission('metrics:read')
   @ApiOperation({ summary: 'Taux de succès par opérateur (30 derniers jours)' })
   operatorRates() {
     return this.adminService.getOperatorSuccessRate();
   }
 
   @Get('users')
+  @RequirePermission('users:read')
   @ApiOperation({ summary: 'Liste paginée des utilisateurs' })
   users(
     @Query('page') page = 1,
@@ -73,18 +79,21 @@ export class AdminController {
   }
 
   @Get('users/stats')
+  @RequirePermission('users:read')
   @ApiOperation({ summary: 'Statistiques agrégées des utilisateurs (cartes + tendances)' })
   userStats() {
     return this.adminService.getUserStats();
   }
 
   @Get('users/:id')
+  @RequirePermission('users:read')
   @ApiOperation({ summary: 'Détail utilisateur (infos, KYC, transactions, audit)' })
   userDetail(@Param('id') id: string) {
     return this.adminService.getUserDetail(id);
   }
 
   @Get('transactions')
+  @RequirePermission('transactions:read')
   @ApiOperation({ summary: 'Liste paginée des transactions' })
   transactions(
     @Query('page') page = 1,
@@ -101,6 +110,7 @@ export class AdminController {
   }
 
   @Patch('users/:id/status')
+  @RequirePermission('users:write')
   @ApiOperation({ summary: 'Modifier le statut d"un utilisateur (bloquer / réactiver)' })
   setUserStatus(
     @Request() req: any,
@@ -111,6 +121,7 @@ export class AdminController {
   }
 
   @Post('users/:id/reset-pin')
+  @RequirePermission('users:write')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Forcer la réinitialisation du PIN d"un utilisateur' })
   resetPin(@Request() req: any, @Param('id') id: string) {
@@ -118,12 +129,14 @@ export class AdminController {
   }
 
   @Get('kyc')
+  @RequirePermission('kyc:read')
   @ApiOperation({ summary: 'File d"attente KYC' })
   kyc() {
     return this.adminService.getKyc();
   }
 
   @Patch('kyc/:userId')
+  @RequirePermission('kyc:write')
   @ApiOperation({ summary: 'Approuver / rejeter une demande KYC' })
   reviewKyc(
     @Request() req: any,
@@ -134,12 +147,14 @@ export class AdminController {
   }
 
   @Get('alerts')
+  @RequirePermission('dashboard:read')
   @ApiOperation({ summary: 'Alertes et transactions signalées (données réelles)' })
   alerts() {
     return this.adminService.getAlerts();
   }
 
   @Get('audit')
+  @RequirePermission('audit:read')
   @ApiOperation({ summary: "Journal d'audit des actions admin avec filtres avancés" })
   audit(
     @Query('action') action?: string,
@@ -162,12 +177,14 @@ export class AdminController {
   // ─── ANIF ──────────────────────────────────────────────────────────────────
 
   @Get('anif/alerts')
+  @RequirePermission('anif:read')
   @ApiOperation({ summary: "Alertes anti-blanchiment ANIF (transactions > seuil, fréquence anormale)" })
   anifAlerts() {
     return this.adminService.getAnifAlerts();
   }
 
   @Post('anif/cases')
+  @RequirePermission('anif:write')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Ouvrir un dossier d'enquête ANIF pour une transaction" })
   openAnifCase(
@@ -181,12 +198,14 @@ export class AdminController {
   }
 
   @Get('anif/report')
+  @RequirePermission('anif:read')
   @ApiOperation({ summary: 'Rapport ANIF structuré (30 derniers jours)' })
   anifReport() {
     return this.adminService.getAnifReport();
   }
 
   @Patch('anif/cases/:id/close')
+  @RequirePermission('anif:write')
   @ApiOperation({ summary: "Clôturer un dossier ANIF (avec rapport optionnel)" })
   closeAnifCase(
     @Request() req: any,
@@ -200,6 +219,7 @@ export class AdminController {
   }
 
   @Post('anif/cases/:id/assign')
+  @RequirePermission('anif:write')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Assigner un dossier ANIF à un analyste" })
   assignAnifCase(
@@ -214,42 +234,49 @@ export class AdminController {
   }
 
   @Get('anif/stats')
+  @RequirePermission('anif:read')
   @ApiOperation({ summary: 'Statistiques de conformité ANIF (cartes)' })
   anifStats() {
     return this.adminService.getAnifStats();
   }
 
   @Get('stats/alerts-timeline')
+  @RequirePermission('dashboard:read')
   @ApiOperation({ summary: 'Alertes par heure sur 24 h (échecs + transactions > seuil)' })
   alertsTimeline() {
     return this.adminService.getAlertsTimeline();
   }
 
   @Get('audit/stats')
+  @RequirePermission('audit:read')
   @ApiOperation({ summary: "Statistiques du journal d'audit (cartes)" })
   auditStats() {
     return this.adminService.getAuditStats();
   }
 
   @Get('team/:userId/activity')
+  @RequirePermission('team:manage')
   @ApiOperation({ summary: "Activité récente + stats d'un opérateur admin" })
   memberActivity(@Param('userId') userId: string) {
     return this.adminService.getMemberActivity(userId);
   }
 
   @Patch('transactions/:id/resolve')
+  @RequirePermission('transactions:write')
   @ApiOperation({ summary: 'Marquer une transaction signalée comme résolue' })
   resolveTransaction(@Request() req: any, @Param('id') id: string) {
     return this.adminService.resolveTransaction(req.user.id, id);
   }
 
   @Get('settings')
+  @RequirePermission('settings:read')
   @ApiOperation({ summary: 'Lire les paramètres système' })
   getSettings() {
     return this.adminService.getSettings();
   }
 
   @Patch('settings')
+  @RequirePermission('settings:write')
   @ApiOperation({ summary: 'Mettre à jour les paramètres système' })
   updateSettings(
     @Request() req: any,
@@ -258,12 +285,14 @@ export class AdminController {
     if (!body.updates || typeof body.updates !== 'object') {
       throw new BadRequestException('updates est requis (objet clé→valeur)');
     }
-    return this.adminService.updateSettings(req.user.id, body.updates);
+    // Cloisonnement par clé : hors SUPER_ADMIN, seules les clés anif_* sont permises.
+    return this.adminService.updateSettings(req.user.id, body.updates, req.user.adminRole);
   }
 
   // ─── Opérations OM/MoMo ────────────────────────────────────────────────────
 
   @Get('operations')
+  @RequirePermission('operations:read')
   @ApiOperation({ summary: 'Liste des recharges et retraits OM/MoMo avec statut webhook' })
   operations(
     @Query('page') page = 1,
@@ -278,6 +307,7 @@ export class AdminController {
   }
 
   @Post('operations/:id/retry')
+  @RequirePermission('operations:write')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Relancer une opération PENDING (incrément retryCount)' })
   retryOperation(@Request() req: any, @Param('id') id: string) {
@@ -287,12 +317,16 @@ export class AdminController {
   // ─── Santé des intégrations ────────────────────────────────────────────────
 
   @Get('health/integrations')
+  @RequirePermission('dashboard:read')
   @ApiOperation({ summary: 'Statut des intégrations OM, MTN, SMS OTP, Push Expo' })
   healthIntegrations() {
     return this.adminService.getHealthIntegrations();
   }
 
   // ─── Équipe admin ─────────────────────────────────────────────────────────
+  // GET team (liste) reste ouvert à tout admin : utilisé par les listes
+  // déroulantes d'assignation (Support, modale transaction). La GESTION de
+  // l'équipe (création/suppression/rôle/mot de passe/statut) est SUPER_ADMIN.
 
   @Get('team')
   @ApiOperation({ summary: 'Liste des membres de l\'équipe admin' })
@@ -301,18 +335,21 @@ export class AdminController {
   }
 
   @Post('team')
+  @RequirePermission('team:manage')
   @ApiOperation({ summary: 'Créer un opérateur admin (SUPER_ADMIN)' })
   createAdminOperator(@Request() req: any, @Body() body: CreateAdminOperatorDto) {
     return this.adminService.createAdminOperator(req.user.id, body);
   }
 
   @Delete('team/:userId')
+  @RequirePermission('team:manage')
   @ApiOperation({ summary: 'Supprimer un opérateur admin (SUPER_ADMIN)' })
   deleteAdmin(@Request() req: any, @Param('userId') userId: string) {
     return this.adminService.deleteAdmin(req.user.id, userId);
   }
 
   @Patch('team/:userId/status')
+  @RequirePermission('team:manage')
   @ApiOperation({ summary: 'Activer / désactiver un opérateur admin (SUPER_ADMIN)' })
   setAdminStatus(
     @Request() req: any,
@@ -323,6 +360,7 @@ export class AdminController {
   }
 
   @Patch('team/:userId/role')
+  @RequirePermission('team:manage')
   @ApiOperation({ summary: 'Attribuer un rôle admin à un utilisateur' })
   setAdminRole(
     @Request() req: any,
@@ -333,6 +371,7 @@ export class AdminController {
   }
 
   @Patch('team/:userId/password')
+  @RequirePermission('team:manage')
   @ApiOperation({ summary: 'Définir le mot de passe de connexion d\'un admin' })
   setAdminPassword(
     @Request() req: any,
@@ -345,6 +384,7 @@ export class AdminController {
   // ─── Export CSV ──────────────────────────────────────────────────────────
 
   @Get('export/users')
+  @RequirePermission('users:read')
   @ApiOperation({ summary: 'Exporter les utilisateurs en CSV' })
   async exportUsers(@Res() res: any) {
     const csv = await this.adminService.exportUsersCsv({});
@@ -356,6 +396,7 @@ export class AdminController {
   }
 
   @Get('export/transactions')
+  @RequirePermission('transactions:read')
   @ApiOperation({ summary: 'Exporter les transactions en CSV' })
   async exportTransactions(@Res() res: any) {
     const csv = await this.adminService.exportTransactionsCsv({});
@@ -369,12 +410,14 @@ export class AdminController {
   // ─── Notes admin sur un utilisateur ──────────────────────────────────────
 
   @Get('users/:id/notes')
+  @RequirePermission('users:read')
   @ApiOperation({ summary: 'Lire les notes admin sur un utilisateur' })
   getAdminNotes(@Param('id') id: string) {
     return this.adminService.getAdminNotes(id);
   }
 
   @Post('users/:id/notes')
+  @RequirePermission('users:write')
   @ApiOperation({ summary: 'Ajouter une note admin sur un utilisateur' })
   addAdminNote(
     @Request() req: any,
@@ -386,6 +429,7 @@ export class AdminController {
   }
 
   @Delete('notes/:noteId')
+  @RequirePermission('users:write')
   @ApiOperation({ summary: 'Supprimer une note admin' })
   deleteAdminNote(@Request() req: any, @Param('noteId') noteId: string) {
     return this.adminService.deleteAdminNote(req.user.id, noteId);

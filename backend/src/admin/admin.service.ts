@@ -1402,9 +1402,24 @@ export class AdminService {
     return result;
   }
 
-  async updateSettings(adminId: string, updates: Record<string, string>) {
+  async updateSettings(adminId: string, updates: Record<string, string>, adminRole?: string) {
     const allowedKeys = Object.keys(this.SETTINGS_DEFAULTS);
-    const entries = Object.entries(updates).filter(([k]) => allowedKeys.includes(k));
+    let entries = Object.entries(updates).filter(([k]) => allowedKeys.includes(k));
+
+    // Cloisonnement par clé : hors SUPER_ADMIN (et token legacy sans sous-rôle),
+    // seules les clés de conformité anif_* sont modifiables (page ANIF). Toute
+    // tentative sur une autre clé est refusée explicitement (pas d'ignorance
+    // silencieuse) pour rester traçable.
+    const fullAccess = adminRole == null || adminRole === 'SUPER_ADMIN';
+    if (!fullAccess) {
+      const forbidden = entries.filter(([k]) => !k.startsWith('anif_')).map(([k]) => k);
+      if (forbidden.length) {
+        throw new ForbiddenException(
+          `Ce sous-rôle ne peut modifier que les paramètres ANIF (clés refusées : ${forbidden.join(', ')})`,
+        );
+      }
+      entries = entries.filter(([k]) => k.startsWith('anif_'));
+    }
 
     await Promise.all(
       entries.map(([key, value]) =>

@@ -12,7 +12,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; role: string }) {
-    return { id: payload.sub, role: payload.role };
+  async validate(payload: { sub: string; role: string; adminRole?: string }) {
+    // adminRole (sous-rôle admin) est propagé pour le RBAC backend par permission.
+    return { id: payload.sub, role: payload.role, adminRole: payload.adminRole };
   }
 }
