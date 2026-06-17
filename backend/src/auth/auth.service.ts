@@ -24,6 +24,12 @@ const MAX_PIN_ATTEMPTS = 3;
 const LOCK_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const ADMIN_MAX_ATTEMPTS = 5;
 const ADMIN_LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+// Coût bcrypt du PIN (2^coût itérations). 10 = défaut bcrypt (~60-75 ms) au lieu
+// de 12 (~250-300 ms) pour réduire la latence de connexion. Acceptable car le
+// brute-force est déjà borné par le verrouillage (MAX_PIN_ATTEMPTS → 30 min).
+// NB : ne change que les NOUVEAUX hash ; les PIN existants gardent leur coût
+// jusqu'à un changement de PIN (cf. re-hash à la connexion si besoin).
+const PIN_BCRYPT_COST = 10;
 
 @Injectable()
 export class AuthService {
@@ -93,7 +99,7 @@ export class AuthService {
 
   // ─── Étape 3 : Création PIN ────────────────────────────────────────────────
   async setPin(dto: SetPinDto) {
-    const pinHash = await bcrypt.hash(dto.pin, 12);
+    const pinHash = await bcrypt.hash(dto.pin, PIN_BCRYPT_COST);
     const user = await this.prisma.user.update({
       where: { id: dto.userId },
       data: { pinHash },
@@ -364,7 +370,7 @@ export class AuthService {
       }
     }
 
-    const newPinHash = await bcrypt.hash(newPin, 12);
+    const newPinHash = await bcrypt.hash(newPin, PIN_BCRYPT_COST);
     // Conserver les 2 anciens hashes + l'actuel = 3 entrées dans l'historique
     const previousPinHashes = [user.pinHash, ...user.previousPinHashes].slice(0, 3);
 
