@@ -37,6 +37,8 @@ const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: key
 
 function AppContent() {
   const [phase, setPhase] = useState<Phase>('splash');
+  const [restoreChecked, setRestoreChecked] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [showMerchant, setShowMerchant] = useState(false);
   const { colors: TC } = useTheme();
@@ -120,8 +122,21 @@ function AppContent() {
   }, [phase, openTransactionById]);
 
   // Au démarrage : tente de restaurer une session existante (tokens SecureStore).
+  // On attend la fin de cette vérification avant de router (cf. effet du splash)
+  // pour ne jamais afficher l'onboarding alors qu'un token valide existe.
   useEffect(() => {
-    restoreSession();
+    let cancelled = false;
+    restoreSession()
+      .then((ok) => {
+        console.log('[restoreSession] token valide =', ok, '| authentifié =', useStore.getState().isAuthenticated);
+      })
+      .catch((e) => {
+        console.log('[restoreSession] échec', e);
+      })
+      .finally(() => {
+        if (!cancelled) setRestoreChecked(true);
+      });
+    return () => { cancelled = true; };
   }, [restoreSession]);
 
   // Si la session est restaurée pendant l'onboarding/login, on entre dans l'app.
@@ -131,15 +146,19 @@ function AppContent() {
     }
   }, [isAuthenticated, phase]);
 
+  // Routage de fin de splash : on attend que l'animation ET la restauration de
+  // session soient terminées, puis on entre directement dans l'app si un token
+  // valide existe, sinon onboarding. Évite tout flash d'onboarding au démarrage.
+  useEffect(() => {
+    if (phase === 'splash' && splashDone && restoreChecked) {
+      const authed = useStore.getState().isAuthenticated;
+      console.log('[boot] routage splash →', authed ? 'app' : 'onboard');
+      setPhase(authed ? 'app' : 'onboard');
+    }
+  }, [phase, splashDone, restoreChecked]);
+
   if (phase === 'splash') {
-    // À la fin du splash : direct dans l'app si déjà authentifié, sinon onboarding.
-    return (
-      <SplashScreen
-        onFinish={() =>
-          setPhase(useStore.getState().isAuthenticated ? 'app' : 'onboard')
-        }
-      />
-    );
+    return <SplashScreen onFinish={() => setSplashDone(true)} />;
   }
 
   if (phase === 'onboard') {

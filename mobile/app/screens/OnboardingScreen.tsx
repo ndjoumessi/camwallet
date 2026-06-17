@@ -70,6 +70,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
   const [userId, setUserId] = useState('');
   const [pinStep, setPinStep] = useState<'create' | 'confirm'>('create');
   const [error, setError] = useState('');
+  // Vrai quand le numéro saisi est déjà inscrit (409) → on propose d'aller se connecter.
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const shake = useRef(new Animated.Value(0)).current;
@@ -102,6 +104,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
 
   const sendOtp = async () => {
     setError('');
+    setAlreadyRegistered(false);
     setLoading(true);
     try {
       const result = await authApi.register(`+237${phone}`);
@@ -113,6 +116,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
       const status: number | undefined = err?.response?.status;
       if (status === 409) {
         setError(t('onboarding.phone.errorAlreadyRegistered'));
+        setAlreadyRegistered(true);
       } else if (status === 429) {
         setError(t('onboarding.phone.errorTooManyAttempts'));
       } else if (status === 400) {
@@ -222,6 +226,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
   const handlePhoneChange = (text: string) => {
     setPhone(text.replace(/\D/g, '').slice(0, 9));
     setError('');
+    setAlreadyRegistered(false);
   };
 
   const handleOtpChange = (text: string) => {
@@ -331,6 +336,14 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
                 />
               </View>
               {!!error && <Text style={styles.errorText}>{error}</Text>}
+              {alreadyRegistered && (
+                <Button
+                  label={t('onboarding.phone.goToLogin')}
+                  onPress={onComplete}
+                  icon="log-in-outline"
+                  style={styles.goToLoginBtn}
+                />
+              )}
             </View>
 
             <Button
@@ -665,6 +678,9 @@ const styles = StyleSheet.create({
     fontSize: Typography.xs,
     marginTop: Spacing.xs,
     marginLeft: Spacing.xs,
+  },
+  goToLoginBtn: {
+    marginTop: Spacing.md,
   },
   termsText: {
     color: Colors.textMuted,
