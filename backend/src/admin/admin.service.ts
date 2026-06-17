@@ -1212,7 +1212,7 @@ export class AdminService {
           name: 'SMS OTP',
           key: 'sms_otp',
           // Configuré (AT_API_KEY présent) → « UP » si le ping répond, sinon
-          // « DOWN ». Non configuré → « SIMULATED » (mode sandbox, log console).
+          // « DOWN ». Non configuré → « SIMULATED » (log console, aucun envoi).
           status: smsConfigured ? (smsPing.reachable ? 'UP' : 'DOWN') : 'SIMULATED',
           latency: smsPing.latency,
           txCount7d: null,
@@ -1220,9 +1220,11 @@ export class AdminService {
           uptime: null,
           note: smsConfigured
             ? smsPing.reachable
-              ? 'AfricasTalking opérationnel'
+              ? smsPing.sandbox
+                ? 'AfricasTalking sandbox (pas de livraison réelle)'
+                : 'AfricasTalking opérationnel'
               : 'AfricasTalking injoignable'
-            : 'Simulation (AfricasTalking en prod)',
+            : 'Simulation (AfricasTalking non configuré)',
         },
         {
           name: 'Push Expo',

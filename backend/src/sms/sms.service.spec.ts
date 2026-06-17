@@ -32,7 +32,7 @@ describe('SmsService', () => {
     mockFetchApp.mockReset().mockResolvedValue({});
   });
 
-  describe('mode développement / sandbox', () => {
+  describe('sans configuration (dev local)', () => {
     it('logge le SMS sans appeler AfricasTalking (pas de clé API)', async () => {
       const service = await build({ NODE_ENV: 'development' });
       const warn = jest.spyOn((service as any).logger, 'warn').mockImplementation();
@@ -41,11 +41,11 @@ describe('SmsService', () => {
 
       expect(mockSend).not.toHaveBeenCalled();
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('[SMS SANDBOX]'),
+        expect.stringContaining('[SMS DEV]'),
       );
     });
 
-    it('ne déclenche pas l\'envoi réel en prod si AT_API_KEY est absent', async () => {
+    it('ne déclenche pas l\'envoi réel si AT_API_KEY est absent', async () => {
       const service = await build({ NODE_ENV: 'production' });
 
       await service.sendSms('+237677000001', 'Bonjour');
@@ -55,7 +55,38 @@ describe('SmsService', () => {
     });
   });
 
-  describe('mode production', () => {
+  describe('mode sandbox (AT_USERNAME=sandbox)', () => {
+    const sandboxConfig = {
+      AT_API_KEY: 'sandbox-key',
+      AT_USERNAME: 'sandbox',
+      AT_SENDER_ID: 'camwallet',
+    };
+
+    it('envoie via AfricasTalking sans sender ID (omis en sandbox)', async () => {
+      const service = await build(sandboxConfig);
+
+      await service.sendSms('+237677000001', 'Votre code CamWallet : 123456.');
+
+      expect(service.isSandbox()).toBe(true);
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend).toHaveBeenCalledWith({
+        to: ['+237677000001'],
+        message: 'Votre code CamWallet : 123456.',
+      });
+      // pas de clé `from` en sandbox
+      expect(mockSend.mock.calls[0][0]).not.toHaveProperty('from');
+    });
+
+    it('ping renvoie sandbox=true', async () => {
+      const service = await build(sandboxConfig);
+
+      const res = await service.ping();
+
+      expect(res).toEqual({ reachable: true, latency: expect.any(Number), sandbox: true });
+    });
+  });
+
+  describe('mode live', () => {
     const prodConfig = {
       NODE_ENV: 'production',
       AT_API_KEY: 'test-key',
@@ -63,7 +94,7 @@ describe('SmsService', () => {
       AT_SENDER_ID: 'CamWallet',
     };
 
-    it('envoie le SMS via AfricasTalking avec le bon message', async () => {
+    it('envoie le SMS via AfricasTalking avec le bon message et le sender ID', async () => {
       const service = await build(prodConfig);
 
       await service.sendSms('+237677000001', 'Votre code CamWallet : 123456.');
@@ -99,7 +130,7 @@ describe('SmsService', () => {
   describe('ping', () => {
     it('renvoie reachable=false quand non configuré', async () => {
       const service = await build({ NODE_ENV: 'production' });
-      expect(await service.ping()).toEqual({ reachable: false, latency: null });
+      expect(await service.ping()).toEqual({ reachable: false, latency: null, sandbox: false });
       expect(mockFetchApp).not.toHaveBeenCalled();
     });
 
@@ -111,6 +142,7 @@ describe('SmsService', () => {
       expect(mockFetchApp).toHaveBeenCalled();
       expect(res.reachable).toBe(true);
       expect(typeof res.latency).toBe('number');
+      expect(res.sandbox).toBe(false);
     });
   });
 });
