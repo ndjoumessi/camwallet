@@ -1137,9 +1137,9 @@ export class AdminService {
     }
   }
 
-  // Santé d'un opérateur Mobile Money à partir des transactions des 24 dernières
-  // heures : UP si au moins une COMPLETED, DEGRADED si uniquement des FAILED,
-  // sinon UNKNOWN (ou DOWN si la passerelle est injoignable).
+  // Santé d'un opérateur Mobile Money à partir des transactions des 7 derniers
+  // jours : UP si au moins une COMPLETED, DEGRADED si uniquement des FAILED,
+  // sinon UNKNOWN (« Non testé » côté UI), ou DOWN si la passerelle est injoignable.
   private async operatorHealth(operator: 'ORANGE_MONEY' | 'MTN_MOMO', since: Date, reachable: boolean) {
     const [completed, failed, lastSuccessTx] = await Promise.all([
       this.prisma.transaction.count({ where: { operator, status: TransactionStatus.COMPLETED, createdAt: { gte: since } } }),
@@ -1151,18 +1151,19 @@ export class AdminService {
       }),
     ]);
 
-    const txCount24h = completed + failed;
-    const uptime = txCount24h > 0 ? Math.round((completed / txCount24h) * 100) : null;
+    const txCount7d = completed + failed;
+    const uptime = txCount7d > 0 ? Math.round((completed / txCount7d) * 100) : null;
     const lastSuccess = lastSuccessTx ? (lastSuccessTx.processedAt ?? lastSuccessTx.createdAt) : null;
     const status =
       completed > 0 ? 'UP' : failed > 0 ? 'DEGRADED' : reachable ? 'UNKNOWN' : 'DOWN';
 
-    return { txCount24h, completed, failed, uptime, lastSuccess, status };
+    return { txCount7d, completed, failed, uptime, lastSuccess, status };
   }
 
   async getHealthIntegrations() {
     const now = Date.now();
     const d24h = new Date(now - 24 * 3600 * 1000);
+    const d7d = new Date(now - 7 * 24 * 3600 * 1000);
     const d1h = new Date(now - 3600 * 1000);
 
     // Ping réel de la passerelle CamPay (agrégateur OM + MTN) → latence partagée.
@@ -1173,9 +1174,10 @@ export class AdminService {
       this.prisma.webhookEvent.count({ where: { processed: false, createdAt: { gte: d24h } } }),
     ]);
 
+    // Santé opérateur sur 7 jours (le sandbox a peu de trafic sur 24h → souvent « Non testé »).
     const [om, mtn] = await Promise.all([
-      this.operatorHealth('ORANGE_MONEY', d24h, gateway.reachable),
-      this.operatorHealth('MTN_MOMO', d24h, gateway.reachable),
+      this.operatorHealth('ORANGE_MONEY', d7d, gateway.reachable),
+      this.operatorHealth('MTN_MOMO', d7d, gateway.reachable),
     ]);
 
     return {
@@ -1185,7 +1187,7 @@ export class AdminService {
           key: 'orange_money',
           status: om.status,
           latency: gateway.latency,
-          txCount24h: om.txCount24h,
+          txCount7d: om.txCount7d,
           lastSuccess: om.lastSuccess,
           uptime: om.uptime,
           pendingWebhooks: failedWebhooks,
@@ -1196,7 +1198,7 @@ export class AdminService {
           key: 'mtn_momo',
           status: mtn.status,
           latency: gateway.latency,
-          txCount24h: mtn.txCount24h,
+          txCount7d: mtn.txCount7d,
           lastSuccess: mtn.lastSuccess,
           uptime: mtn.uptime,
           note: gateway.reachable ? 'Via passerelle CamPay' : 'Passerelle CamPay injoignable',
@@ -1206,7 +1208,7 @@ export class AdminService {
           key: 'sms_otp',
           status: 'SIMULATED',
           latency: null,
-          txCount24h: null,
+          txCount7d: null,
           lastSuccess: null,
           uptime: null,
           note: 'Simulation (AfricasTalking en prod)',
@@ -1216,7 +1218,7 @@ export class AdminService {
           key: 'expo_push',
           status: 'UP',
           latency: null,
-          txCount24h: null,
+          txCount7d: null,
           lastSuccess: null,
           uptime: null,
           note: 'Expo Push API',

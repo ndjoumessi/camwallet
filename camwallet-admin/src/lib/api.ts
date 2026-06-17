@@ -525,9 +525,9 @@ export interface IntegrationStatus {
   name: string
   status: 'UP' | 'DOWN' | 'DEGRADED' | 'UNKNOWN' | 'SIMULATED'
   latency: number | null // ms (ping réel passerelle), null si non mesuré
-  txCount24h: number | null // transactions via l'opérateur sur 24h
+  txCount7d: number | null // transactions via l'opérateur sur 7 jours
   lastSuccess: string | null // timestamp dernière transaction réussie
-  uptime: number | null // % de succès sur 24h
+  uptime: number | null // % de succès sur 7 jours
   pendingWebhooks?: number
   note?: string
 }

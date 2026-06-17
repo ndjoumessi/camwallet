@@ -14,7 +14,7 @@ import {
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
-  LifeBuoy, Send, MessageSquare, Trash2, Home,
+  LifeBuoy, Send, MessageSquare, Trash2, ArrowLeft,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -807,7 +807,7 @@ function HealthWidget() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
           {integrations.map(i => {
             const color = HEALTH_COLOR[i.status] ?? C.textMuted
-            const hasMetrics = i.txCount24h != null
+            const hasMetrics = i.txCount7d != null
             return (
               <div key={i.name} style={{ background: C.surface, border: `1px solid ${color}30`, borderRadius: 10, padding: '14px 16px' }}>
                 {/* En-tête : pastille + nom + latence */}
@@ -827,16 +827,16 @@ function HealthWidget() {
 
                 {hasMetrics ? (
                   <>
-                    {/* Tx 24h + dernière activité */}
+                    {/* Tx 7j + dernière activité */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.textMuted, marginBottom: 8 }}>
-                      <span dangerouslySetInnerHTML={{ __html: i18n.t('health.tx_24h', { count: i.txCount24h, interpolation: { escapeValue: false } }) }} />
+                      <span dangerouslySetInnerHTML={{ __html: i18n.t('health.tx_7d', { count: i.txCount7d, interpolation: { escapeValue: false } }) }} />
                       <span>{i.lastSuccess ? relativeTime(i.lastSuccess) : i18n.t('common.none')}</span>
                     </div>
                     {/* Uptime + barre de progression */}
                     {i.uptime != null && (
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginBottom: 3 }}>
-                          <span>{i18n.t('health.up')} 24h</span>
+                          <span>{i18n.t('health.up')} 7j</span>
                           <span style={{ fontWeight: 700, color: i.uptime >= 95 ? C.green : i.uptime >= 70 ? '#FB923C' : C.red }}>{i.uptime} %</span>
                         </div>
                         <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: 'hidden' }}>
@@ -1266,7 +1266,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
                 {data.audit.length === 0 && <div style={{ color: C.textMuted, fontSize: 12 }}>{i18n.t('x.ud.no_audit')}</div>}
                 {data.audit.map((a) => (
                   <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: `1px solid ${C.border}`, fontSize: 12, gap: 8 }}>
-                    <span style={{ color: C.textSoft }}>{a.action}{a.metadata?.note ? ` — ${a.metadata.note}` : ''}</span>
+                    <span style={{ color: C.textSoft }}>{auditActionLabel(a.action)}{a.metadata?.note ? ` — ${a.metadata.note}` : ''}</span>
                     <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{(a.user?.email ?? 'admin')} · {relativeTime(a.createdAt)}</span>
                   </div>
                 ))}
@@ -3194,6 +3194,12 @@ const auditCategory = (action: string): { key: string; label: string; color: str
   return { key: 'other', label: i18n.t('audit_cat.other'), color: C.textMuted }
 }
 const auditActionColor = (action: string): string => auditCategory(action).color
+// Libellé lisible d'une action d'audit (clé brute → label i18n). Repli : la clé
+// en minuscules, underscores remplacés par des espaces (ex. « DISPUTE_OPEN » → « dispute open »).
+const auditActionLabel = (action: string): string => {
+  const key = (action || '').toUpperCase()
+  return i18n.t('audit_action.' + key, { defaultValue: key.toLowerCase().replace(/_/g, ' ') })
+}
 const AUDIT_CATEGORIES = [
   { key: 'security', label: 'audit_cat.security', color: C.red },
   { key: 'kyc', label: 'audit_cat.kyc', color: C.purple },
@@ -3241,7 +3247,7 @@ function AuditPage() {
     { label: i18n.t('x.audit.kpi_actions'), value: stats.total30d.toLocaleString('fr-FR'), icon: FileText, color: C.blue },
     { label: i18n.t('x.audit.kpi_critical'), value: stats.criticalActions.toLocaleString('fr-FR'), icon: ShieldAlert, color: C.red },
     { label: i18n.t('x.audit.kpi_actors'), value: stats.uniqueActors.toLocaleString('fr-FR'), icon: UsersIcon, color: C.green },
-    { label: i18n.t('x.audit.kpi_last'), value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action, icon: Clock, color: C.purple },
+    { label: i18n.t('x.audit.kpi_last'), value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action ? auditActionLabel(stats.lastAction.action) : undefined, icon: Clock, color: C.purple },
   ] : []
 
   return (
@@ -3327,7 +3333,7 @@ function AuditPage() {
                   </td>
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, background: cat.color + '20', color: cat.color, padding: '3px 9px', borderRadius: 6 }}>
-                      <span style={{ width: 5, height: 5, borderRadius: 3, background: cat.color }} />{e.action}
+                      <span style={{ width: 5, height: 5, borderRadius: 3, background: cat.color }} />{auditActionLabel(e.action)}
                     </span>
                   </td>
                   <td style={{ padding: '10px 14px', color: C.textSoft, fontSize: 12, fontFamily: 'monospace' }}>{e.resource ?? '—'}</td>
@@ -3777,7 +3783,7 @@ function MemberActivityPanel({ userId }: { userId: string }) {
         {data.recent.length === 0 && <div style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.opmod.no_actions')}</div>}
         {data.recent.map((a) => { const cat = auditCategory(a.action); return (
           <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, color: cat.color, background: cat.color + '20', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap' }}>{a.action}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: cat.color, background: cat.color + '20', borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap' }}>{auditActionLabel(a.action)}</span>
             <span style={{ color: C.textMuted, fontFamily: 'monospace', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.resource ?? '—'}</span>
             <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{relativeTime(a.createdAt)}</span>
           </div>
@@ -4583,15 +4589,15 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Retour à la landing opérateurs */}
+        {/* Retour à la landing opérateurs — lien discret, séparé de la nav, tous rôles */}
         <a
           href="/"
           title={t('nav.back_home')}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderTop: `1px solid ${C.border}`, color: 'rgba(255,255,255,0.4)', fontSize: 12, fontWeight: 500, textDecoration: 'none', transition: 'color .15s' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderTop: `1px solid ${C.border}`, color: 'rgba(255,255,255,0.35)', fontSize: 12, fontWeight: 500, textDecoration: 'none', transition: 'color .15s' }}
           onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = '#fff' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(255,255,255,0.4)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(255,255,255,0.35)' }}
         >
-          <Home size={14} />
+          <ArrowLeft size={14} />
           <span className="cw-navlabel">{t('nav.back_home')}</span>
         </a>
 

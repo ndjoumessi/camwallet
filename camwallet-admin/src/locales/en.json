@@ -109,8 +109,8 @@
     "up": "Operational",
     "down": "Offline",
     "simulated": "Simulated",
-    "unknown": "Unknown",
-    "tx_24h": "{{count}} tx / 24h"
+    "unknown": "Untested",
+    "tx_7d": "{{count}} tx / 7d"
   },
   "alerts": {
     "title": "Alerts & Monitoring",
@@ -484,12 +484,39 @@
     "DEGRADED": "Degraded",
     "SIMULATED": "Simulated",
     "DOWN": "Offline",
-    "UNKNOWN": "Unknown"
+    "UNKNOWN": "Untested"
   },
   "alert_level": {
     "error": "Critical",
     "warn": "Warning",
     "info": "Info"
+  },
+  "audit_action": {
+    "TRANSACTION_RESOLVE": "Transaction resolved",
+    "KYC_APPROVED": "KYC approved",
+    "KYC_REJECTED": "KYC rejected",
+    "KYC_RESUBMIT_REQUIRED": "New doc requested",
+    "SUPPORT_TICKET_DELETE": "Ticket deleted",
+    "SUPPORT_TICKET_CREATE": "Ticket created",
+    "SUPPORT_TICKET_UPDATE": "Ticket updated",
+    "ADMIN_PASSWORD_SET": "Password set",
+    "ADMIN_ROLE_CHANGE": "Role changed",
+    "ADMIN_CREATE": "Operator created",
+    "ADMIN_DELETE": "Operator deleted",
+    "USER_BLOCKED": "User blocked",
+    "USER_UNBLOCKED": "User unblocked",
+    "USER_STATUS_BLOCKED": "User blocked",
+    "USER_STATUS_ACTIVE": "User unblocked",
+    "USER_STATUS_SUSPENDED": "Account suspended",
+    "PIN_RESET": "PIN reset",
+    "USER_PIN_RESET": "PIN reset",
+    "OPERATION_RETRY": "Operation retried",
+    "ANIF_CASE_OPEN": "ANIF case opened",
+    "ANIF_CASE_CLOSE": "ANIF case closed",
+    "ANIF_CASE_ASSIGN": "ANIF case assigned",
+    "ANIF_HIGH_VALUE_ALERT": "High-value alert",
+    "DISPUTE_OPEN": "Dispute opened",
+    "SETTINGS_UPDATE": "Settings updated"
   },
   "audit_cat": {
     "security": "Security",

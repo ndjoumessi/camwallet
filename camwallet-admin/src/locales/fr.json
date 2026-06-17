@@ -109,8 +109,8 @@
     "up": "Opérationnel",
     "down": "Hors ligne",
     "simulated": "Simulé",
-    "unknown": "Inconnu",
-    "tx_24h": "{{count}} tx / 24h"
+    "unknown": "Non testé",
+    "tx_7d": "{{count}} tx / 7j"
   },
   "alerts": {
     "title": "Alertes & Surveillance",
@@ -484,7 +484,7 @@
     "DEGRADED": "Dégradé",
     "SIMULATED": "Simulé",
     "DOWN": "Hors ligne",
-    "UNKNOWN": "Inconnu"
+    "UNKNOWN": "Non testé"
   },
   "alert_level": {
     "error": "Critique",
@@ -497,6 +497,33 @@
     "finance": "Finance",
     "admin": "Admin",
     "other": "Autre"
+  },
+  "audit_action": {
+    "TRANSACTION_RESOLVE": "Transaction résolue",
+    "KYC_APPROVED": "KYC approuvé",
+    "KYC_REJECTED": "KYC rejeté",
+    "KYC_RESUBMIT_REQUIRED": "Nouveau doc demandé",
+    "SUPPORT_TICKET_DELETE": "Ticket supprimé",
+    "SUPPORT_TICKET_CREATE": "Ticket créé",
+    "SUPPORT_TICKET_UPDATE": "Ticket mis à jour",
+    "ADMIN_PASSWORD_SET": "Mot de passe défini",
+    "ADMIN_ROLE_CHANGE": "Rôle modifié",
+    "ADMIN_CREATE": "Opérateur créé",
+    "ADMIN_DELETE": "Opérateur supprimé",
+    "USER_BLOCKED": "Utilisateur bloqué",
+    "USER_UNBLOCKED": "Utilisateur débloqué",
+    "USER_STATUS_BLOCKED": "Utilisateur bloqué",
+    "USER_STATUS_ACTIVE": "Utilisateur débloqué",
+    "USER_STATUS_SUSPENDED": "Compte suspendu",
+    "PIN_RESET": "PIN réinitialisé",
+    "USER_PIN_RESET": "PIN réinitialisé",
+    "OPERATION_RETRY": "Opération relancée",
+    "ANIF_CASE_OPEN": "Dossier ANIF ouvert",
+    "ANIF_CASE_CLOSE": "Dossier ANIF clôturé",
+    "ANIF_CASE_ASSIGN": "Dossier ANIF assigné",
+    "ANIF_HIGH_VALUE_ALERT": "Alerte montant élevé",
+    "DISPUTE_OPEN": "Litige ouvert",
+    "SETTINGS_UPDATE": "Paramètres mis à jour"
   },
   "x": {
     "common": {
