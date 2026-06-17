@@ -34,7 +34,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      JWT_ACCESS_SECRET: ci_access_secret_test
+      JWT_SECRET: ci_access_secret_test
       JWT_REFRESH_SECRET: ci_refresh_secret_test
       ADMIN_EMAIL: admin@camwallet.cm
       ADMIN_PASSWORD: Admin@2025!
@@ -82,7 +82,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://camwallet:camwallet@localhost:5432/camwallet_test
       DIRECT_DATABASE_URL: postgresql://camwallet:camwallet@localhost:5432/camwallet_test
-      JWT_ACCESS_SECRET: ci_access_secret_test
+      JWT_SECRET: ci_access_secret_test
       JWT_REFRESH_SECRET: ci_refresh_secret_test
       JWT_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_IN: 7d
