@@ -94,7 +94,15 @@ Phone + 6-digit PIN for users; email + password for admin. User registration is 
 `webhooks/webhooks.service.ts` ingests Orange Money / MTN MoMo callbacks. Every raw event is persisted to `WebhookEvent` before processing; a `SUCCESSFUL` event matches a `PENDING` transaction by `operatorRef` and credits atomically. **Signature/token verification is still stubbed (`TODO`)** — `OM_WEBHOOK_SECRET` / `MTN_WEBHOOK_SECRET` exist in env but are not validated.
 
 ### Data model
-`schema.prisma` is the source of truth. Central tables: `User` → `Wallet` (1:1), `Transaction` (sender/receiver self-relations), `KycDocument` (1:1), `AuditLog` (ANIF traceability; `userId` nullable). `User` carries `role`, `status`, `kycStatus`, plus `pushToken`, `avatarUrl`, `dateOfBirth`, `city`. After editing `schema.prisma`, run a migration + `prisma:generate` and restart the dev server.
+`schema.prisma` is the source of truth. Central tables: `User` → `Wallet` (1:1), `Transaction` (sender/receiver self-relations), `KycDocument` (1:1), `AuditLog` (ANIF traceability; `userId` nullable). `User` carries `role`, `status`, `kycStatus`, plus `pushToken`, `avatarUrl`, `dateOfBirth`, `city`. `Transaction` has **composite indexes `(senderId, createdAt)` and `(receiverId, createdAt)`** serving the history query (`WHERE senderId=? OR receiverId=? ORDER BY createdAt DESC`) — they supersede the old single-column `senderId`/`receiverId` indexes. After editing `schema.prisma`, run a migration + `prisma:generate` and restart the dev server.
+
+### Performance & latence (prod)
+The PIN login path was the latency hot spot. Measured with the k6 suite under `scripts/load-tests/*.js` (`BASE_URL=… k6 run scripts/load-tests/smoke.js`), p95 went from ~3s to ~400ms. The fixes, in order of impact:
+- **Region co-location** — the Railway service was moved from `iad` (US-East) to **EU West**, next to the Supabase DB (`aws-0-eu-west-1`, Ireland). Cross-Atlantic DB round-trips were the dominant cost; **keep compute and DB in the same region**.
+- **Connection pool** — `DATABASE_URL` (Supabase transaction pooler, `:6543`, `pgbouncer=true`) carries **`connection_limit=10&pool_timeout=20`**. Prisma's small default pool (`num_cpus×2+1`) starved under concurrency, queueing every query; this was the single biggest win and speeds up **every** endpoint. `prisma.service.ts` holds no pool config — it's all in the URL.
+- **`login()` write is off the critical path** — on the common path (no failed attempts) it fire-and-forgets the `lastLoginAt` touch; it only `await`s the DB write when it must durably reset the brute-force counter (`pinAttempts`/`lockedUntil`). Worth ~200ms at p95.
+- **bcrypt cost 10** for PINs (see *Auth flow*).
+- `health/keep-warm.service.ts` — a `@Cron` every 5 min runs `SELECT 1` to keep the Prisma/pooler connection warm. NB: an internal cron can't wake a truly *sleeping* Railway container — use an external uptime pinger on `GET /api/v1/health` for that.
 
 ### API surface (selected)
 - **auth**: `register`, `verify-otp`, `set-pin`, `login`, `login-admin`, `refresh`, `pin-reset/request`.
@@ -108,7 +116,7 @@ Both frontends have a `src/lib/api.ts` client: token storage (mobile = `expo-sec
 
 ## Environment
 
-Each sub-project needs a `.env` from its example. `backend/.env.example` and `camwallet-admin/.env.example` are committed. Relevant vars: mobile `EXPO_PUBLIC_API_URL` (origin, `/api/v1` appended), admin `VITE_API_URL` (defaults to `http://localhost:3000`). Backend env: `DATABASE_URL`, JWT secrets, `PIN_PEPPER` (HMAC pepper for PIN hashing — set durably in prod, never rotate without the old value), AfricasTalking SMS (OTP), Orange Money + MTN MoMo credentials, Cloudinary, and `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
+Each sub-project needs a `.env` from its example. `backend/.env.example` and `camwallet-admin/.env.example` are committed. Relevant vars: mobile `EXPO_PUBLIC_API_URL` (origin, `/api/v1` appended), admin `VITE_API_URL` (defaults to `http://localhost:3000`). Backend env: `DATABASE_URL` (in prod, append `?pgbouncer=true&connection_limit=10&pool_timeout=20` — see *Performance*), JWT secrets, `PIN_PEPPER` (HMAC pepper for PIN hashing — set durably in prod, never rotate without the old value), AfricasTalking SMS (OTP), Orange Money + MTN MoMo credentials, Cloudinary, and `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 
 Dev test credentials (seed): user `+237677000001`, merchant `+237699000002`, all PIN `123456`; admin `admin@camwallet.cm` / `Admin@2025!`.
 
