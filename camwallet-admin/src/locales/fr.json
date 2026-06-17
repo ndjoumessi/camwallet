@@ -427,7 +427,9 @@
     "submit": "Se connecter",
     "submit_loading": "Connexion…",
     "submit_verify": "Vérifier le code",
-    "error_fallback": "Échec de la connexion"
+    "error_fallback": "Échec de la connexion",
+    "show_password": "Afficher le mot de passe",
+    "hide_password": "Masquer le mot de passe"
   },
   "live_events": {
     "new_transaction": "Nouvelle transaction reçue",

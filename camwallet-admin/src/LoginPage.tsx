@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Eye, EyeOff } from 'lucide-react'
 import { loginAdmin } from './lib/api'
 
 // Palette alignée sur App.tsx
@@ -13,6 +14,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const { t } = useTranslation()
   const [email, setEmail] = useState('admin@camwallet.cm')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [totpRequired, setTotpRequired] = useState(false)
   const [totpCode, setTotpCode] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -84,12 +86,27 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
         <label style={{ fontSize: 12, color: C.textSoft, fontWeight: 600, display: 'block', marginBottom: 6 }}>
           {t('login.label_password')}
         </label>
-        <input
-          type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••" autoComplete="current-password"
-          disabled={totpRequired}
-          style={{ ...inputStyle, marginBottom: 20, opacity: totpRequired ? 0.6 : 1 }}
-        />
+        <div style={{ position: 'relative', marginBottom: 20 }}>
+          <input
+            type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••" autoComplete="current-password"
+            disabled={totpRequired}
+            style={{ ...inputStyle, paddingRight: 44, opacity: totpRequired ? 0.6 : 1 }}
+          />
+          <button
+            type="button" onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? t('login.hide_password') : t('login.show_password')}
+            disabled={totpRequired}
+            style={{
+              position: 'absolute', top: 0, bottom: 0, right: 6, margin: 'auto',
+              height: 32, width: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'none', border: 'none', color: C.textMuted,
+              cursor: totpRequired ? 'not-allowed' : 'pointer', padding: 0,
+            }}
+          >
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
 
         {totpRequired && (
           <>

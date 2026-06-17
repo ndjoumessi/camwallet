@@ -427,7 +427,9 @@
     "submit": "Sign in",
     "submit_loading": "Signing in…",
     "submit_verify": "Verify code",
-    "error_fallback": "Login failed"
+    "error_fallback": "Login failed",
+    "show_password": "Show password",
+    "hide_password": "Hide password"
   },
   "live_events": {
     "new_transaction": "New transaction received",
