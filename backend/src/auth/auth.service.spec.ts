@@ -122,6 +122,30 @@ describe('AuthService', () => {
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
+      // Cas courant (compteur déjà à 0) : seul lastLoginAt est écrit.
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: { lastLoginAt: expect.any(Date) },
+        }),
+      );
+    });
+
+    it('réinitialise le verrou si la connexion réussit après des échecs', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        phone: '+237677000001',
+        pinHash,
+        pinAttempts: 2,
+        lockedUntil: null,
+        tokenVersion: 0,
+        role: 'USER',
+      });
+      prisma.user.update.mockResolvedValue({});
+
+      await service.login({ phone: '+237677000001', pin: '123456' });
+
+      // Cas avec tentatives échouées : remise à zéro durable du compteur.
       expect(prisma.user.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({ pinAttempts: 0, lockedUntil: null }),

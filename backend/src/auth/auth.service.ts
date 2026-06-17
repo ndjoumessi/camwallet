@@ -192,11 +192,26 @@ export class AuthService {
       );
     }
 
-    // Succès : réinitialiser les tentatives
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
-    });
+    // Succès. Deux cas :
+    //  - compteur déjà à zéro (cas courant) : seul lastLoginAt change (cosmétique)
+    //    → écriture fire-and-forget, hors chemin critique (~150 ms de moins au p95).
+    //  - tentatives échouées / verrou actif (rare) : la remise à zéro est
+    //    sensible (anti brute-force) → on l'attend pour la garantir durable.
+    const needsReset = user.pinAttempts !== 0 || user.lockedUntil !== null;
+    if (needsReset) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+      });
+    } else {
+      void this.prisma.user
+        .update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
+        .catch((err) =>
+          this.logger.warn(
+            `MAJ lastLoginAt échouée (user ${user.id}) : ${err?.message ?? err}`,
+          ),
+        );
+    }
     const tWrite = timed ? performance.now() : 0;
 
     const tokens = this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
@@ -206,7 +221,7 @@ export class AuthService {
       this.logger.log(
         `[login-timing] db_read=${ms(t0, tRead)}ms pin_cmp=${ms(tRead, tPin)}ms ` +
           `db_write=${ms(tPin, tWrite)}ms tokens=${ms(tWrite, performance.now())}ms ` +
-          `total=${ms(t0, performance.now())}ms`,
+          `total=${ms(t0, performance.now())}ms reset=${needsReset}`,
       );
     }
 
