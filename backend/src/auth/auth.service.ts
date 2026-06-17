@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import { performance } from 'perf_hooks';
 import { authenticator } from 'otplib';
 import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from './otp.service';
@@ -142,9 +143,15 @@ export class AuthService {
 
   // ─── Connexion avec PIN ────────────────────────────────────────────────────
   async login(dto: LoginDto) {
+    // Instrumentation optionnelle (LOGIN_TIMING=1) : décompose la latence de
+    // connexion par phase pour diagnostiquer les lenteurs. Aucun coût quand off.
+    const timed = !!this.config.get<string>('LOGIN_TIMING');
+    const t0 = timed ? performance.now() : 0;
+
     const user = await this.prisma.user.findUnique({
       where: { phone: dto.phone },
     });
+    const tRead = timed ? performance.now() : 0;
 
     if (!user) throw new UnauthorizedException('Numéro introuvable');
 
@@ -157,6 +164,7 @@ export class AuthService {
     }
 
     const pinValid = await this.comparePin(dto.pin, user.pinHash, user.id);
+    const tPin = timed ? performance.now() : 0;
 
     if (!pinValid) {
       const attempts = user.pinAttempts + 1;
@@ -189,8 +197,20 @@ export class AuthService {
       where: { id: user.id },
       data: { pinAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
+    const tWrite = timed ? performance.now() : 0;
 
-    return this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
+    const tokens = this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
+
+    if (timed) {
+      const ms = (a: number, b: number) => (b - a).toFixed(1);
+      this.logger.log(
+        `[login-timing] db_read=${ms(t0, tRead)}ms pin_cmp=${ms(tRead, tPin)}ms ` +
+          `db_write=${ms(tPin, tWrite)}ms tokens=${ms(tWrite, performance.now())}ms ` +
+          `total=${ms(t0, performance.now())}ms`,
+      );
+    }
+
+    return tokens;
   }
 
   // ─── Connexion administrateur (email + mot de passe) ──────────────────────
