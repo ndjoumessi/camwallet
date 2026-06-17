@@ -4,12 +4,27 @@ import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { CamPayService } from '../src/campay/campay.service';
 
 // BigInt → Number pour la sérialisation JSON (normalement dans main.ts)
 (BigInt.prototype as any).toJSON = function () { return Number(this); };
 
 const USER_PHONE = '+237622000001';
 const PIN = '445566';
+// Montant ≤ 2 500 centimes (25 FCFA) : limite du mode sandbox CamPay (NODE_ENV
+// ≠ production en CI). Le webhook crédite ensuite ce même montant.
+const RECHARGE_AMOUNT = 2500;
+
+// Faux client CamPay : évite l'appel réseau réel (aucune credential en CI) et
+// renvoie une réponse /collect valide pour que la recharge soit enregistrée
+// PENDING. Le crédit effectif reste piloté par le webhook (cf. test suivant).
+const campayMock = {
+  collect: jest.fn(async () => ({
+    reference: 'FAKE-CAMPAY-REF',
+    ussd_code: '#150*00#',
+    status: 'PENDING',
+  })),
+};
 
 describe('Flux recharge + webhook (e2e)', () => {
   let app: INestApplication;
@@ -32,7 +47,10 @@ describe('Flux recharge + webhook (e2e)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(CamPayService)
+      .useValue(campayMock)
+      .compile();
 
     app = moduleFixture.createNestApplication({ rawBody: true });
     app.setGlobalPrefix('api/v1');
@@ -65,11 +83,12 @@ describe('Flux recharge + webhook (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/wallets/recharge')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({ amount: 500000, operator: 'ORANGE_MONEY' })
+      .send({ amount: RECHARGE_AMOUNT, operator: 'ORANGE_MONEY', phone: USER_PHONE })
       .expect(201);
 
     expect(res.body).toHaveProperty('status', 'PENDING');
     expect(res.body).toHaveProperty('operatorRef');
+    expect(campayMock.collect).toHaveBeenCalled();
     operatorRef = res.body.operatorRef;
   });
 
@@ -91,7 +110,7 @@ describe('Flux recharge + webhook (e2e)', () => {
     // Vérifier que le solde a été crédité
     // Convertir en Number pour éviter les BigInt dans les erreurs Jest (structured clone)
     const wallet = await prisma.wallet.findUnique({ where: { userId } });
-    expect(Number(wallet?.balance)).toBe(500_000);
+    expect(Number(wallet?.balance)).toBe(RECHARGE_AMOUNT);
   });
 
   it('GET /wallets/balance retourne le solde mis à jour', async () => {
@@ -100,6 +119,6 @@ describe('Flux recharge + webhook (e2e)', () => {
       .set('Authorization', `Bearer ${userToken}`)
       .expect(200);
 
-    expect(res.body.balance).toBe(500000);
+    expect(res.body.balance).toBe(RECHARGE_AMOUNT);
   });
 });
