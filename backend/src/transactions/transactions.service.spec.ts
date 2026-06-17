@@ -73,7 +73,7 @@ describe('TransactionsService', () => {
     it('effectue un virement P2P avec solde suffisant', async () => {
       const createdTx = { id: 'tx-1', type: 'P2P', amount: 100000n };
 
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 200000n }),
@@ -92,7 +92,7 @@ describe('TransactionsService', () => {
     });
 
     it('rejette si le solde est insuffisant', async () => {
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 5000n }),
@@ -148,7 +148,7 @@ describe('TransactionsService', () => {
 
       const createdTx = { id: 'tx-2', type: 'QR_PAYMENT', amount: 50000n };
 
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 200000n }),
@@ -225,7 +225,7 @@ describe('TransactionsService', () => {
       prisma.qrCode.findFirst.mockResolvedValue(qrCode);
 
       let capturedCreate: any;
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 500000n }),

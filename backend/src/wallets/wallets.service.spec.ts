@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WalletsService } from './wallets.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CamPayService } from '../campay/campay.service';
+import { ConfigService } from '@nestjs/config';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 const makePrismaMock = () => ({
@@ -41,6 +42,8 @@ describe('WalletsService', () => {
         WalletsService,
         { provide: PrismaService, useValue: prisma },
         { provide: CamPayService, useValue: campay },
+        // NODE_ENV=production → désactive le plafond « sandbox » (25 FCFA) du recharge.
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('production') } },
       ],
     }).compile();
 
@@ -135,7 +138,7 @@ describe('WalletsService', () => {
         reference: 'WDRW-001',
       };
 
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({
@@ -166,7 +169,7 @@ describe('WalletsService', () => {
 
     it('applique les frais min de 50 FCFA (5000 centimes) sur petits montants', async () => {
       let capturedData: any;
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 200000n, isActive: true }),
@@ -190,7 +193,7 @@ describe('WalletsService', () => {
 
     it('applique frais 1% pour les gros montants', async () => {
       let capturedData: any;
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 200000000n, isActive: true }),
@@ -213,7 +216,7 @@ describe('WalletsService', () => {
     });
 
     it('rejette si le solde est insuffisant (montant + frais)', async () => {
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 5000n, isActive: true }),
@@ -228,7 +231,7 @@ describe('WalletsService', () => {
     });
 
     it('rejette si le portefeuille est désactivé', async () => {
-      prisma.$transaction.mockImplementation(async (fn: Function) => {
+      prisma.$transaction.mockImplementation(async (fn: (tx: any) => any) => {
         const txClient = {
           wallet: {
             findUnique: jest.fn().mockResolvedValue({ balance: 500000n, isActive: false }),

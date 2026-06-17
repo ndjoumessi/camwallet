@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
-import * as crypto from 'crypto';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -11,12 +10,6 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const USER_PHONE = '+237622000001';
 const PIN = '445566';
-
-// Calcule la signature HMAC pour le webhook (rawBody vide en mode test car
-// rawBody n'est pas rempli par supertest sans parsing spécifique)
-function hmacSignature(secret: string, body: string): string {
-  return crypto.createHmac('sha256', secret).update(Buffer.from(body)).digest('hex');
-}
 
 describe('Flux recharge + webhook (e2e)', () => {
   let app: INestApplication;

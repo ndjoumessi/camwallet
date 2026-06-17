@@ -8,7 +8,7 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { TransactionType, TransactionStatus, MobileOperator } from '@prisma/client';
+import { TransactionType, TransactionStatus } from '@prisma/client';
 
 @Injectable()
 export class TransactionsService {

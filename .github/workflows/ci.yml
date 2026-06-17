@@ -181,7 +181,8 @@ jobs:
       - name: Installer Railway CLI
         run: npm install -g @railway/cli
       - name: Déployer sur Railway
-        run: railway up --service backend --detach
+        # Le service Railway s'appelle « camwallet » (et non « backend »).
+        run: railway up --service camwallet --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
