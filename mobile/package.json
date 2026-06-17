@@ -54,10 +54,16 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
+    "@types/detox": "^17.14.3",
+    "@types/jest": "^30.0.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "~19.1.10",
+    "detox": "^20.51.4",
+    "detox-cli": "^20.51.4",
     "eslint": "^9.25.1",
     "eslint-config-expo": "~10.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
     "typescript": "^5.9.2"
   },
   "private": true

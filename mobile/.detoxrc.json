@@ -28,7 +28,7 @@
     },
     "emulator": {
       "type": "android.emulator",
-      "device": { "avdName": "Pixel_7_API_34" }
+      "device": { "avdName": "cwtest" }
     }
   },
   "configurations": {
