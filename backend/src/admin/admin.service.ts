@@ -1686,9 +1686,23 @@ export class AdminService {
       };
     });
 
+    // Règles ANIF actives + seuils configurés (Section 4 du rapport PDF).
+    const anifKeys = [
+      'anif_threshold_fcfa', 'anif_rule_highvalue', 'anif_rule_smurfing',
+      'anif_rule_frequency', 'anif_frequency_max',
+    ];
+    const settingsRows = await this.prisma.systemSettings.findMany({ where: { key: { in: anifKeys } } });
+    const settingVal = (k: string) => settingsRows.find((r) => r.key === k)?.value ?? this.SETTINGS_DEFAULTS[k];
+    const rules = [
+      { key: 'anif_rule_highvalue', label: 'Transaction de montant élevé', enabled: settingVal('anif_rule_highvalue') === 'on', threshold: `> ${Number(settingVal('anif_threshold_fcfa')).toLocaleString('fr-FR')} FCFA` },
+      { key: 'anif_rule_smurfing', label: 'Fractionnement (smurfing)', enabled: settingVal('anif_rule_smurfing') === 'on', threshold: '> 10 tx < 50 000 FCFA, total > 300 000 FCFA / 24h' },
+      { key: 'anif_rule_frequency', label: 'Fréquence anormale', enabled: settingVal('anif_rule_frequency') === 'on', threshold: `> ${settingVal('anif_frequency_max')} tx / 24h` },
+    ];
+
     return {
       generatedAt: new Date().toISOString(),
       period: '30 derniers jours',
+      rules,
       summary: {
         highValueCount: highValueTx.length,
         smurfingCount,
