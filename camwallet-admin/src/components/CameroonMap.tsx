@@ -3,8 +3,8 @@
 // région, thème dark CamWallet. Si VITE_GOOGLE_MAPS_API_KEY est absente ou que
 // la lib échoue, repli automatique sur une carte SVG d3-geo (vrais contours),
 // elle-même repliée sur une carte schématique. Aucune fonctionnalité perdue.
-import { Component, useMemo, useState, type ReactNode } from 'react'
-import { GoogleMap, useJsApiLoader, Circle, MarkerF, InfoWindowF } from '@react-google-maps/api'
+import { Component, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { GoogleMap, useJsApiLoader, Circle, MarkerF, InfoWindowF, PolygonF, OverlayViewF } from '@react-google-maps/api'
 import { geoMercator, geoPath } from 'd3-geo'
 import { scaleLinear } from 'd3-scale'
 import i18n from '../i18n'
@@ -38,11 +38,93 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 // 1) Google Maps
 // ════════════════════════════════════════════════════════════════════════════
-const CAMEROON_CENTER = { lat: 5.5, lng: 12.3 }
-const MAP_ZOOM = 6.2
-// Bornes restrictives : Cameroun + frange limitrophe proche (empêche de dériver
-// vers le Nigeria, le Tchad, etc.). strictBounds verrouille la vue.
-const CAMEROON_BOUNDS = { north: 14.0, south: 1.5, west: 7.5, east: 17.0 }
+const CAMEROON_CENTER = { lat: 5.8, lng: 12.3 }
+const MAP_ZOOM = 6.0
+// Bornes restrictives : Cameroun entier (jusqu'au sud, lat 1.6) + frange limitrophe
+// proche. strictBounds verrouille la vue sur le pays (impossible de dériver dehors).
+const CAMEROON_BOUNDS = { north: 13.5, south: 1.6, west: 8.4, east: 16.2 }
+
+// GeoJSON distant des 10 régions (deldersveld/topojson). Si indisponible/404, repli
+// silencieux sur les polygones embarqués (assets/cameroon-regions.geo.json).
+const REMOTE_REGIONS_URL = 'https://raw.githubusercontent.com/deldersveld/topojson/master/countries/cameroon/cameroon-regions.json'
+
+interface RegionPoly { name: string; paths: { lat: number; lng: number }[][]; center: { lat: number; lng: number } }
+
+// Centroïde naïf (moyenne des sommets) — suffisant pour positionner un label.
+function centroidOfPaths(paths: { lat: number; lng: number }[][]) {
+  let x = 0, y = 0, n = 0
+  for (const ring of paths) for (const p of ring) { x += p.lng; y += p.lat; n++ }
+  return n ? { lat: y / n, lng: x / n } : { lat: 0, lng: 0 }
+}
+
+// Si le nom distant n'est pas l'un de nos 10 noms FR, on le rattache à la région
+// canonique dont la ville principale est la plus proche du centroïde (robuste aux
+// libellés étrangers d'une source distante).
+function canonicalRegionName(name: string, center: { lat: number; lng: number }): string {
+  if (REGION_COORDS[name]) return name
+  let best = name, bd = Infinity
+  for (const [rn, c] of Object.entries(REGION_COORDS)) {
+    const dx = c.lng - center.lng, dy = c.lat - center.lat, d = dx * dx + dy * dy
+    if (d < bd) { bd = d; best = rn }
+  }
+  return best
+}
+
+// FeatureCollection (Polygon|MultiPolygon, coords [lng,lat]) → liste RegionPoly.
+function featuresToRegions(fc: any): RegionPoly[] {
+  const out: RegionPoly[] = []
+  for (const f of fc?.features ?? []) {
+    const geom = f?.geometry
+    if (!geom) continue
+    const polys = geom.type === 'MultiPolygon' ? geom.coordinates : geom.type === 'Polygon' ? [geom.coordinates] : []
+    const paths: { lat: number; lng: number }[][] = []
+    for (const poly of polys) for (const ring of poly) paths.push(ring.map(([lng, lat]: number[]) => ({ lat, lng })))
+    if (!paths.length) continue
+    const center = centroidOfPaths(paths)
+    const rawName = f.properties?.name ?? f.properties?.NAME_1 ?? f.properties?.region ?? ''
+    out.push({ name: canonicalRegionName(rawName, center), paths, center })
+  }
+  return out
+}
+
+// Décodeur TopoJSON minimal (arcs + delta + quantification) → FeatureCollection.
+function topojsonToFC(topo: any): any {
+  const obj = topo.objects[Object.keys(topo.objects)[0]]
+  const t = topo.transform
+  const decode = (arc: number[][]) => {
+    let x = 0, y = 0
+    return arc.map(([dx, dy]) => { x += dx; y += dy; return t ? [x * t.scale[0] + t.translate[0], y * t.scale[1] + t.translate[1]] : [x, y] })
+  }
+  const arcs = topo.arcs.map(decode)
+  const getArc = (i: number) => (i < 0 ? arcs[~i].slice().reverse() : arcs[i])
+  const ring = (idxs: number[]) => { const c: number[][] = []; idxs.forEach((ai, k) => { const pts = getArc(ai); c.push(...(k > 0 ? pts.slice(1) : pts)) }); return c }
+  const toGeom = (g: any) => g.type === 'Polygon' ? { type: 'Polygon', coordinates: g.arcs.map(ring) } : g.type === 'MultiPolygon' ? { type: 'MultiPolygon', coordinates: g.arcs.map((rs: number[][]) => rs.map(ring)) } : null
+  return { type: 'FeatureCollection', features: obj.geometries.map((g: any) => ({ type: 'Feature', properties: g.properties || {}, geometry: toGeom(g) })).filter((f: any) => f.geometry) }
+}
+
+// Polygones des régions : embarqués d'emblée, « surclassés » par la source distante
+// si elle répond (sinon on garde l'embarqué — aucun affichage perdu).
+function useRegionPolygons(): RegionPoly[] {
+  const embedded = useMemo(() => featuresToRegions(geoData as any), [])
+  const [polys, setPolys] = useState<RegionPoly[]>(embedded)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(REMOTE_REGIONS_URL)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = await res.json()
+        const fc = json?.type === 'Topology' ? topojsonToFC(json) : json
+        const regs = featuresToRegions(fc)
+        if (!cancelled && regs.length >= 10) setPolys(regs)
+      } catch {
+        /* repli silencieux : les polygones embarqués sont déjà affichés */
+      }
+    })()
+    return () => { cancelled = true }
+  }, [embedded])
+  return polys
+}
 
 // Coordonnées (ville principale) de chaque région.
 const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
@@ -92,7 +174,10 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey, language: 'fr', region: 'CM' })
   const [selected, setSelected] = useState<string | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
+  const [map, setMap] = useState<any>(null)
+  const polys = useRegionPolygons()
   const byName = new Map(regions.map((r) => [r.name, r]))
+  const zoomBy = (delta: number) => { if (map) map.setZoom((map.getZoom() ?? MAP_ZOOM) + delta) }
 
   if (loadError) return <SvgFallback regions={regions} />
   if (!isLoaded) return <MapLoading />
@@ -116,22 +201,49 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
       <div className="cw-gmap-wrap" style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(0, 200, 150, 0.15)', boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)' }}>
         {/* Atténue le branding Google (logo + mentions) pour un rendu épuré */}
         <style>{`.cw-gmap-wrap a[href^="https://maps.google.com"],.cw-gmap-wrap .gm-style-cc{opacity:.35;filter:grayscale(1)}`}</style>
+        {/* Contrôle de zoom custom (le natif a un fond blanc qui jure avec le thème dark) */}
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[{ s: '+', d: 1 }, { s: '−', d: -1 }].map(({ s, d }) => (
+            <button key={s} onClick={() => zoomBy(d)} aria-label={d > 0 ? 'Zoom avant' : 'Zoom arrière'}
+              style={{ width: 32, height: 32, borderRadius: 8, background: '#161d2f', border: '1px solid rgba(0,200,150,0.3)', color: '#00C896', fontSize: 18, fontWeight: 700, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>{s}</button>
+          ))}
+        </div>
         <GoogleMap
           mapContainerStyle={{ width: '100%', height: 'clamp(340px, 56vh, 520px)', background: BG }}
           center={CAMEROON_CENTER}
           zoom={MAP_ZOOM}
+          onLoad={(m) => setMap(m)}
+          onUnmount={() => setMap(null)}
           options={{
             styles: MAP_STYLES as any,
             disableDefaultUI: true,
-            zoomControl: true,
-            zoomControlOptions: { position: g.maps.ControlPosition.TOP_RIGHT },
+            zoomControl: false,
             backgroundColor: BG,
             gestureHandling: 'cooperative',
             scrollwheel: false,
             minZoom: 5,
-            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
+            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: true },
           }}
         >
+          {/* Frontières des 10 régions (Google ne dessine pas les provinces du Cameroun) :
+              superposées en Polygon émeraude. Fill transparent ; subtil si data ; hover = 0.08. */}
+          {polys.map((rp) => {
+            const d = datumFor(byName, rp.name)
+            const hasData = d.transactions > 0
+            const isHover = hovered === rp.name
+            return (
+              <PolygonF key={`poly-${rp.name}`} paths={rp.paths}
+                onMouseOver={() => setHovered(rp.name)} onMouseOut={() => setHovered((h) => (h === rp.name ? null : h))}
+                onClick={() => setSelected(rp.name)}
+                options={{ strokeColor: '#00C896', strokeOpacity: 0.8, strokeWeight: hasData ? 1.5 : 1.2, fillColor: '#00C896', fillOpacity: isHover ? 0.08 : hasData ? 0.06 : 0, clickable: true, zIndex: 1 }} />
+            )
+          })}
+          {/* Label du nom de région au centroïde (discret, non interactif) */}
+          {polys.map((rp) => (
+            <OverlayViewF key={`lbl-${rp.name}`} position={rp.center} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{rp.name}</div>
+            </OverlayViewF>
+          ))}
           {/* Cercles colorés par région (rayon + teinte selon le volume), hover plus opaque */}
           {Object.entries(REGION_COORDS).map(([name, c]) => {
             const d = datumFor(byName, name)
