@@ -4,7 +4,7 @@
 // la lib échoue, repli automatique sur une carte SVG d3-geo (vrais contours),
 // elle-même repliée sur une carte schématique. Aucune fonctionnalité perdue.
 import { Component, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { GoogleMap, useJsApiLoader, Circle, MarkerF, InfoWindowF, PolygonF, OverlayViewF } from '@react-google-maps/api'
+import { GoogleMap, useJsApiLoader, Circle, MarkerF, PolygonF, OverlayViewF } from '@react-google-maps/api'
 import { geoMercator, geoPath } from 'd3-geo'
 import { scaleLinear } from 'd3-scale'
 import i18n from '../i18n'
@@ -40,9 +40,9 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 const CAMEROON_CENTER = { lat: 5.5, lng: 12.5 }
 const MAP_ZOOM = 5.5
-// Bornes larges (ne bloquent pas le viewport) : le cadrage fin est fait par fitBounds.
-// strictBounds = false pour éviter tout blocage de la vue.
-const CAMEROON_BOUNDS = { north: 14.5, south: 1.5, west: 7.5, east: 17.0 }
+// Restriction (strictBounds) : verrouille la vue sur le Cameroun + frange minime, pour
+// ne pas voir les pays voisins (Ghana, Burkina, Bénin, Togo…).
+const CAMEROON_BOUNDS = { north: 14.0, south: 1.0, west: 7.5, east: 17.0 }
 // Bornes géographiques SERRÉES du Cameroun pour fitBounds : on cadre exactement le
 // pays (et non l'enveloppe des polygones, qui débordait sur l'Afrique voisine).
 const CAMEROON_FIT_BOUNDS = { north: 13.1, south: 1.65, west: 8.5, east: 16.2 }
@@ -204,14 +204,8 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   const byName = new Map(regions.map((r) => [r.name, r]))
   const centerByName = new Map(polys.map((p) => [p.name, p.center]))
   const zoomBy = (delta: number) => { if (map) map.setZoom((map.getZoom() ?? MAP_ZOOM) + delta) }
-
-  // Cadrage automatique sur les bornes géographiques SERRÉES du Cameroun (pas sur
-  // l'enveloppe des polygones, qui débordait). Google calcule zoom + centre pour que
-  // le pays entier tienne dans la vue (padding 30px).
-  useEffect(() => {
-    if (!map) return
-    map.fitBounds(CAMEROON_FIT_BOUNDS, { top: 30, right: 30, bottom: 30, left: 30 })
-  }, [map])
+  // NB : le cadrage initial (fitBounds sur les bornes serrées du Cameroun) est fait
+  // directement dans onLoad du GoogleMap.
 
   if (loadError) return <SvgFallback regions={regions} />
   if (!isLoaded) return <MapLoading />
@@ -246,7 +240,11 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           mapContainerStyle={{ width: '100%', height: 'clamp(340px, 56vh, 520px)', background: BG }}
           center={CAMEROON_CENTER}
           zoom={MAP_ZOOM}
-          onLoad={(m) => setMap(m)}
+          onLoad={(m) => {
+            setMap(m)
+            // Cadrage immédiat sur les bornes serrées du Cameroun (padding 50px).
+            m.fitBounds(new g.maps.LatLngBounds({ lat: CAMEROON_FIT_BOUNDS.south, lng: CAMEROON_FIT_BOUNDS.west }, { lat: CAMEROON_FIT_BOUNDS.north, lng: CAMEROON_FIT_BOUNDS.east }), 50)
+          }}
           onUnmount={() => setMap(null)}
           options={{
             styles: MAP_STYLES as any,
@@ -257,7 +255,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             scrollwheel: false,
             minZoom: 5.5,
             maxZoom: 10,
-            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
+            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: true },
           }}
         >
           {/* Frontières des 10 régions (Google ne dessine pas les provinces du Cameroun) :
@@ -295,17 +293,23 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             const d = datumFor(byName, name)
             return <MarkerF key={`m-${name}`} position={c} icon={iconFor(d.transactions)} onClick={() => setSelected(name)} />
           })}
+          {/* Tooltip custom DARK (l'InfoWindow Google a un fond blanc natif inévitable).
+              Rendu dans une OverlayView (float pane) ancrée au centroïde → reste collé
+              à la région pendant pan/zoom, sans calcul de pixels qui se périme. */}
           {selected && (() => {
             const d = datumFor(byName, selected)
+            const pos = centerByName.get(selected) ?? REGION_COORDS[selected]
             return (
-              <InfoWindowF position={centerByName.get(selected) ?? REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
-                <div style={{ background: '#0d1117', border: '1px solid #00C896', borderRadius: 8, padding: 12, minWidth: 180, fontFamily: 'Inter, sans-serif' }}>
-                  <div style={{ color: '#00C896', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>📍 {selected}</div>
-                  <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 4 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>
-                  <div style={{ color: '#00C896', fontSize: 14, fontWeight: 600 }}>{fmtFcfa(d.volume)}</div>
-                  {d.city && <div style={{ color: '#8b949e', fontSize: 11, marginTop: 8 }}>{i18n.t('analytics.geo_main_city', { city: d.city, defaultValue: `Ville principale : ${d.city}` })}</div>}
+              <OverlayViewF position={pos} mapPaneName="floatPane" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h - 14 })}>
+                <div style={{ position: 'relative', background: 'rgba(13, 17, 23, 0.95)', border: '1px solid rgba(0, 200, 150, 0.4)', borderRadius: 12, padding: '14px 16px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', minWidth: 200, zIndex: 10, pointerEvents: 'none', fontFamily: 'Inter, sans-serif' }}>
+                  <button onClick={() => setSelected(null)} aria-label="Fermer"
+                    style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1, cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                  <div style={{ color: '#00C896', fontWeight: 700, fontSize: 14, marginBottom: 8, paddingRight: 18 }}>📍 {selected}</div>
+                  <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 6 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>
+                  <div style={{ color: '#00C896', fontSize: 18, fontWeight: 800 }}>💰 {fmtFcfa(d.volume)}</div>
+                  {d.city && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 8 }}>{i18n.t('analytics.geo_main_city', { city: d.city, defaultValue: `Ville : ${d.city}` })}</div>}
                 </div>
-              </InfoWindowF>
+              </OverlayViewF>
             )
           })()}
         </GoogleMap>
