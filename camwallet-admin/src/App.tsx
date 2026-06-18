@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext, Fragment, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
+import { QRCodeSVG } from 'qrcode.react'
 import i18n from './i18n'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
@@ -3669,7 +3670,9 @@ function SettingsPage() {
             ) : twoFASetup ? (
               <div>
                 <p style={{ color: C.textSoft, fontSize: 13, marginBottom: 14 }}>{i18n.t('x.set.twofa_scan')}</p>
-                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFASetup.otpauthUrl)}`} alt="QR 2FA" style={{ width: 200, height: 200, borderRadius: 8, marginBottom: 12 }} />
+                <div style={{ display: 'inline-block', background: '#fff', padding: 12, borderRadius: 8, marginBottom: 12 }}>
+                  <QRCodeSVG value={twoFASetup.otpauthUrl} size={200} level="M" />
+                </div>
                 <div style={{ color: C.textMuted, fontSize: 12, fontFamily: 'monospace', background: C.surface, padding: '6px 10px', borderRadius: 6, marginBottom: 14, wordBreak: 'break-all' }}>{i18n.t('x.set.twofa_secret')} {twoFASetup.secret}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input value={twoFACode} onChange={e => setTwoFACode(e.target.value)} placeholder={i18n.t('x.set.twofa_verify_ph')} style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: 220 }} />
