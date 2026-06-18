@@ -15,11 +15,11 @@ import {
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
-  LifeBuoy, Send, MessageSquare, Trash2, ArrowLeft,
+  LifeBuoy, Send, MessageSquare, Trash2, ArrowLeft, Award,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
-import { generatePdfReport } from './lib/pdf'
+import { generatePdfReport, generateMultiSectionReport } from './lib/pdf'
 import CameroonGeoMap from './components/CameroonMap'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
@@ -730,6 +730,38 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
           )}
         </div>
       </div>
+
+      {/* Programme de fidélité — total distribué + répartition par niveau */}
+      {stats?.loyalty && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Award size={16} color={C.yellow} /> {i18n.t('x.loyalty.title', { defaultValue: 'Programme de fidélité' })}
+            </h2>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.loyalty.total_distributed', { defaultValue: 'Points distribués' })}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{stats.loyalty.totalDistributed.toLocaleString('fr-FR')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.loyalty.members', { defaultValue: 'Membres' })}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{stats.loyalty.members.toLocaleString('fr-FR')}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+            {stats.loyalty.byLevel.map((lv: { key: string; label: string; emoji: string; count: number }) => (
+              <div key={lv.key} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>{lv.emoji}</span>
+                <div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>{lv.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{lv.count.toLocaleString('fr-FR')}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Évolution temporelle — sélecteur de période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 4 }}>
@@ -3175,6 +3207,53 @@ function ANIFPage() {
     catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
   }
 
+  // Export du rapport de conformité ANIF (PDF multi-sections : stats, alertes,
+  // dossiers, règles). Construit à partir des données déjà chargées dans la page.
+  const handleExportAnifReport = () => {
+    const periodLabel = period === '7d' ? i18n.t('x.anif.period_7d', { defaultValue: '7 derniers jours' }) : i18n.t('x.anif.period_30d', { defaultValue: '30 derniers jours' })
+    const stats = anifStats ? [
+      { label: i18n.t('x.anif.kpi_active'), value: String(anifStats.activeAlerts) },
+      { label: i18n.t('x.anif.kpi_open'), value: String(anifStats.openCases) },
+      { label: i18n.t('x.anif.kpi_over'), value: String(anifStats.overThreshold30d) },
+      { label: i18n.t('x.anif.kpi_resolution'), value: anifStats.resolutionRate == null ? '—' : anifStats.resolutionRate + ' %' },
+    ] : []
+    const typeLabel = (kind: string) => kind === 'highvalue' ? i18n.t('x.anif.t_highvalue') : i18n.t('x.anif.t_subthreshold')
+    const alertRows = suspects.map((s) => [
+      s.tx.id.slice(0, 8),
+      s.tx.sender?.fullName ?? s.tx.sender?.phone ?? '—',
+      formatFCFA(toFcfa(s.tx.amount)),
+      typeLabel(s.kind),
+      `${s.score} (${i18n.t(riskBand(s.score).label)})`,
+      fmtDate(s.tx.createdAt),
+    ])
+    const caseRows = openCases.map((c) => {
+      const meta = c.metadata ?? {}
+      return [
+        meta.caseRef ?? c.id.slice(0, 8),
+        meta.assignedToName ?? meta.assignedTo ?? '—',
+        c.status,
+        fmtDate(c.createdAt),
+      ]
+    })
+    const ruleRows = RULES.map((r) => [
+      r.label,
+      settings?.[r.key] === 'off' ? i18n.t('x.anif.rule_off', { defaultValue: 'Désactivée' }) : i18n.t('x.anif.rule_on', { defaultValue: 'Active' }),
+      r.desc,
+    ])
+    const ok = generateMultiSectionReport({
+      title: i18n.t('x.anif.pdf_title', { defaultValue: 'Rapport de Conformité ANIF' }),
+      subtitle: i18n.t('x.anif.pdf_subtitle', { period: periodLabel, defaultValue: `Période : ${periodLabel}` }),
+      stats,
+      sections: [
+        { title: i18n.t('x.anif.pdf_sec_alerts', { defaultValue: 'Alertes suspectes' }), columns: [i18n.t('x.anif.c_ref', { defaultValue: 'Référence' }), i18n.t('x.anif.c_user', { defaultValue: 'Utilisateur' }), i18n.t('x.anif.c_amount', { defaultValue: 'Montant' }), i18n.t('x.anif.c_type', { defaultValue: 'Type' }), i18n.t('x.anif.c_risk', { defaultValue: 'Risque' }), i18n.t('x.anif.c_date', { defaultValue: 'Date' })], rows: alertRows, empty: i18n.t('x.anif.pdf_no_alerts', { defaultValue: 'Aucune alerte sur la période.' }) },
+        { title: i18n.t('x.anif.pdf_sec_cases', { defaultValue: 'Dossiers d\'enquête' }), columns: [i18n.t('x.anif.c_ref', { defaultValue: 'Référence' }), i18n.t('x.anif.c_assignee', { defaultValue: 'Assigné' }), i18n.t('x.anif.c_status', { defaultValue: 'Statut' }), i18n.t('x.anif.c_opened', { defaultValue: 'Ouvert le' })], rows: caseRows, empty: i18n.t('x.anif.pdf_no_cases', { defaultValue: 'Aucun dossier ouvert.' }) },
+        { title: i18n.t('x.anif.pdf_sec_rules', { defaultValue: 'Règles de détection actives' }), columns: [i18n.t('x.anif.c_rule', { defaultValue: 'Règle' }), i18n.t('x.anif.c_state', { defaultValue: 'Statut' }), i18n.t('x.anif.c_threshold', { defaultValue: 'Seuil' })], rows: ruleRows },
+      ],
+      filename: `rapport-anif-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
+    toast(ok ? i18n.t('x.anif.report_generated') : i18n.t('x.anif.popup_blocked'), ok ? 'success' : 'error')
+  }
+
   const statCards = anifStats ? [
     { label: i18n.t('x.anif.kpi_active'), value: anifStats.activeAlerts.toLocaleString('fr-FR'), icon: Siren, color: C.red },
     { label: i18n.t('x.anif.kpi_open'), value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: '#FB923C' },
@@ -3191,11 +3270,17 @@ function ANIFPage() {
 
   return (
     <div className="cw-page" style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
-          <ShieldAlert size={22} color={C.red} /> {i18n.t('x.anif.title')}
-        </h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.anif.subtitle')}</p>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>
+            <ShieldAlert size={22} color={C.red} /> {i18n.t('x.anif.title')}
+          </h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.anif.subtitle')}</p>
+        </div>
+        <button onClick={handleExportAnifReport}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: C.green, color: '#04130E', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <FileText size={16} /> {i18n.t('x.anif.btn_export_report', { defaultValue: 'Exporter rapport ANIF' })}
+        </button>
       </div>
 
       <StateRow loading={loading} error={error} />

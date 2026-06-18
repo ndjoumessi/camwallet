@@ -639,6 +639,13 @@
     "btnCancel": "Cancel",
     "btnCancelA11y": "Cancel"
   },
+  "loyalty": {
+    "points_one": "{{count}} point",
+    "points_other": "{{count}} points",
+    "toNext": "{{points}} pts to reach {{level}}",
+    "maxLevel": "Top level reached 🎉",
+    "historyTitle": "Recent rewards"
+  },
   "kyc": {
     "headerTitle": "Identity verification",
     "closeBtnA11y": "Close",

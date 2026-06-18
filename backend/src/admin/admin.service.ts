@@ -6,6 +6,8 @@ import { OtpService } from '../auth/otp.service';
 import { SmsService } from '../sms/sms.service';
 import { KycAiService } from '../kyc/kyc-ai.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { CacheService, CacheKeys, CacheTtl } from '../cache/cache.service';
+import { LoyaltyService, LoyaltyReason } from '../loyalty/loyalty.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -30,11 +32,18 @@ export class AdminService {
     private sms: SmsService,
     private kycAi: KycAiService,
     private cloudinary: CloudinaryService,
+    private cache: CacheService,
+    private loyalty: LoyaltyService,
     private config: ConfigService,
   ) {}
 
   // ─── Statistiques globales ──────────────────────────────────────────────────
+  // Mis en cache 60s (clé globale) ; expire par TTL (données agrégées tolérantes).
   async getStats() {
+    return this.cache.wrap(CacheKeys.adminStats, CacheTtl.adminStats, () => this.computeStats());
+  }
+
+  private async computeStats() {
     // Fenêtres glissantes pour les tendances (30 derniers jours vs 30 précédents).
     const now = Date.now();
     const d30 = new Date(now - 30 * 24 * 3600 * 1000);
@@ -95,7 +104,11 @@ export class AdminService {
     const pct = (cur: number, prev: number): number | null =>
       prev > 0 ? Math.round(((cur - prev) / prev) * 100) : cur > 0 ? 100 : null;
 
+    // Répartition du programme de fidélité (total distribué + par niveau).
+    const loyalty = await this.loyalty.getDistribution();
+
     return {
+      loyalty,
       trends: {
         users: pct(usersCur, usersPrev),
         transactions: pct(txCur, txPrev),
@@ -513,6 +526,11 @@ export class AdminService {
     await this.writeAudit(adminId, `KYC_${dto.decision}`, `User:${userId}`, {
       comment: dto.comment,
     });
+
+    // Fidélité : +10 points à l'approbation KYC (fire-and-forget).
+    if (newStatus === KycStatus.APPROVED) {
+      void this.loyalty.award(userId, 10, LoyaltyReason.KYC_APPROVED);
+    }
 
     // Notifications push + SMS selon la décision — fire-and-forget
     const pushConfig: Record<string, { title: string; body: string; sms: string }> = {
@@ -1472,7 +1490,17 @@ export class AdminService {
     return { txCount7d, completed, failed, uptime, lastSuccess, status };
   }
 
+  // Mis en cache 30s (clé globale) — évite de re-pinger toutes les intégrations à
+  // chaque rafraîchissement du dashboard.
   async getHealthIntegrations() {
+    return this.cache.wrap(
+      CacheKeys.adminHealthIntegrations,
+      CacheTtl.adminHealthIntegrations,
+      () => this.computeHealthIntegrations(),
+    );
+  }
+
+  private async computeHealthIntegrations() {
     const now = Date.now();
     const d24h = new Date(now - 24 * 3600 * 1000);
     const d7d = new Date(now - 7 * 24 * 3600 * 1000);
@@ -1686,9 +1714,23 @@ export class AdminService {
       };
     });
 
+    // Règles ANIF actives + seuils configurés (Section 4 du rapport PDF).
+    const anifKeys = [
+      'anif_threshold_fcfa', 'anif_rule_highvalue', 'anif_rule_smurfing',
+      'anif_rule_frequency', 'anif_frequency_max',
+    ];
+    const settingsRows = await this.prisma.systemSettings.findMany({ where: { key: { in: anifKeys } } });
+    const settingVal = (k: string) => settingsRows.find((r) => r.key === k)?.value ?? this.SETTINGS_DEFAULTS[k];
+    const rules = [
+      { key: 'anif_rule_highvalue', label: 'Transaction de montant élevé', enabled: settingVal('anif_rule_highvalue') === 'on', threshold: `> ${Number(settingVal('anif_threshold_fcfa')).toLocaleString('fr-FR')} FCFA` },
+      { key: 'anif_rule_smurfing', label: 'Fractionnement (smurfing)', enabled: settingVal('anif_rule_smurfing') === 'on', threshold: '> 10 tx < 50 000 FCFA, total > 300 000 FCFA / 24h' },
+      { key: 'anif_rule_frequency', label: 'Fréquence anormale', enabled: settingVal('anif_rule_frequency') === 'on', threshold: `> ${settingVal('anif_frequency_max')} tx / 24h` },
+    ];
+
     return {
       generatedAt: new Date().toISOString(),
       period: '30 derniers jours',
+      rules,
       summary: {
         highValueCount: highValueTx.length,
         smurfingCount,

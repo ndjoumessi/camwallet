@@ -24,7 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { Badge, Skeleton } from '../components/ui';
-import { userApi, authApi, MeResponse } from '../../src/lib/api';
+import { userApi, authApi, MeResponse, loyaltyApi, LoyaltyBalance, LoyaltyEvent } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
 import KycModal from './modals/KycModal';
 import { useTheme } from '../context/ThemeContext';
@@ -73,6 +73,8 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loyalty, setLoyalty] = useState<LoyaltyBalance | null>(null);
+  const [loyaltyHistory, setLoyaltyHistory] = useState<LoyaltyEvent[]>([]);
 
   // Édition
   const [editing, setEditing] = useState(false);
@@ -117,6 +119,9 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       .then((d) => { setMe(d); setError(null); })
       .catch((e) => setError(e?.response?.data?.message ?? 'Erreur de chargement'))
       .finally(() => setLoading(false));
+    // Fidélité (non bloquant — n'empêche pas l'affichage du profil en cas d'erreur).
+    loyaltyApi.getBalance().then(setLoyalty).catch(() => {});
+    loyaltyApi.getHistory().then(setLoyaltyHistory).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -399,6 +404,49 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 {me.kycStatus === 'REJECTED' ? t('profile.kycBtnResubmit') : me.kycStatus === 'SUBMITTED' ? t('profile.kycBtnInReview') : t('profile.kycBtnVerify')}
               </Text>
             </Pressable>
+          )}
+
+          {/* Programme de fidélité */}
+          {!editing && loyalty && (
+            <View style={styles.loyaltyCard}>
+              <View style={styles.loyaltyHeader}>
+                <View style={styles.loyaltyLevelRow}>
+                  <Text style={styles.loyaltyEmoji}>{loyalty.level.emoji}</Text>
+                  <View>
+                    <Text style={styles.loyaltyLevelLabel}>{loyalty.level.label}</Text>
+                    <Text style={styles.loyaltyPointsSub}>{t('loyalty.points', { count: loyalty.points })}</Text>
+                  </View>
+                </View>
+                <Ionicons name="ribbon-outline" size={22} color={Colors.primary} />
+              </View>
+
+              {/* Barre de progression vers le niveau suivant */}
+              {loyalty.nextLevel ? (
+                <>
+                  <View style={styles.loyaltyBarTrack}>
+                    <View style={[styles.loyaltyBarFill, { width: `${loyalty.progress}%` }]} />
+                  </View>
+                  <Text style={styles.loyaltyNextText}>
+                    {t('loyalty.toNext', { points: loyalty.pointsToNext, level: loyalty.nextLevel.label })}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.loyaltyNextText}>{t('loyalty.maxLevel')}</Text>
+              )}
+
+              {/* Historique récent des gains */}
+              {loyaltyHistory.length > 0 && (
+                <View style={styles.loyaltyHistory}>
+                  <Text style={styles.loyaltyHistoryTitle}>{t('loyalty.historyTitle')}</Text>
+                  {loyaltyHistory.slice(0, 3).map((ev) => (
+                    <View key={ev.id} style={styles.loyaltyHistoryRow}>
+                      <Text style={styles.loyaltyHistoryReason} numberOfLines={1}>{ev.reason}</Text>
+                      <Text style={styles.loyaltyHistoryPoints}>+{ev.points}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
           )}
 
           {/* Edit form (inline) */}
@@ -899,6 +947,24 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg, padding: Spacing.md, alignItems: 'center',
   },
   kycBtnText: { color: Colors.yellow, fontSize: Typography.base, fontWeight: Typography.bold },
+  loyaltyCard: {
+    marginHorizontal: Spacing.lg, marginBottom: Spacing.lg, marginTop: -Spacing.sm,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.lg, padding: Spacing.lg,
+  },
+  loyaltyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md },
+  loyaltyLevelRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  loyaltyEmoji: { fontSize: 30 },
+  loyaltyLevelLabel: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
+  loyaltyPointsSub: { color: Colors.textMuted, fontSize: Typography.sm },
+  loyaltyBarTrack: { height: 8, borderRadius: 4, backgroundColor: Colors.border, overflow: 'hidden' },
+  loyaltyBarFill: { height: 8, borderRadius: 4, backgroundColor: Colors.primary },
+  loyaltyNextText: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 6 },
+  loyaltyHistory: { marginTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.sm },
+  loyaltyHistoryTitle: { color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold, textTransform: 'uppercase', marginBottom: 6 },
+  loyaltyHistoryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  loyaltyHistoryReason: { color: Colors.text, fontSize: Typography.sm, flex: 1, marginRight: Spacing.sm },
+  loyaltyHistoryPoints: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.bold },
   editCard: {
     marginHorizontal: Spacing.lg, marginBottom: Spacing.xl,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,

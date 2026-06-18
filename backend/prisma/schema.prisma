@@ -69,6 +69,7 @@ model User {
   otpCodes        OtpCode[]
   auditLogs       AuditLog[]
   loyaltyPoints   LoyaltyPoints?
+  loyaltyEvents   LoyaltyEvent[]
   adminNotes      AdminNote[]    @relation("AdminNotes")
   authoredNotes   AdminNote[]    @relation("AdminNoteAuthor")
   disputes        DisputeRequest[] @relation("DisputeRequester")
@@ -366,6 +367,20 @@ model LoyaltyPoints {
   updatedAt DateTime @updatedAt
 
   @@map("loyalty_points")
+}
+
+// Journal des gains de points (programme de fidélité). LoyaltyPoints garde le solde
+// courant ; LoyaltyEvent garde l'historique (1 ligne par attribution).
+model LoyaltyEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  points    Int
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("loyalty_events")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../
 import { txMeta } from '../constants/txMeta';
 import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
-import { loyaltyApi } from '../../src/lib/api';
+import { loyaltyApi, LoyaltyBalance } from '../../src/lib/api';
 import SendModal from './modals/SendModal';
 import { useTranslation } from 'react-i18next';
 import ReceiveModal from './modals/ReceiveModal';
@@ -30,7 +30,7 @@ export default function HomeScreen() {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  const [loyalty, setLoyalty] = useState<{ points: number; nextReward: number } | null>(null);
+  const [loyalty, setLoyalty] = useState<LoyaltyBalance | null>(null);
 
   // Animation d'entrée — balance card + stagger des boutons d'action
   const cardEnter = useRef(new Animated.Value(0)).current;
@@ -66,7 +66,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    loyaltyApi.getPoints()
+    loyaltyApi.getBalance()
       .then((pts) => { if (!cancelled) setLoyalty(pts); })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -166,7 +166,7 @@ export default function HomeScreen() {
         {loyalty !== null && (
           <View style={styles.loyaltyBanner}>
             <Text style={styles.loyaltyText}>
-              {t('home.loyaltyBanner', { points: loyalty.points.toLocaleString('fr-FR'), nextReward: loyalty.nextReward.toLocaleString('fr-FR') })}
+              {t('home.loyaltyBanner', { points: loyalty.points.toLocaleString('fr-FR'), nextReward: loyalty.pointsToNext.toLocaleString('fr-FR') })}
             </Text>
           </View>
         )}

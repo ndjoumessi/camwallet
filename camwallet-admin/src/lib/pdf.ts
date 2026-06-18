@@ -150,3 +150,127 @@ export function generatePdfReport(opts: PdfReportOptions): boolean {
   doc.save(opts.filename)
   return true
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rapport multi-sections (plusieurs tableaux titrés) — utilisé par le rapport de
+// conformité ANIF. Réutilise la charte (bandeau, accent émeraude) avec un pied de
+// page configurable (« Confidentiel — CamWallet © 2026 »).
+// ─────────────────────────────────────────────────────────────────────────────
+export interface PdfSection {
+  title: string
+  columns: string[]
+  rows: (string | number)[][]
+  empty?: string // texte affiché si aucune ligne
+}
+export interface MultiSectionPdfOptions {
+  title: string
+  subtitle?: string
+  stats?: { label: string; value: string }[]
+  sections: PdfSection[]
+  footer?: string
+  filename: string
+}
+
+export function generateMultiSectionReport(opts: MultiSectionPdfOptions): boolean {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+  const M = 12
+  const dateStr = new Date().toLocaleString('fr-FR')
+  const footer = opts.footer ?? 'Confidentiel — CamWallet © 2026'
+
+  const drawChrome = () => {
+    doc.setFillColor(...DARK)
+    doc.rect(0, 0, pageW, 18, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(15)
+    doc.setTextColor(...GREEN)
+    doc.text('Cam', M, 11.5)
+    const camW = doc.getTextWidth('Cam')
+    doc.setTextColor(255, 255, 255)
+    doc.text('Wallet', M + camW, 11.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(148, 163, 184)
+    doc.text(`Généré le ${dateStr}`, pageW - M, 11.5, { align: 'right' })
+    // Pied de page : mention confidentielle + pagination
+    const page = doc.getNumberOfPages()
+    doc.setFontSize(8)
+    doc.setTextColor(...MUTED)
+    doc.text(footer, M, pageH - 7)
+    doc.text(`Page ${page}`, pageW - M, pageH - 7, { align: 'right' })
+  }
+
+  // En-tête
+  let y = 26
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(...INK)
+  doc.text(opts.title, M, y)
+  y += 6
+  if (opts.subtitle) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.setTextColor(...MUTED)
+    doc.text(opts.subtitle, M, y)
+    y += 5
+  }
+
+  // Bloc statistiques
+  if (opts.stats && opts.stats.length) {
+    y += 2
+    const gap = 4
+    const cardW = (pageW - M * 2 - gap * (opts.stats.length - 1)) / opts.stats.length
+    const cardH = 16
+    opts.stats.forEach((s, i) => {
+      const x = M + i * (cardW + gap)
+      doc.setFillColor(...LIGHT)
+      doc.roundedRect(x, y, cardW, cardH, 2, 2, 'F')
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      doc.setTextColor(...MUTED)
+      doc.text(s.label, x + 3, y + 5.5)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(13)
+      doc.setTextColor(...INK)
+      doc.text(s.value, x + 3, y + 12.5)
+    })
+    y += cardH + 6
+  }
+
+  // Sections (un tableau titré chacune)
+  opts.sections.forEach((section) => {
+    // @ts-ignore — lastAutoTable injecté par le plugin
+    const prevY = doc.lastAutoTable?.finalY
+    let sy = prevY ? prevY + 10 : y
+    if (sy > pageH - 40) { doc.addPage(); drawChrome(); sy = 28 }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(...INK)
+    doc.text(section.title, M, sy)
+    sy += 2
+
+    if (!section.rows.length) {
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(9)
+      doc.setTextColor(...MUTED)
+      doc.text(section.empty ?? 'Aucune donnée.', M, sy + 5)
+      // Faux tableau vide pour mettre à jour lastAutoTable.finalY
+      autoTable(doc, { startY: sy + 8, body: [], margin: { top: 22, left: M, right: M, bottom: 14 }, didDrawPage: drawChrome })
+      return
+    }
+    autoTable(doc, {
+      head: [section.columns],
+      body: section.rows.map((r) => r.map((c) => String(c))),
+      startY: sy + 3,
+      margin: { top: 22, left: M, right: M, bottom: 14 },
+      styles: { fontSize: 8, cellPadding: 2, textColor: INK, lineColor: [230, 234, 240], lineWidth: 0.1 },
+      headStyles: { fillColor: GREEN, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5 },
+      alternateRowStyles: { fillColor: LIGHT },
+      didDrawPage: drawChrome,
+    })
+  })
+
+  doc.save(opts.filename)
+  return true
+}

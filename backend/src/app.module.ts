@@ -20,6 +20,8 @@ import { SseModule } from './sse/sse.module';
 import { CamPayModule } from './campay/campay.module';
 import { HealthModule } from './health/health.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { AppCacheModule } from './cache/cache.module';
+import { LoyaltyModule } from './loyalty/loyalty.module';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 import { AdminOriginMiddleware } from './common/middleware/admin-origin.middleware';
 
@@ -39,6 +41,12 @@ import { AdminOriginMiddleware } from './common/middleware/admin-origin.middlewa
 
     // Bus d'événements pour le temps réel (SSE)
     EventEmitterModule.forRoot(),
+
+    // Cache applicatif (Redis si REDIS_URL, sinon mémoire) — global
+    AppCacheModule,
+
+    // Programme de fidélité (global) — attribution de points
+    LoyaltyModule,
 
     // Modules métier
     PrismaModule,

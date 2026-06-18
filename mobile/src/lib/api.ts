@@ -433,9 +433,25 @@ export const disputeApi = {
   getMine: () => api.get<MyDispute[]>('/disputes/me').then((r) => r.data),
 };
 
+export interface LoyaltyBalance {
+  points: number;
+  level: { key: string; label: string; emoji: string };
+  nextLevel: { key: string; label: string; emoji: string; at: number } | null;
+  pointsToNext: number;
+  progress: number; // 0-100
+}
+export interface LoyaltyEvent {
+  id: string;
+  points: number;
+  reason: string;
+  createdAt: string;
+}
+
 export const loyaltyApi = {
-  getPoints: () =>
-    api.get<{ points: number; nextReward: number }>('/wallet/loyalty').then((r) => r.data),
+  // Solde de points + niveau + progression vers le palier suivant.
+  getBalance: () => api.get<LoyaltyBalance>('/loyalty/balance').then((r) => r.data),
+  // Historique des gains de points.
+  getHistory: () => api.get<LoyaltyEvent[]>('/loyalty/history').then((r) => r.data),
 };
 
 export default api;
