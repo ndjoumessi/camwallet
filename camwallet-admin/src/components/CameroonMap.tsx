@@ -38,11 +38,11 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 // 1) Google Maps
 // ════════════════════════════════════════════════════════════════════════════
-const CAMEROON_CENTER = { lat: 5.8, lng: 12.3 }
-const MAP_ZOOM = 6.0
-// Bornes restrictives : Cameroun entier (jusqu'au sud, lat 1.6) + frange limitrophe
-// proche. strictBounds verrouille la vue sur le pays (impossible de dériver dehors).
-const CAMEROON_BOUNDS = { north: 13.5, south: 1.6, west: 8.4, east: 16.2 }
+const CAMEROON_CENTER = { lat: 5.5, lng: 12.5 }
+const MAP_ZOOM = 5.5
+// Bornes larges (ne bloquent pas le viewport) : le cadrage fin est fait par fitBounds
+// au chargement des polygones. strictBounds = false pour éviter tout blocage de la vue.
+const CAMEROON_BOUNDS = { north: 14.5, south: 1.5, west: 7.5, east: 17.0 }
 
 // GeoJSON distant des 10 régions (geoBoundaries CMR/ADM1, simplifié) — URL épinglée
 // sur un commit (stable) et servie avec CORS (access-control-allow-origin: *). Les
@@ -53,11 +53,29 @@ const REMOTE_REGIONS_URL = 'https://media.githubusercontent.com/media/wmgeolab/g
 
 interface RegionPoly { name: string; paths: { lat: number; lng: number }[][]; center: { lat: number; lng: number } }
 
-// Centroïde naïf (moyenne des sommets) — suffisant pour positionner un label.
+// Vrai centroïde (pondéré par l'aire) de l'anneau le plus grand — garantit que le
+// label tombe à l'intérieur de la masse principale de la région (pas décalé vers
+// les sommets denses, comme le ferait une simple moyenne des points).
+function ringCentroid(ring: { lat: number; lng: number }[]) {
+  let a = 0, cx = 0, cy = 0
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i], q = ring[(i + 1) % ring.length]
+    const cross = p.lng * q.lat - q.lng * p.lat
+    a += cross; cx += (p.lng + q.lng) * cross; cy += (p.lat + q.lat) * cross
+  }
+  if (!a) { // anneau dégénéré → moyenne des sommets
+    const m = ring.reduce((s, p) => ({ lat: s.lat + p.lat, lng: s.lng + p.lng }), { lat: 0, lng: 0 })
+    return { lat: m.lat / ring.length, lng: m.lng / ring.length, area: 0 }
+  }
+  return { lat: cy / (3 * a), lng: cx / (3 * a), area: Math.abs(a / 2) }
+}
 function centroidOfPaths(paths: { lat: number; lng: number }[][]) {
-  let x = 0, y = 0, n = 0
-  for (const ring of paths) for (const p of ring) { x += p.lng; y += p.lat; n++ }
-  return n ? { lat: y / n, lng: x / n } : { lat: 0, lng: 0 }
+  let best = { lat: 0, lng: 0, area: -1 }
+  for (const ring of paths) {
+    const c = ringCentroid(ring)
+    if (c.area > best.area) best = c
+  }
+  return { lat: best.lat, lng: best.lng }
 }
 
 // Si le nom distant n'est pas l'un de nos 10 noms FR, on le rattache à la région
@@ -182,6 +200,18 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   const byName = new Map(regions.map((r) => [r.name, r]))
   const zoomBy = (delta: number) => { if (map) map.setZoom((map.getZoom() ?? MAP_ZOOM) + delta) }
 
+  // Cadrage automatique : dès que la carte et les polygones sont prêts, on étend des
+  // bounds sur TOUTES les coordonnées des 10 régions et on laisse Google calculer le
+  // zoom + centre optimaux (padding 40px) → le Cameroun entier tient toujours dans la vue.
+  useEffect(() => {
+    if (!map || !polys.length) return
+    const gg = (window as any).google
+    if (!gg) return
+    const bounds = new gg.maps.LatLngBounds()
+    for (const rp of polys) for (const ring of rp.paths) for (const p of ring) bounds.extend(new gg.maps.LatLng(p.lat, p.lng))
+    if (!bounds.isEmpty()) map.fitBounds(bounds, { top: 40, right: 40, bottom: 40, left: 40 })
+  }, [map, polys])
+
   if (loadError) return <SvgFallback regions={regions} />
   if (!isLoaded) return <MapLoading />
 
@@ -225,7 +255,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             gestureHandling: 'cooperative',
             scrollwheel: false,
             minZoom: 5,
-            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: true },
+            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
           }}
         >
           {/* Frontières des 10 régions (Google ne dessine pas les provinces du Cameroun) :
@@ -244,7 +274,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           {/* Label du nom de région au centroïde (discret, non interactif) */}
           {polys.map((rp) => (
             <OverlayViewF key={`lbl-${rp.name}`} position={rp.center} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.5)', whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{rp.name}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{rp.name}</div>
             </OverlayViewF>
           ))}
           {/* Cercles colorés par région (rayon + teinte selon le volume), hover plus opaque */}
