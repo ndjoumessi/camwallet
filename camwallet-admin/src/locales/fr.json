@@ -1273,6 +1273,7 @@
     "tx_count": "{{n}} tx",
     "geo_legend_low": "Faible",
     "geo_legend_high": "Élevé",
-    "geo_legend_none": "Aucune"
+    "geo_legend_none": "Aucune",
+    "geo_missing_key": "Clé Google Maps manquante — carte de secours affichée. Définir VITE_GOOGLE_MAPS_API_KEY (Vercel en prod)."
   }
 }

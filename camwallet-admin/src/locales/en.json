@@ -1273,6 +1273,7 @@
     "tx_count": "{{n}} tx",
     "geo_legend_low": "Low",
     "geo_legend_high": "High",
-    "geo_legend_none": "None"
+    "geo_legend_none": "None",
+    "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod)."
   }
 }

@@ -94,7 +94,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   return (
     <div style={{ position: 'relative', background: BG, borderRadius: 12, padding: 8 }}>
       <GoogleMap
-        mapContainerStyle={{ width: '100%', height: '440px', borderRadius: 10 }}
+        mapContainerStyle={{ width: '100%', height: '500px', borderRadius: 10, background: BG }}
         center={CAMEROON_CENTER}
         zoom={MAP_ZOOM}
         options={{ styles: MAP_STYLES as any, disableDefaultUI: true, zoomControl: true, backgroundColor: BG, gestureHandling: 'cooperative' }}
@@ -252,9 +252,25 @@ function SvgFallback({ regions }: { regions: GeoRegionDatum[] }) {
 
 const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
 
+// Bandeau explicite quand la clé manque (au lieu d'un fond vide/vert), suivi de
+// la carte SVG de secours pour conserver l'affichage des données.
+function MissingKeyPanel({ regions }: { regions: GeoRegionDatum[] }) {
+  return (
+    <div style={{ background: BG, borderRadius: 12, padding: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '10px 12px', marginBottom: 8, color: '#FBBF24', fontSize: 12.5, fontWeight: 600 }}>
+        ⚠️ {i18n.t('analytics.geo_missing_key')}
+      </div>
+      <SvgFallback regions={regions} />
+    </div>
+  )
+}
+
 export default function CameroonGeoMap({ regions }: { regions: GeoRegionDatum[] }) {
-  // Sans clé Google Maps → carte SVG d3-geo.
-  if (!GMAPS_KEY) return <SvgFallback regions={regions} />
+  // Sans clé Google Maps → message explicite + carte SVG d3-geo (jamais de fond vert).
+  if (!GMAPS_KEY) {
+    console.error('[CameroonMap] VITE_GOOGLE_MAPS_API_KEY manquante : la carte Google Maps ne peut pas se charger. Repli sur la carte SVG. Définir la variable dans .env.local (dev) et dans Vercel (prod).')
+    return <MissingKeyPanel regions={regions} />
+  }
   // Avec clé → Google Maps ; si la lib plante, repli sur la carte SVG.
   return <FallbackBoundary fallback={<SvgFallback regions={regions} />}><GoogleCameroonMap apiKey={GMAPS_KEY} regions={regions} /></FallbackBoundary>
 }
