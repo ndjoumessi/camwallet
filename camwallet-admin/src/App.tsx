@@ -533,42 +533,44 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
   useLiveEvents(handleLiveEvent)
 
-  const chart = (ts?.series ?? []).map((p) => ({
+  // Données de graphes mémoïsées : recalcul uniquement quand la source change
+  // (évite de tout recalculer à chaque rendu, ex. hover donut, événements SSE).
+  const chart = useMemo(() => (ts?.series ?? []).map((p) => ({
     date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
     volume: toFcfa(p.volume),
     fees: toFcfa(p.fees),
     tx: p.transactions,
     users: p.users,
-  }))
+  })), [ts])
   const PERIODS: { key: '7d' | '30d' | '90d'; label: string }[] = [
     { key: '7d', label: t('dashboard.period_7d') },
     { key: '30d', label: t('dashboard.period_30d') },
     { key: '90d', label: t('dashboard.period_90d') },
   ]
 
-  const donut = (stats?.transactions.byType ?? []).map((tp) => ({
+  const donut = useMemo(() => (stats?.transactions.byType ?? []).map((tp) => ({
     name: TX_TYPE_LABEL[tp.type] ?? tp.type,
     value: tp.count,
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
-  }))
-  const donutTotal = donut.reduce((s, d) => s + d.value, 0)
+  })), [stats])
+  const donutTotal = useMemo(() => donut.reduce((s, d) => s + d.value, 0), [donut])
   // Volume par type (centimes → FCFA) pour le BarChart coloré.
-  const volByType = (stats?.transactions.byType ?? []).map((tp) => ({
+  const volByType = useMemo(() => (stats?.transactions.byType ?? []).map((tp) => ({
     name: TX_TYPE_LABEL[tp.type] ?? tp.type,
     volume: toFcfa(tp.volume),
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
-  }))
+  })), [stats])
 
   // Volume groupé par type sur la période (BarChart groupé).
-  const volTypeData = (volType?.series ?? []).map((p) => ({
+  const volTypeData = useMemo(() => (volType?.series ?? []).map((p) => ({
     date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
     P2P: toFcfa(p.P2P), QR: toFcfa(p.QR_PAYMENT), RECHARGE: toFcfa(p.RECHARGE), WITHDRAWAL: toFcfa(p.WITHDRAWAL),
-  }))
+  })), [volType])
   // Tendance des revenus : moyenne mobile (fenêtre 3) sur les frais.
-  const chartTrend = chart.map((c, i, arr) => {
+  const chartTrend = useMemo(() => chart.map((c, i, arr) => {
     const w = arr.slice(Math.max(0, i - 2), i + 1)
     return { ...c, trend: Math.round(w.reduce((s, x) => s + x.fees, 0) / w.length) }
-  })
+  }), [chart])
   // Taux de succès (jauge) depuis byStatus.
   const stByStatus = (s: string) => stats?.transactions.byStatus.find((x) => x.status === s)?.count ?? 0
   const okCount = stByStatus('COMPLETED')
@@ -1255,7 +1257,10 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
   const label = (t: string) => <div style={{ fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{t}</div>
   const photoTile = (src: string, cap: string) => (
     <button onClick={() => setLightbox({ url: src, alt: cap })} style={{ flex: 1, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-      <img src={src} alt={cap} style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+      {/* loading lazy + fond placeholder (fondu à l'arrivée de l'image) */}
+      <img src={src} alt={cap} loading="lazy" decoding="async"
+        onLoad={(e) => { (e.currentTarget.style.filter = 'none'); (e.currentTarget.style.opacity = '1') }}
+        style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, filter: 'blur(8px)', opacity: 0.6, transition: 'filter .3s, opacity .3s' }} />
       <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
     </button>
   )
@@ -1825,7 +1830,9 @@ function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: Admi
                 <div key={key}>
                   {url ? (
                     <button onClick={() => setLightboxUrl(url)} title="Agrandir" style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', cursor: 'zoom-in', background: 'none', padding: 0, display: 'block' }}>
-                      <img src={url} alt={label} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
+                      <img src={url} alt={label} loading="lazy" decoding="async"
+                        onLoad={(e) => { e.currentTarget.style.filter = 'none'; e.currentTarget.style.opacity = '1' }}
+                        style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: C.surface, filter: 'blur(8px)', opacity: 0.6, transition: 'filter .3s, opacity .3s' }} />
                     </button>
                   ) : (
                     <div style={{ height: 130, border: `1px dashed ${C.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: C.textMuted, fontSize: 12 }}>

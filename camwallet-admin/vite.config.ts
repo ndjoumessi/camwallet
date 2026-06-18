@@ -25,4 +25,18 @@ function serveLandingInDev(): Plugin {
 export default defineConfig({
   plugins: [serveLandingInDev(), react()],
   server: { port: 3001 },
+  build: {
+    rollupOptions: {
+      output: {
+        // Découpe les grosses dépendances en chunks séparés : meilleur cache (elles
+        // changent rarement) et chargement parallèle au lieu d'un seul bundle ~1.7 Mo.
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          charts: ['recharts'],
+          pdf: ['jspdf', 'jspdf-autotable', 'html2canvas'],
+          icons: ['lucide-react'],
+        },
+      },
+    },
+  },
 })
