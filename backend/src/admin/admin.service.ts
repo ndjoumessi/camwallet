@@ -863,16 +863,57 @@ export class AdminService {
     };
   }
 
-  // Répartition géographique (par ville de l'émetteur, 30 jours, top 12).
+  // Répartition géographique par RÉGION du Cameroun (carte choroplèthe admin).
+  // On agrège les villes des émetteurs vers les 10 régions ; ville principale
+  // retournée pour l'étiquette.
   async getAnalyticsGeo() {
     const d30 = new Date(Date.now() - 30 * 86400000);
     const rows = await this.prisma.$queryRaw<Array<{ city: string; count: number; volume: bigint }>>`
-      SELECT COALESCE(NULLIF(TRIM(u.city), ''), 'Non renseigné') AS city,
+      SELECT COALESCE(NULLIF(TRIM(u.city), ''), '') AS city,
              COUNT(*)::int AS count, SUM(t.amount)::bigint AS volume
       FROM "transactions" t JOIN "users" u ON u.id = t."senderId"
       WHERE t.status='COMPLETED' AND t."createdAt" >= ${d30} AND t."senderId" IS NOT NULL
-      GROUP BY 1 ORDER BY volume DESC LIMIT 12`;
-    return { regions: rows.map((r) => ({ city: r.city, count: Number(r.count), volume: r.volume })) };
+      GROUP BY 1`;
+
+    // Ville → région (clé normalisée : minuscules, sans accents).
+    const REGION_CITY: Record<string, string> = {
+      Adamaoua: 'Ngaoundéré', Centre: 'Yaoundé', Est: 'Bertoua', 'Extrême-Nord': 'Maroua',
+      Littoral: 'Douala', Nord: 'Garoua', 'Nord-Ouest': 'Bamenda', Ouest: 'Bafoussam',
+      Sud: 'Ebolowa', 'Sud-Ouest': 'Buea',
+    };
+    const CITY_TO_REGION: Record<string, string> = {
+      douala: 'Littoral', edea: 'Littoral', nkongsamba: 'Littoral',
+      yaounde: 'Centre', mbalmayo: 'Centre', obala: 'Centre',
+      bafoussam: 'Ouest', dschang: 'Ouest', mbouda: 'Ouest', bandjoun: 'Ouest',
+      garoua: 'Nord', guider: 'Nord',
+      maroua: 'Extrême-Nord', kousseri: 'Extrême-Nord', kaele: 'Extrême-Nord',
+      ngaoundere: 'Adamaoua', tibati: 'Adamaoua',
+      bertoua: 'Est', batouri: 'Est', abongmbang: 'Est',
+      ebolowa: 'Sud', kribi: 'Sud', sangmelima: 'Sud',
+      buea: 'Sud-Ouest', limbe: 'Sud-Ouest', kumba: 'Sud-Ouest', tiko: 'Sud-Ouest',
+      bamenda: 'Nord-Ouest', kumbo: 'Nord-Ouest', wum: 'Nord-Ouest',
+    };
+    const norm = (c: string) => c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+    const byRegion = new Map<string, { transactions: number; volume: bigint }>();
+    for (const r of rows) {
+      const region = CITY_TO_REGION[norm(r.city)];
+      if (!region) continue;
+      const cur = byRegion.get(region) ?? { transactions: 0, volume: 0n };
+      cur.transactions += Number(r.count);
+      cur.volume += r.volume;
+      byRegion.set(region, cur);
+    }
+
+    const regions = Object.keys(REGION_CITY)
+      .map((name) => {
+        const d = byRegion.get(name);
+        return { name, city: REGION_CITY[name], transactions: d?.transactions ?? 0, volume: d?.volume ?? 0n };
+      })
+      .filter((r) => r.transactions > 0)
+      .sort((a, b) => Number(b.volume - a.volume));
+
+    return { regions };
   }
 
   // Volume par jour ventilé par type (pour le BarChart groupé du dashboard).

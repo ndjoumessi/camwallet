@@ -1270,6 +1270,8 @@
     "top_merchants_title": "Top 10 merchants (volume received)",
     "geo_title": "Geographic breakdown (30d)",
     "no_data": "No data",
-    "tx_count": "{{n}} tx"
+    "tx_count": "{{n}} tx",
+    "geo_legend_low": "Low",
+    "geo_legend_high": "High"
   }
 }

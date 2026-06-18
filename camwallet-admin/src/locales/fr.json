@@ -1270,6 +1270,8 @@
     "top_merchants_title": "Top 10 marchands (volume reçu)",
     "geo_title": "Répartition géographique (30 j)",
     "no_data": "Aucune donnée",
-    "tx_count": "{{n}} tx"
+    "tx_count": "{{n}} tx",
+    "geo_legend_low": "Faible",
+    "geo_legend_high": "Élevé"
   }
 }

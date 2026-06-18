@@ -371,7 +371,7 @@ export const getAnalyticsHeatmap = () => request<{ cells: HeatmapCell[] }>('/adm
 export interface KycFunnel { pending: number; submitted: number; approved: number; rejected: number; total: number; submittedRate: number; approvedRate: number }
 export const getKycFunnel = () => request<KycFunnel>('/admin/analytics/kyc-funnel')
 
-export interface GeoRegion { city: string; count: number; volume: number }
+export interface GeoRegion { name: string; city: string; transactions: number; volume: number }
 export const getAnalyticsGeo = () => request<{ regions: GeoRegion[] }>('/admin/analytics/geo')
 
 export interface VolByTypePoint { date: string; P2P: number; QR_PAYMENT: number; RECHARGE: number; WITHDRAWAL: number }

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import LoginPage from './LoginPage'
 import { generatePdfReport } from './lib/pdf'
+import CameroonGeoMap from './components/CameroonMap'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
@@ -715,9 +716,9 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
           {(dashGeo?.regions ?? []).length === 0 ? <div style={{ fontSize: 12, color: C.textMuted }}>{t('dashboard.chart_no_tx')}</div> : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {(dashGeo?.regions ?? []).slice(0, 6).map((r) => (
-                <div key={r.city}>
+                <div key={r.name}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-                    <span style={{ color: C.textSoft }}>{r.city} <span style={{ color: C.textMuted }}>· {t('analytics.tx_count', { n: r.count })}</span></span>
+                    <span style={{ color: C.textSoft }}>{r.name} <span style={{ color: C.textMuted }}>· {t('analytics.tx_count', { n: r.transactions })}</span></span>
                     <span style={{ color: C.green, fontWeight: 700 }}>{formatFCFA(r.volume)}</span>
                   </div>
                   <div style={{ height: 8, background: C.border, borderRadius: 4, overflow: 'hidden' }}>
@@ -4836,27 +4837,10 @@ function AnalyticsPage() {
         <TopTable title={i18n.t('analytics.top_merchants_title')} rows={topM?.merchants ?? []} />
       </div>
 
-      {/* Répartition géographique */}
+      {/* Répartition géographique — carte choroplèthe du Cameroun */}
       <div style={card}>
         <div style={h2}>{i18n.t('analytics.geo_title')}</div>
-        {(geo?.regions ?? []).length === 0 ? <div style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('analytics.no_data')}</div> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-            {(() => {
-              const max = Math.max(1, ...(geo?.regions ?? []).map((r) => r.volume))
-              return (geo?.regions ?? []).map((r) => (
-                <div key={r.city}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-                    <span style={{ color: C.textSoft }}>{r.city} <span style={{ color: C.textMuted }}>· {i18n.t('analytics.tx_count', { n: r.count })}</span></span>
-                    <span style={{ color: C.green, fontWeight: 700 }}>{formatFCFA(r.volume)}</span>
-                  </div>
-                  <div style={{ height: 8, background: C.border, borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.round((r.volume / max) * 100)}%`, background: C.blue, borderRadius: 4 }} />
-                  </div>
-                </div>
-              ))
-            })()}
-          </div>
-        )}
+        <CameroonGeoMap regions={geo?.regions ?? []} />
       </div>
     </div>
   )
