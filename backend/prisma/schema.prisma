@@ -286,6 +286,12 @@ model KycDocument {
   reviewNote String?
   reviewedAt DateTime?
 
+  // Pré-validation par Claude Vision (analyse IA en arrière-plan à la soumission)
+  aiScore      Int?      // Score de confiance global 0-100
+  aiSuggestion String?   // APPROVE | REJECT | MANUAL_REVIEW
+  aiIssues     String[]  @default([]) // Motifs/anomalies détectés par l'IA
+  aiAnalyzedAt DateTime? // Horodatage de l'analyse IA
+
   submittedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

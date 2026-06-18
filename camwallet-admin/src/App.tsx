@@ -1578,17 +1578,18 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
   const [acting, setActing] = useState<string | null>(null)
   const toast = useToast()
 
-  const decide = async (decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED') => {
-    if (decision !== 'APPROVED' && !comment.trim()) {
+  const decide = async (decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED', overrideComment?: string) => {
+    const finalComment = (overrideComment ?? comment).trim()
+    if (decision !== 'APPROVED' && !finalComment) {
       toast(i18n.t('x.kycd.comment_required'), 'error')
       return
     }
     setActing(decision)
     try {
-      await reviewKyc(entry.id, decision, comment.trim() || undefined)
+      await reviewKyc(entry.id, decision, finalComment || undefined)
       const msg =
         decision === 'APPROVED' ? i18n.t('x.kycd.approved_for', { name: entry.fullName ?? entry.phone }) :
-        decision === 'REJECTED' ? i18n.t('x.kycd.rejected_reason', { reason: comment }) :
+        decision === 'REJECTED' ? i18n.t('x.kycd.rejected_reason', { reason: finalComment }) :
         i18n.t('x.kycd.resubmit_for', { name: entry.fullName ?? entry.phone })
       toast(msg, 'success')
       onDecision()
@@ -1672,6 +1673,39 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
             ))}
           </div>
         </div>
+
+        {/* Pré-validation IA (Claude Vision) */}
+        {doc?.aiAnalyzedAt && (() => {
+          const sug = doc.aiSuggestion as 'APPROVE' | 'REJECT' | 'MANUAL_REVIEW' | null
+          const aiScore = typeof doc.aiScore === 'number' ? doc.aiScore : null
+          const meta = sug === 'APPROVE' ? { label: 'IA : Approuver ✅', color: C.green }
+            : sug === 'REJECT' ? { label: 'IA : Rejeter ❌', color: C.red }
+            : { label: 'IA : Révision 🔍', color: C.yellow }
+          const issues: string[] = Array.isArray(doc.aiIssues) ? doc.aiIssues : []
+          return (
+            <div style={{ background: meta.color + '0F', border: `1px solid ${meta.color}30`, borderRadius: 12, padding: '14px 16px', marginBottom: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: issues.length ? 10 : 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>{meta.label}</span>
+                {aiScore !== null && <span style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>Score IA : {aiScore}/100</span>}
+              </div>
+              {issues.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 18, color: C.textSoft, fontSize: 12, lineHeight: 1.6 }}>
+                  {issues.map((it, i) => <li key={i}>{it}</li>)}
+                </ul>
+              )}
+              {(sug === 'APPROVE' || sug === 'REJECT') && (
+                <button
+                  onClick={() => sug === 'APPROVE'
+                    ? decide('APPROVED')
+                    : decide('REJECTED', issues.length ? issues.join(' ; ') : 'Rejet sur recommandation IA')}
+                  disabled={!!acting}
+                  style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: 'none', background: meta.color, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
+                  <Check size={13} /> Appliquer la suggestion IA
+                </button>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Note précédente */}
         {doc?.reviewNote && (
@@ -1823,6 +1857,16 @@ function KYCPage() {
                         <span style={{ width: 5, height: 5, borderRadius: 3, background: statusColor, flexShrink: 0 }} />
                         {i18n.t('kyc_status.' + k.kycStatus)}
                       </span>
+                      {doc?.aiAnalyzedAt && (() => {
+                        const sug = doc.aiSuggestion
+                        const m = sug === 'APPROVE' ? { e: '✅', c: C.green } : sug === 'REJECT' ? { e: '❌', c: C.red } : { e: '🔍', c: C.yellow }
+                        return (
+                          <div title={`Suggestion IA${typeof doc.aiScore === 'number' ? ` · ${doc.aiScore}/100` : ''}`}
+                            style={{ marginTop: 5, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', background: m.c + '18', color: m.c }}>
+                            {m.e} IA{typeof doc.aiScore === 'number' ? ` ${doc.aiScore}` : ''}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td style={{ padding: '12px 14px', minWidth: 130 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
