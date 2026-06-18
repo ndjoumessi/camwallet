@@ -3789,8 +3789,12 @@ function SettingsPage() {
     }
     if (!window.confirm(i18n.t('x.set.loyalty_confirm', { defaultValue: 'Enregistrer les paramètres du programme de fidélité ?' }))) return
     try {
-      const keys = ['loyalty_silver_threshold', 'loyalty_gold_threshold', 'loyalty_platinum_threshold', 'loyalty_points_per_1000_fcfa', 'loyalty_points_recharge', 'loyalty_points_kyc']
-      await updateSettings(Object.fromEntries(keys.map((k) => [k, String(form[k] ?? '')])))
+      // Valeurs par défaut si la clé n'a jamais été enregistrée (évite d'envoyer '').
+      const defs: Record<string, number> = {
+        loyalty_silver_threshold: 100, loyalty_gold_threshold: 500, loyalty_platinum_threshold: 1000,
+        loyalty_points_per_1000_fcfa: 1, loyalty_points_recharge: 5, loyalty_points_kyc: 10,
+      }
+      await updateSettings(Object.fromEntries(Object.keys(defs).map((k) => [k, String(num(k, defs[k]))])))
       showToast(i18n.t('x.set.saved'), 'success')
       refetchHistory()
     } catch (e) {
@@ -3855,17 +3859,17 @@ function SettingsPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 18 }}>
               {[
-                { k: '', label: '🥉 ' + i18n.t('x.set.loyalty_bronze', { defaultValue: 'Bronze' }), fixed: true },
-                { k: 'loyalty_silver_threshold', label: '🥈 ' + i18n.t('x.set.loyalty_silver', { defaultValue: 'Argent' }) },
-                { k: 'loyalty_gold_threshold', label: '🥇 ' + i18n.t('x.set.loyalty_gold', { defaultValue: 'Or' }) },
-                { k: 'loyalty_platinum_threshold', label: '💎 ' + i18n.t('x.set.loyalty_platinum', { defaultValue: 'Platine' }) },
+                { k: '', label: '🥉 ' + i18n.t('x.set.loyalty_bronze', { defaultValue: 'Bronze' }), def: 0, fixed: true },
+                { k: 'loyalty_silver_threshold', label: '🥈 ' + i18n.t('x.set.loyalty_silver', { defaultValue: 'Argent' }), def: 100 },
+                { k: 'loyalty_gold_threshold', label: '🥇 ' + i18n.t('x.set.loyalty_gold', { defaultValue: 'Or' }), def: 500 },
+                { k: 'loyalty_platinum_threshold', label: '💎 ' + i18n.t('x.set.loyalty_platinum', { defaultValue: 'Platine' }), def: 1000 },
               ].map((lv) => (
                 <div key={lv.label}>
                   <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{lv.label}</label>
                   {lv.fixed ? (
                     <input type="number" value={0} disabled style={{ ...inputStyle, opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
-                    <input type="number" min={1} value={num(lv.k)} disabled={isReadOnly()} onChange={(e) => setVal(lv.k, e.target.value)} style={inputStyle} />
+                    <input type="number" min={1} value={num(lv.k, lv.def)} disabled={isReadOnly()} onChange={(e) => setVal(lv.k, e.target.value)} style={inputStyle} />
                   )}
                 </div>
               ))}
@@ -3876,13 +3880,13 @@ function SettingsPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
               {[
-                { k: 'loyalty_points_per_1000_fcfa', label: i18n.t('x.set.loyalty_per_1000', { defaultValue: 'Points / 1000 FCFA envoyés' }) },
-                { k: 'loyalty_points_recharge', label: i18n.t('x.set.loyalty_recharge', { defaultValue: 'Points par recharge' }) },
-                { k: 'loyalty_points_kyc', label: i18n.t('x.set.loyalty_kyc', { defaultValue: 'Points KYC approuvé' }) },
+                { k: 'loyalty_points_per_1000_fcfa', label: i18n.t('x.set.loyalty_per_1000', { defaultValue: 'Points / 1000 FCFA envoyés' }), def: 1 },
+                { k: 'loyalty_points_recharge', label: i18n.t('x.set.loyalty_recharge', { defaultValue: 'Points par recharge' }), def: 5 },
+                { k: 'loyalty_points_kyc', label: i18n.t('x.set.loyalty_kyc', { defaultValue: 'Points KYC approuvé' }), def: 10 },
               ].map((r) => (
                 <div key={r.k}>
                   <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{r.label}</label>
-                  <input type="number" min={0} value={num(r.k)} disabled={isReadOnly()} onChange={(e) => setVal(r.k, e.target.value)} style={inputStyle} />
+                  <input type="number" min={0} value={num(r.k, r.def)} disabled={isReadOnly()} onChange={(e) => setVal(r.k, e.target.value)} style={inputStyle} />
                 </div>
               ))}
             </div>

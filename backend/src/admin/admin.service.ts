@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -24,7 +24,9 @@ const ANIF_RISK_HIGH = 50_000_000n;  // 500 000 FCFA en centimes
 const ANIF_RISK_MED  = 5_000_000n;   //  50 000 FCFA en centimes
 
 @Injectable()
-export class AdminService {
+export class AdminService implements OnModuleInit {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
@@ -36,6 +38,31 @@ export class AdminService {
     private loyalty: LoyaltyService,
     private config: ConfigService,
   ) {}
+
+  // Persiste les paramètres de fidélité par défaut s'ils n'existent pas encore en
+  // base (sinon les inputs admin affichaient 0 tant qu'aucune sauvegarde n'avait eu
+  // lieu). Idempotent : `update: {}` ne touche pas une valeur déjà configurée.
+  async onModuleInit() {
+    const loyaltyDefaults: Record<string, string> = {
+      loyalty_silver_threshold: this.SETTINGS_DEFAULTS.loyalty_silver_threshold,
+      loyalty_gold_threshold: this.SETTINGS_DEFAULTS.loyalty_gold_threshold,
+      loyalty_platinum_threshold: this.SETTINGS_DEFAULTS.loyalty_platinum_threshold,
+      loyalty_points_per_1000_fcfa: this.SETTINGS_DEFAULTS.loyalty_points_per_1000_fcfa,
+      loyalty_points_recharge: this.SETTINGS_DEFAULTS.loyalty_points_recharge,
+      loyalty_points_kyc: this.SETTINGS_DEFAULTS.loyalty_points_kyc,
+    };
+    try {
+      await Promise.all(
+        Object.entries(loyaltyDefaults).map(([key, value]) =>
+          this.prisma.systemSettings.upsert({ where: { key }, update: {}, create: { key, value } }),
+        ),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Seed des paramètres fidélité ignoré : ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   // ─── Statistiques globales ──────────────────────────────────────────────────
   // Mis en cache 60s (clé globale) ; expire par TTL (données agrégées tolérantes).
