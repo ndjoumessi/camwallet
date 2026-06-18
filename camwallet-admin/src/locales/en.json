@@ -102,7 +102,12 @@
     "chart_series_users": "Users",
     "chart_series_tx": "Transactions",
     "evolution": "Trend",
-    "chart_donut_total": "Transactions"
+    "chart_donut_total": "Transactions",
+    "chart_vol_by_type": "Volume by type",
+    "gauge_title": "Success rate",
+    "gauge_sub": "completed",
+    "geo_title": "Geographic breakdown",
+    "chart_series_trend": "Trend"
   },
   "health": {
     "title": "Integration health",

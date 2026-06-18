@@ -102,7 +102,12 @@
     "chart_series_users": "Utilisateurs",
     "chart_series_tx": "Transactions",
     "evolution": "Évolution",
-    "chart_donut_total": "Transactions"
+    "chart_donut_total": "Transactions",
+    "chart_vol_by_type": "Volume par type",
+    "gauge_title": "Taux de succès",
+    "gauge_sub": "complétées",
+    "geo_title": "Répartition géographique",
+    "chart_series_trend": "Tendance"
   },
   "health": {
     "title": "Santé des intégrations",

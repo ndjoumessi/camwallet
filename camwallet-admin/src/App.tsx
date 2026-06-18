@@ -495,6 +495,10 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
   // Séries temporelles réelles (volume, frais, tx, users) selon la période.
   const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
   const { data: ts } = useFetch(() => getTimeseries(period), [period])
+  // Volume groupé par type (sélecteur indépendant) + répartition géographique.
+  const [volPeriod, setVolPeriod] = useState<'7d' | '30d' | '90d'>('30d')
+  const { data: volType } = useFetch(() => getVolumeByType(volPeriod), [volPeriod])
+  const { data: dashGeo } = useFetch(() => getAnalyticsGeo(), [])
   // Série 7 j fixe pour les sparklines des KPI (indépendante du sélecteur).
   const { data: ts7 } = useFetch(() => getTimeseries('7d'), [])
   const spark7 = ts7?.series ?? []
@@ -544,6 +548,24 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
     volume: toFcfa(tp.volume),
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
   }))
+
+  // Volume groupé par type sur la période (BarChart groupé).
+  const volTypeData = (volType?.series ?? []).map((p) => ({
+    date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
+    P2P: toFcfa(p.P2P), QR: toFcfa(p.QR_PAYMENT), RECHARGE: toFcfa(p.RECHARGE), WITHDRAWAL: toFcfa(p.WITHDRAWAL),
+  }))
+  // Tendance des revenus : moyenne mobile (fenêtre 3) sur les frais.
+  const chartTrend = chart.map((c, i, arr) => {
+    const w = arr.slice(Math.max(0, i - 2), i + 1)
+    return { ...c, trend: Math.round(w.reduce((s, x) => s + x.fees, 0) / w.length) }
+  })
+  // Taux de succès (jauge) depuis byStatus.
+  const stByStatus = (s: string) => stats?.transactions.byStatus.find((x) => x.status === s)?.count ?? 0
+  const okCount = stByStatus('COMPLETED')
+  const koCount = stByStatus('FAILED') + stByStatus('CANCELLED')
+  const successRate = okCount + koCount > 0 ? Math.round((okCount / (okCount + koCount)) * 100) : null
+  const VOL_PERIODS: ('7d' | '30d' | '90d')[] = ['7d', '30d', '90d']
+  const GEO_MAX = Math.max(1, ...(dashGeo?.regions ?? []).map((r) => toFcfa(r.volume)))
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
@@ -634,6 +656,80 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         </div>
       </div>
 
+      {/* Volume groupé par type — BarChart groupé + sélecteur de période */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.chart_vol_by_type')}</h2>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {VOL_PERIODS.map((p) => (
+              <button key={p} onClick={() => setVolPeriod(p)} aria-pressed={volPeriod === p}
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: volPeriod === p ? 700 : 500, background: volPeriod === p ? C.green : C.surface, border: `1px solid ${volPeriod === p ? C.green : C.border}`, color: volPeriod === p ? '#fff' : C.textMuted }}>
+                {t('dashboard.period_' + p)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={volTypeData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={{ stroke: C.border }} />
+            <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={40}
+              tickFormatter={(v) => v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k'} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: C.greenLight }} />
+            <Bar dataKey="P2P" name={TX_TYPE_LABEL['P2P']} fill={TX_TYPE_COLOR['P2P'] ?? C.blue} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="QR" name={TX_TYPE_LABEL['QR_PAYMENT']} fill={TX_TYPE_COLOR['QR_PAYMENT'] ?? C.green} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="RECHARGE" name={TX_TYPE_LABEL['RECHARGE']} fill={TX_TYPE_COLOR['RECHARGE'] ?? C.yellow} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="WITHDRAWAL" name={TX_TYPE_LABEL['WITHDRAWAL']} fill={TX_TYPE_COLOR['WITHDRAWAL'] ?? C.purple} radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+        {volTypeData.length === 0 && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 8 }}>{t('dashboard.chart_no_tx')}</div>}
+      </div>
+
+      {/* Taux de succès (jauge) + Répartition géographique */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12, alignSelf: 'flex-start' }}>{t('dashboard.gauge_title')}</h2>
+          {(() => {
+            const R = 52, CIRC = 2 * Math.PI * R, pct = successRate ?? 0
+            const col = successRate == null ? C.textMuted : successRate >= 95 ? C.green : successRate >= 80 ? C.yellow : C.red
+            return (
+              <div style={{ position: 'relative', width: 140, height: 140 }}>
+                <svg width={140} height={140}>
+                  <circle cx={70} cy={70} r={R} stroke={C.border} strokeWidth={12} fill="none" />
+                  <circle cx={70} cy={70} r={R} stroke={col} strokeWidth={12} fill="none" strokeLinecap="round"
+                    strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - pct / 100)} transform="rotate(-90 70 70)"
+                    style={{ transition: 'stroke-dashoffset .6s ease' }} />
+                </svg>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 28, fontWeight: 900, color: col, lineHeight: 1 }}>{successRate == null ? '—' : `${successRate}%`}</span>
+                  <span style={{ fontSize: 10, color: C.textMuted, marginTop: 3 }}>{t('dashboard.gauge_sub')}</span>
+                </div>
+              </div>
+            )
+          })()}
+          <div style={{ fontSize: 12, color: C.textMuted, marginTop: 10 }}>{okCount.toLocaleString('fr-FR')} ✓ · {koCount.toLocaleString('fr-FR')} ✕</div>
+        </div>
+
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{t('dashboard.geo_title')}</h2>
+          {(dashGeo?.regions ?? []).length === 0 ? <div style={{ fontSize: 12, color: C.textMuted }}>{t('dashboard.chart_no_tx')}</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {(dashGeo?.regions ?? []).slice(0, 6).map((r) => (
+                <div key={r.city}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                    <span style={{ color: C.textSoft }}>{r.city} <span style={{ color: C.textMuted }}>· {t('analytics.tx_count', { n: r.count })}</span></span>
+                    <span style={{ color: C.green, fontWeight: 700 }}>{formatFCFA(r.volume)}</span>
+                  </div>
+                  <div style={{ height: 8, background: C.border, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((toFcfa(r.volume) / GEO_MAX) * 100)}%`, background: C.blue, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Évolution temporelle — sélecteur de période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 4 }}>
         <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.evolution')}</h2>
@@ -661,7 +757,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_revenue')}</h2>
           <ResponsiveContainer width="100%" height={170}>
-            <AreaChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <AreaChart data={chartTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={C.green} stopOpacity={0.28} />
@@ -675,6 +771,8 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               <Tooltip content={<ChartTooltip />} />
               <Area type="monotone" dataKey="fees" name={t('dashboard.chart_series_fees')} stroke={C.green} strokeWidth={1.5}
                 fill="url(#gradRev)" dot={{ fill: C.green, r: 2.5, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+              <Area type="monotone" dataKey="trend" name={t('dashboard.chart_series_trend')} stroke={C.yellow} strokeWidth={1.5}
+                fill="none" strokeDasharray="5 3" dot={false} activeDot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
