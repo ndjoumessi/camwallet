@@ -25,6 +25,7 @@ import { registerForPushNotifications, addNotificationTapHandler } from '../src/
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { initSentry } from '../src/lib/sentry';
 import { initI18n } from '../src/i18n';
+import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
@@ -34,13 +35,14 @@ type Tab = 'home' | 'history' | 'profile';
 // valide, entre onboarding (jamais vu) et LoginScreen (déjà inscrit).
 const ONBOARDING_SEEN_KEY = 'cw_has_seen_onboarding';
 
-const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap; label: string }[] = [
-  { id: 'home', icon: 'home-outline', iconActive: 'home', label: 'Accueil' },
-  { id: 'history', icon: 'time-outline', iconActive: 'time', label: 'Historique' },
-  { id: 'profile', icon: 'person-outline', iconActive: 'person', label: 'Profil' },
+const NAV_TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap; labelKey: string }[] = [
+  { id: 'home', icon: 'home-outline', iconActive: 'home', labelKey: 'tabs.home' },
+  { id: 'history', icon: 'time-outline', iconActive: 'time', labelKey: 'tabs.history' },
+  { id: 'profile', icon: 'person-outline', iconActive: 'person', labelKey: 'tabs.profile' },
 ];
 
 function AppContent() {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('splash');
   const [restoreChecked, setRestoreChecked] = useState(false);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
@@ -224,7 +226,7 @@ function AppContent() {
             <IconButton
               icon="notifications-outline"
               onPress={() => {}}
-              accessibilityLabel="Notifications"
+              accessibilityLabel={t('home.notificationsA11y')}
               color={Colors.textSoft}
             />
             <View style={styles.notifDot} pointerEvents="none" />
@@ -267,7 +269,7 @@ function AppContent() {
               style={({ pressed }) => [styles.navBtn, pressed && { opacity: 0.6 }]}
               onPress={() => setActiveTab(tab.id)}
               accessibilityRole="tab"
-              accessibilityLabel={tab.label}
+              accessibilityLabel={t(tab.labelKey)}
               accessibilityState={{ selected: isActive }}
             >
               <Ionicons
@@ -276,7 +278,7 @@ function AppContent() {
                 color={isActive ? Colors.primary : Colors.textMuted}
               />
               <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
-                {tab.label}
+                {t(tab.labelKey)}
               </Text>
               {isActive && <View style={styles.navDot} />}
             </Pressable>

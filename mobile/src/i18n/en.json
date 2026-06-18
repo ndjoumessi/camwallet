@@ -13,7 +13,15 @@
     "close": "Close",
     "continue": "Continue",
     "finish": "Done",
-    "error_title": "Error"
+    "error_title": "Error",
+    "error_loading": "Loading error",
+    "unnamed": "(unnamed)",
+    "phone_not_found": "Phone number not found"
+  },
+  "tabs": {
+    "home": "Home",
+    "history": "History",
+    "profile": "Profile"
   },
   "splash": {
     "tagline": "Your digital wallet"
@@ -40,7 +48,8 @@
     },
     "a11y": {
       "skipIntro": "Skip the intro and create an account",
-      "dotsTablist": "Step {{current}} of {{total}}"
+      "dotsTablist": "Step {{current}} of {{total}}",
+      "digit": "Digit {{digit}}"
     },
     "phone": {
       "title": "Your number",
@@ -136,6 +145,7 @@
     }
   },
   "home": {
+    "notificationsA11y": "Notifications",
     "greeting": "Hello 👋",
     "availableBalance": "Available balance",
     "recentTransactions": "Recent transactions",

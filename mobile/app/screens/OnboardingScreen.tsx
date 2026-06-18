@@ -276,7 +276,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
           <View
             style={styles.dots}
             accessibilityRole="tablist"
-            accessibilityLabel={`Étape ${slideIndex + 1} sur ${SLIDES.length}`}
+            accessibilityLabel={t('onboarding.a11y.dotsTablist', { current: slideIndex + 1, total: SLIDES.length })}
           >
             {SLIDES.map((_, i) => (
               <View
@@ -324,8 +324,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
             <View style={styles.stepIconWrap}>
               <Ionicons name="call-outline" size={36} color={Colors.primary} />
             </View>
-            <Text style={styles.stepTitle}>Votre numéro</Text>
-            <Text style={styles.stepDesc}>Nous envoyons un SMS de vérification</Text>
+            <Text style={styles.stepTitle}>{t('onboarding.phone.title')}</Text>
+            <Text style={styles.stepDesc}>{t('onboarding.phone.desc')}</Text>
 
             <View>
               <Text style={styles.inputLabel}>{t('onboarding.phone.label')}</Text>
@@ -559,7 +559,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
                   ? t('onboarding.pin.a11yDelete')
                   : isEmpty
                   ? undefined
-                  : `Chiffre ${key}`
+                  : t('onboarding.a11y.digit', { digit: key })
               }
             >
               {isDelete ? (
