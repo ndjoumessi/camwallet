@@ -40,9 +40,12 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 const CAMEROON_CENTER = { lat: 5.5, lng: 12.5 }
 const MAP_ZOOM = 5.5
-// Bornes larges (ne bloquent pas le viewport) : le cadrage fin est fait par fitBounds
-// au chargement des polygones. strictBounds = false pour éviter tout blocage de la vue.
+// Bornes larges (ne bloquent pas le viewport) : le cadrage fin est fait par fitBounds.
+// strictBounds = false pour éviter tout blocage de la vue.
 const CAMEROON_BOUNDS = { north: 14.5, south: 1.5, west: 7.5, east: 17.0 }
+// Bornes géographiques SERRÉES du Cameroun pour fitBounds : on cadre exactement le
+// pays (et non l'enveloppe des polygones, qui débordait sur l'Afrique voisine).
+const CAMEROON_FIT_BOUNDS = { north: 13.1, south: 1.65, west: 8.5, east: 16.2 }
 
 // GeoJSON distant des 10 régions (geoBoundaries CMR/ADM1, simplifié) — URL épinglée
 // sur un commit (stable) et servie avec CORS (access-control-allow-origin: *). Les
@@ -179,9 +182,10 @@ const MAP_STYLES = [
   { featureType: 'administrative.province', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  // Eau bleu très sombre + relief naturel légèrement différencié du fond.
+  // Océan Atlantique visible : eau bleu très sombre + label "Océan Atlantique" affiché.
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
-  { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'labels.text', stylers: [{ visibility: 'on' }, { color: '#1e6ea8' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ visibility: 'on' }, { color: '#1e4a7a' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
   { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#0f1923' }] },
   { featureType: 'road', stylers: [{ visibility: 'off' }] },
@@ -198,19 +202,16 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   const [map, setMap] = useState<any>(null)
   const polys = useRegionPolygons()
   const byName = new Map(regions.map((r) => [r.name, r]))
+  const centerByName = new Map(polys.map((p) => [p.name, p.center]))
   const zoomBy = (delta: number) => { if (map) map.setZoom((map.getZoom() ?? MAP_ZOOM) + delta) }
 
-  // Cadrage automatique : dès que la carte et les polygones sont prêts, on étend des
-  // bounds sur TOUTES les coordonnées des 10 régions et on laisse Google calculer le
-  // zoom + centre optimaux (padding 40px) → le Cameroun entier tient toujours dans la vue.
+  // Cadrage automatique sur les bornes géographiques SERRÉES du Cameroun (pas sur
+  // l'enveloppe des polygones, qui débordait). Google calcule zoom + centre pour que
+  // le pays entier tienne dans la vue (padding 30px).
   useEffect(() => {
-    if (!map || !polys.length) return
-    const gg = (window as any).google
-    if (!gg) return
-    const bounds = new gg.maps.LatLngBounds()
-    for (const rp of polys) for (const ring of rp.paths) for (const p of ring) bounds.extend(new gg.maps.LatLng(p.lat, p.lng))
-    if (!bounds.isEmpty()) map.fitBounds(bounds, { top: 40, right: 40, bottom: 40, left: 40 })
-  }, [map, polys])
+    if (!map) return
+    map.fitBounds(CAMEROON_FIT_BOUNDS, { top: 30, right: 30, bottom: 30, left: 30 })
+  }, [map])
 
   if (loadError) return <SvgFallback regions={regions} />
   if (!isLoaded) return <MapLoading />
@@ -254,12 +255,15 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             backgroundColor: BG,
             gestureHandling: 'cooperative',
             scrollwheel: false,
-            minZoom: 5,
+            minZoom: 5.5,
+            maxZoom: 10,
             restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
           }}
         >
           {/* Frontières des 10 régions (Google ne dessine pas les provinces du Cameroun) :
-              superposées en Polygon émeraude. Fill transparent ; subtil si data ; hover = 0.08. */}
+              superposées en Polygon émeraude INTERACTIF. Fill transparent ; subtil si data ;
+              hover = fill 0.15 + bordure 2px (les cercles au-dessus sont non-cliquables,
+              donc le survol atteint bien le polygone). Clic → InfoWindow au centroïde. */}
           {polys.map((rp) => {
             const d = datumFor(byName, rp.name)
             const hasData = d.transactions > 0
@@ -268,7 +272,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
               <PolygonF key={`poly-${rp.name}`} paths={rp.paths}
                 onMouseOver={() => setHovered(rp.name)} onMouseOut={() => setHovered((h) => (h === rp.name ? null : h))}
                 onClick={() => setSelected(rp.name)}
-                options={{ strokeColor: '#00C896', strokeOpacity: 0.8, strokeWeight: hasData ? 1.5 : 1.2, fillColor: '#00C896', fillOpacity: isHover ? 0.08 : hasData ? 0.06 : 0, clickable: true, zIndex: 1 }} />
+                options={{ strokeColor: '#00C896', strokeOpacity: 0.8, strokeWeight: isHover ? 2 : hasData ? 1.5 : 1.2, fillColor: '#00C896', fillOpacity: isHover ? 0.15 : hasData ? 0.06 : 0, clickable: true, zIndex: isHover ? 3 : 1 }} />
             )
           })}
           {/* Label du nom de région au centroïde (discret, non interactif) */}
@@ -277,13 +281,13 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
               <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{rp.name}</div>
             </OverlayViewF>
           ))}
-          {/* Cercles colorés par région (rayon + teinte selon le volume), hover plus opaque */}
+          {/* Cercles colorés par région (rayon + teinte selon le volume) — NON cliquables :
+              purement indicatifs, ils laissent passer le survol vers les polygones dessous. */}
           {Object.entries(REGION_COORDS).map(([name, c]) => {
             const d = datumFor(byName, name)
             return (
-              <Circle key={`c-${name}`} center={c} radius={radiusFor(d)} onClick={() => setSelected(name)}
-                onMouseOver={() => setHovered(name)} onMouseOut={() => setHovered((h) => (h === name ? null : h))}
-                options={{ fillColor: d.transactions === 0 ? '#64748B' : (circleColor(d.volume) as string), fillOpacity: hovered === name ? 0.7 : 0.4, strokeColor: STROKE, strokeWeight: 2, strokeOpacity: 0.9, clickable: true }} />
+              <Circle key={`c-${name}`} center={c} radius={radiusFor(d)}
+                options={{ fillColor: d.transactions === 0 ? '#64748B' : (circleColor(d.volume) as string), fillOpacity: hovered === name ? 0.7 : 0.4, strokeColor: STROKE, strokeWeight: 2, strokeOpacity: 0.9, clickable: false, zIndex: 2 }} />
             )
           })}
           {/* Marqueur ville cliquable (MarkerF = variante fonctionnelle, sans warning) */}
@@ -294,7 +298,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           {selected && (() => {
             const d = datumFor(byName, selected)
             return (
-              <InfoWindowF position={REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
+              <InfoWindowF position={centerByName.get(selected) ?? REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
                 <div style={{ background: '#0d1117', border: '1px solid #00C896', borderRadius: 8, padding: 12, minWidth: 180, fontFamily: 'Inter, sans-serif' }}>
                   <div style={{ color: '#00C896', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>📍 {selected}</div>
                   <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 4 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>
