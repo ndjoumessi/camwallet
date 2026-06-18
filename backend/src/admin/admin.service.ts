@@ -6,6 +6,7 @@ import { OtpService } from '../auth/otp.service';
 import { SmsService } from '../sms/sms.service';
 import { KycAiService } from '../kyc/kyc-ai.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { CacheService, CacheKeys, CacheTtl } from '../cache/cache.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -30,11 +31,17 @@ export class AdminService {
     private sms: SmsService,
     private kycAi: KycAiService,
     private cloudinary: CloudinaryService,
+    private cache: CacheService,
     private config: ConfigService,
   ) {}
 
   // ─── Statistiques globales ──────────────────────────────────────────────────
+  // Mis en cache 60s (clé globale) ; expire par TTL (données agrégées tolérantes).
   async getStats() {
+    return this.cache.wrap(CacheKeys.adminStats, CacheTtl.adminStats, () => this.computeStats());
+  }
+
+  private async computeStats() {
     // Fenêtres glissantes pour les tendances (30 derniers jours vs 30 précédents).
     const now = Date.now();
     const d30 = new Date(now - 30 * 24 * 3600 * 1000);
@@ -1472,7 +1479,17 @@ export class AdminService {
     return { txCount7d, completed, failed, uptime, lastSuccess, status };
   }
 
+  // Mis en cache 30s (clé globale) — évite de re-pinger toutes les intégrations à
+  // chaque rafraîchissement du dashboard.
   async getHealthIntegrations() {
+    return this.cache.wrap(
+      CacheKeys.adminHealthIntegrations,
+      CacheTtl.adminHealthIntegrations,
+      () => this.computeHealthIntegrations(),
+    );
+  }
+
+  private async computeHealthIntegrations() {
     const now = Date.now();
     const d24h = new Date(now - 24 * 3600 * 1000);
     const d7d = new Date(now - 7 * 24 * 3600 * 1000);

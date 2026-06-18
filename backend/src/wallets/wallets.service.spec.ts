@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WalletsService } from './wallets.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CamPayService } from '../campay/campay.service';
+import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
@@ -44,6 +45,7 @@ describe('WalletsService', () => {
         { provide: CamPayService, useValue: campay },
         // NODE_ENV=production → désactive le plafond « sandbox » (25 FCFA) du recharge.
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('production') } },
+        { provide: CacheService, useValue: { wrap: (_k: string, _t: number, fn: () => any) => fn(), del: jest.fn() } },
       ],
     }).compile();
 

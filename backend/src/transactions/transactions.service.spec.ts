@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CacheService } from '../cache/cache.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
@@ -49,6 +50,7 @@ describe('TransactionsService', () => {
           useValue: { notifyTransactionReceived: jest.fn().mockResolvedValue(undefined) },
         },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: CacheService, useValue: { wrap: (_k: string, _t: number, fn: () => any) => fn(), del: jest.fn() } },
       ],
     }).compile();
 

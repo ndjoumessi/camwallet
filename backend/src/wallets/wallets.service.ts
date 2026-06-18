@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CamPayService } from '../campay/campay.service';
+import { CacheService, CacheKeys, CacheTtl } from '../cache/cache.service';
 import {
   TransactionType,
   TransactionStatus,
@@ -27,22 +28,27 @@ export class WalletsService {
     private prisma: PrismaService,
     private campay: CamPayService,
     private config: ConfigService,
+    private cache: CacheService,
   ) {}
 
   // ─── Solde ────────────────────────────────────────────────────────────────
+  // Mis en cache 30s par utilisateur ; invalidé après toute mutation de solde
+  // (cf. CacheService.del(CacheKeys.walletBalance(...)) dans transactions/webhooks).
   async getBalance(userId: string) {
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { userId },
-      select: {
-        balance: true,
-        currency: true,
-        dailyLimit: true,
-        monthlyLimit: true,
-        isActive: true,
-      },
+    return this.cache.wrap(CacheKeys.walletBalance(userId), CacheTtl.walletBalance, async () => {
+      const wallet = await this.prisma.wallet.findUnique({
+        where: { userId },
+        select: {
+          balance: true,
+          currency: true,
+          dailyLimit: true,
+          monthlyLimit: true,
+          isActive: true,
+        },
+      });
+      if (!wallet) throw new NotFoundException('Portefeuille introuvable');
+      return wallet;
     });
-    if (!wallet) throw new NotFoundException('Portefeuille introuvable');
-    return wallet;
   }
 
   // ─── Recharge via CamPay ─────────────────────────────────────────────────
@@ -156,6 +162,9 @@ export class WalletsService {
         },
       });
     });
+
+    // Le solde vient de changer (fonds réservés) → invalider le cache.
+    await this.cache.del(CacheKeys.walletBalance(userId));
 
     // Déclencher le décaissement CamPay de façon asynchrone (le solde est déjà
     // réservé). Si CamPay échoue, le retrait reste PENDING et sera expiré + remboursé

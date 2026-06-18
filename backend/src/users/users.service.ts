@@ -5,6 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService, CacheKeys, CacheTtl } from '../cache/cache.service';
 import { TransactionStatus, UserStatus, KycStatus } from '@prisma/client';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -30,32 +31,39 @@ const SAFE_USER_SELECT = {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cache: CacheService,
+  ) {}
 
+  // Profil + wallet + stats, mis en cache 5 min par utilisateur ; invalidé après
+  // toute mise à jour du profil/avatar.
   async getMe(userId: string) {
-    const [user, sent, received] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId }, select: SAFE_USER_SELECT }),
-      this.prisma.transaction.aggregate({
-        _count: { _all: true },
-        _sum: { amount: true },
-        where: { senderId: userId, status: TransactionStatus.COMPLETED },
-      }),
-      this.prisma.transaction.aggregate({
-        _count: { _all: true },
-        _sum: { amount: true },
-        where: { receiverId: userId, status: TransactionStatus.COMPLETED },
-      }),
-    ]);
-    if (!user) throw new NotFoundException('Utilisateur introuvable');
+    return this.cache.wrap(CacheKeys.userMe(userId), CacheTtl.userMe, async () => {
+      const [user, sent, received] = await Promise.all([
+        this.prisma.user.findUnique({ where: { id: userId }, select: SAFE_USER_SELECT }),
+        this.prisma.transaction.aggregate({
+          _count: { _all: true },
+          _sum: { amount: true },
+          where: { senderId: userId, status: TransactionStatus.COMPLETED },
+        }),
+        this.prisma.transaction.aggregate({
+          _count: { _all: true },
+          _sum: { amount: true },
+          where: { receiverId: userId, status: TransactionStatus.COMPLETED },
+        }),
+      ]);
+      if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    return {
-      ...user,
-      stats: {
-        transactionsCount: sent._count._all + received._count._all,
-        totalSent: sent._sum.amount ?? 0n,
-        totalReceived: received._sum.amount ?? 0n,
-      },
-    };
+      return {
+        ...user,
+        stats: {
+          transactionsCount: sent._count._all + received._count._all,
+          totalSent: sent._sum.amount ?? 0n,
+          totalReceived: received._sum.amount ?? 0n,
+        },
+      };
+    });
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -82,7 +90,7 @@ export class UsersService {
       }
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...(dto.fullName !== undefined && { fullName: dto.fullName }),
@@ -92,6 +100,8 @@ export class UsersService {
       },
       select: SAFE_USER_SELECT,
     });
+    await this.cache.del(CacheKeys.userMe(userId));
+    return updated;
   }
 
   // Met à jour la photo de profil (URL Cloudinary ou data URI).
@@ -100,6 +110,7 @@ export class UsersService {
       where: { id: userId },
       data: { avatarUrl },
     });
+    await this.cache.del(CacheKeys.userMe(userId));
     return { avatarUrl };
   }
 
