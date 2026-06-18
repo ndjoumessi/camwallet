@@ -68,7 +68,8 @@
     "admin_system": "Admin Système",
     "api_operational": "API opérationnelle",
     "admin_panel": "Admin Panel",
-    "back_home": "Accueil"
+    "back_home": "Accueil",
+    "analytics": "Analytique"
   },
   "topbar": {
     "refresh_aria": "Actualiser les données",
@@ -1219,5 +1220,34 @@
       "col_status": "Statut",
       "col_date": "Date"
     }
+  },
+  "analytics": {
+    "title": "Analytique",
+    "subtitle": "Rétention, acquisition, activité et classements",
+    "retention_7d": "Rétention 7 j",
+    "retention_30d": "Rétention 30 j",
+    "active_users": "{{n}} actifs",
+    "avg_tx": "Volume moyen / transaction",
+    "avg_tx_sub": "Transactions complétées",
+    "avg_user": "Volume moyen / utilisateur",
+    "avg_user_sub": "Sur l’ensemble des comptes",
+    "avg_day": "Volume moyen / jour",
+    "avg_day_sub": "30 derniers jours",
+    "acquisition_title": "Inscriptions cumulées",
+    "signups_cumulative": "Cumul",
+    "signups_daily": "Par jour",
+    "weekday_title": "Activité par jour de semaine",
+    "tx_label": "Transactions",
+    "funnel_title": "Entonnoir KYC",
+    "funnel_pending": "Comptes (total)",
+    "funnel_submitted": "Dossiers soumis",
+    "funnel_approved": "Approuvés",
+    "heatmap_title": "Activité par heure et jour",
+    "heatmap_hint": "Plus la case est verte, plus l’activité est forte (30 derniers jours).",
+    "top_users_title": "Top 10 utilisateurs (volume envoyé)",
+    "top_merchants_title": "Top 10 marchands (volume reçu)",
+    "geo_title": "Répartition géographique (30 j)",
+    "no_data": "Aucune donnée",
+    "tx_count": "{{n}} tx"
   }
 }

@@ -29,6 +29,8 @@ import {
   getOperations, retryOperation, WebhookEvent, AdminOperation,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
+  getAnalyticsRetention, getAnalyticsAcquisition, getTopMerchants, getTopUsers,
+  getAnalyticsHeatmap, getKycFunnel, getAnalyticsGeo, getVolumeByType, getEmailAlertHistory,
   downloadUsersCSV, downloadTransactionsCSV,
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
@@ -4521,8 +4523,211 @@ function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { te
 // ── Sidebar nav items ─────────────────────────────────────
 // `id` sert aussi de clé i18n : le libellé est résolu via t(`nav.${id}`) et le
 // groupe via t(`nav.group_${group}`). Voir src/locales/*.json (section « nav »).
+// ── Page Analytique (tableau de bord analytique avancé) ───────────────────
+const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'] // dow 0 = dimanche
+
+function AnalyticsPage() {
+  const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('30d')
+  const { data: ret } = useFetch(() => getAnalyticsRetention(), [])
+  const { data: acq } = useFetch(() => getAnalyticsAcquisition(period), [period])
+  const { data: heat } = useFetch(() => getAnalyticsHeatmap(), [])
+  const { data: funnel } = useFetch(() => getKycFunnel(), [])
+  const { data: topU } = useFetch(() => getTopUsers(10), [])
+  const { data: topM } = useFetch(() => getTopMerchants(10), [])
+  const { data: geo } = useFetch(() => getAnalyticsGeo(), [])
+
+  const card: CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }
+  const h2: CSSProperties = { fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 14 }
+
+  // KPI cards.
+  const kpis = [
+    { label: i18n.t('analytics.retention_7d'), value: ret ? `${ret.retention7d} %` : '—', sub: ret ? i18n.t('analytics.active_users', { n: ret.active7d }) : '', color: C.green },
+    { label: i18n.t('analytics.retention_30d'), value: ret ? `${ret.retention30d} %` : '—', sub: ret ? i18n.t('analytics.active_users', { n: ret.active30d }) : '', color: C.blue },
+    { label: i18n.t('analytics.avg_tx'), value: ret ? formatFCFA(ret.avgPerTransaction) : '—', sub: i18n.t('analytics.avg_tx_sub'), color: C.purple },
+    { label: i18n.t('analytics.avg_user'), value: ret ? formatFCFA(ret.avgPerUser) : '—', sub: i18n.t('analytics.avg_user_sub'), color: C.blue },
+    { label: i18n.t('analytics.avg_day'), value: ret ? formatFCFA(ret.avgPerDay) : '—', sub: i18n.t('analytics.avg_day_sub'), color: C.yellow },
+  ]
+
+  // Inscriptions cumulées (LineChart).
+  const acqData = (acq?.series ?? []).map((p) => ({ date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`, signups: p.signups, cumulative: p.cumulative }))
+
+  // Activité par jour de semaine (agrégée depuis la heatmap).
+  const byWeekday = WEEKDAYS.map((name, dow) => ({ name, count: (heat?.cells ?? []).filter((c) => c.dow === dow).reduce((s, c) => s + c.count, 0) }))
+
+  // Heatmap heure × jour : grille + intensité relative au max.
+  const cellMap = new Map((heat?.cells ?? []).map((c) => [`${c.dow}-${c.hour}`, c.count]))
+  const maxCell = Math.max(1, ...(heat?.cells ?? []).map((c) => c.count))
+
+  // Entonnoir KYC.
+  const funnelSteps = funnel ? [
+    { label: i18n.t('analytics.funnel_pending'), value: funnel.pending + funnel.submitted + funnel.approved + funnel.rejected, color: C.textMuted },
+    { label: i18n.t('analytics.funnel_submitted'), value: funnel.submitted + funnel.approved + funnel.rejected, color: C.yellow, rate: funnel.submittedRate },
+    { label: i18n.t('analytics.funnel_approved'), value: funnel.approved, color: C.green, rate: funnel.approvedRate },
+  ] : []
+  const funnelMax = Math.max(1, ...funnelSteps.map((s) => s.value))
+
+  const PERIODS: ('7d' | '30d' | '90d')[] = ['7d', '30d', '90d']
+  const TopTable = ({ title, rows }: { title: string; rows: { fullName: string | null; phone: string; volume: number; count: number }[] }) => (
+    <div style={card}>
+      <div style={h2}>{title}</div>
+      {rows.length === 0 ? <div style={{ color: C.textMuted, fontSize: 13, padding: '8px 0' }}>{i18n.t('analytics.no_data')}</div> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.phone + i} style={{ borderTop: i ? `1px solid ${C.border}` : 'none' }}>
+                <td style={{ padding: '8px 0', color: C.textMuted, width: 22 }}>{i + 1}</td>
+                <td style={{ padding: '8px 0' }}>
+                  <div style={{ color: C.text, fontWeight: 600 }}>{r.fullName ?? '—'}</div>
+                  <div style={{ color: C.textMuted, fontSize: 11 }}>{r.phone}</div>
+                </td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: C.textMuted, fontSize: 11 }}>{i18n.t('analytics.tx_count', { n: r.count })}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: C.green, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatFCFA(r.volume)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 22 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('analytics.title')}</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('analytics.subtitle')}</p>
+      </div>
+
+      {/* KPI */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {kpis.map((k) => (
+          <div key={k.label} style={card}>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>{k.label}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: k.color, letterSpacing: -0.5 }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Acquisition (inscriptions cumulées) */}
+      <div style={{ ...card, marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={h2}>{i18n.t('analytics.acquisition_title')}</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {PERIODS.map((p) => (
+              <button key={p} onClick={() => setPeriod(p)}
+                style={{ padding: '4px 12px', borderRadius: 8, border: `1px solid ${period === p ? C.green : C.border}`, background: period === p ? C.greenLight : 'transparent', color: period === p ? C.green : C.textSoft, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {i18n.t('dashboard.period_' + p)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={210}>
+          <LineChart data={acqData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={{ stroke: C.border }} />
+            <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={40} />
+            <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: C.textSoft }} />
+            <Line type="monotone" dataKey="cumulative" name={i18n.t('analytics.signups_cumulative')} stroke={C.green} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="signups" name={i18n.t('analytics.signups_daily')} stroke={C.blue} strokeWidth={1.5} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Activité par jour de semaine + Funnel KYC */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={card}>
+          <div style={h2}>{i18n.t('analytics.weekday_title')}</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={byWeekday} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="name" stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={{ stroke: C.border }} />
+              <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={32} />
+              <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: C.textSoft }} cursor={{ fill: C.greenLight }} />
+              <Bar dataKey="count" name={i18n.t('analytics.tx_label')} radius={[4, 4, 0, 0]}>
+                {byWeekday.map((_, i) => <Cell key={i} fill={C.green} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={card}>
+          <div style={h2}>{i18n.t('analytics.funnel_title')}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+            {funnelSteps.map((s) => (
+              <div key={s.label}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: C.textSoft }}>{s.label}{typeof s.rate === 'number' ? <span style={{ color: C.textMuted }}> · {s.rate} %</span> : null}</span>
+                  <span style={{ color: C.text, fontWeight: 700 }}>{s.value.toLocaleString('fr-FR')}</span>
+                </div>
+                <div style={{ height: 12, background: C.border, borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.round((s.value / funnelMax) * 100)}%`, background: s.color, borderRadius: 6, transition: 'width .3s' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Heatmap heure × jour */}
+      <div style={{ ...card, marginBottom: 20 }}>
+        <div style={h2}>{i18n.t('analytics.heatmap_title')}</div>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, minWidth: 640 }}>
+            <div style={{ display: 'flex', gap: 3, paddingLeft: 30 }}>
+              {Array.from({ length: 24 }, (_, h) => (
+                <div key={h} style={{ width: 22, textAlign: 'center', fontSize: 8, color: C.textMuted }}>{h % 3 === 0 ? h : ''}</div>
+              ))}
+            </div>
+            {WEEKDAYS.map((name, dow) => (
+              <div key={dow} style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                <div style={{ width: 27, fontSize: 10, color: C.textMuted }}>{name}</div>
+                {Array.from({ length: 24 }, (_, h) => {
+                  const v = cellMap.get(`${dow}-${h}`) ?? 0
+                  const intensity = v === 0 ? 0 : 0.15 + 0.85 * (v / maxCell)
+                  return <div key={h} title={`${name} ${h}h — ${v}`} style={{ width: 22, height: 16, borderRadius: 3, background: v === 0 ? C.border + '60' : `rgba(0,200,150,${intensity})` }} />
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 8 }}>{i18n.t('analytics.heatmap_hint')}</div>
+      </div>
+
+      {/* Top utilisateurs / marchands */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <TopTable title={i18n.t('analytics.top_users_title')} rows={topU?.users ?? []} />
+        <TopTable title={i18n.t('analytics.top_merchants_title')} rows={topM?.merchants ?? []} />
+      </div>
+
+      {/* Répartition géographique */}
+      <div style={card}>
+        <div style={h2}>{i18n.t('analytics.geo_title')}</div>
+        {(geo?.regions ?? []).length === 0 ? <div style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('analytics.no_data')}</div> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {(() => {
+              const max = Math.max(1, ...(geo?.regions ?? []).map((r) => r.volume))
+              return (geo?.regions ?? []).map((r) => (
+                <div key={r.city}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                    <span style={{ color: C.textSoft }}>{r.city} <span style={{ color: C.textMuted }}>· {i18n.t('analytics.tx_count', { n: r.count })}</span></span>
+                    <span style={{ color: C.green, fontWeight: 700 }}>{formatFCFA(r.volume)}</span>
+                  </div>
+                  <div style={{ height: 8, background: C.border, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((r.volume / max) * 100)}%`, background: C.blue, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const NAV: { id: string; icon: LucideIcon; group: string; badge?: string }[] = [
   { id: 'dashboard', icon: LayoutGrid, group: 'overview' },
+  { id: 'analytics', icon: Activity, group: 'overview' },
   { id: 'alerts', icon: AlertTriangle, group: 'overview' },
   { id: 'support', icon: LifeBuoy, group: 'overview' },
   { id: 'users', icon: UsersIcon, group: 'users' },
@@ -4543,10 +4748,10 @@ const GROUPS = ['overview', 'users', 'finances', 'compliance']
 // (le compte admin configuré est SUPER_ADMIN ; le backend garde l'autorité).
 const ROLE_PAGES: Record<string, string[] | '*'> = {
   SUPER_ADMIN: '*',
-  ADMIN: ['dashboard', 'alerts', 'support', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
+  ADMIN: ['dashboard', 'analytics', 'alerts', 'support', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
   COMPLIANCE_OFFICER: ['anif', 'audit'],
   SUPPORT_OPERATOR: ['support', 'users', 'transactions'],
-  FINANCE_OFFICER: ['finance', 'operations'],
+  FINANCE_OFFICER: ['analytics', 'finance', 'operations'],
   KYC_OFFICER: ['kyc'],
 }
 // Ordre d'affichage des rôles, du plus au moins privilégié (selects, modal, matrice).
@@ -4670,6 +4875,7 @@ export default function App() {
   const renderPage = () => {
     switch (effectivePage) {
       case 'dashboard': return <DashboardPage onNavigate={setActivePage} />
+      case 'analytics': return <AnalyticsPage />
       case 'alerts': return <AlertsPage />
       case 'support': return <SupportPage />
       case 'users': return <UsersPage />
