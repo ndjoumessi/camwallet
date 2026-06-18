@@ -62,14 +62,19 @@ const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
 // estompés (POI/routes/transports masqués, localités sans label).
 const MAP_STYLES = [
   { elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8b949e' }] },
-  // Frontières émeraude conservées, mais TOUS les labels administratifs masqués :
-  // évite les noms de pays voisins en noir et garde le focus sur le Cameroun
-  // (les régions sont nommées via les marqueurs/InfoWindow).
-  { featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 1.5 }] },
-  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 0.8 }, { visibility: 'on' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }, { weight: 3 }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
+  // Frontières bien visibles : pays = émeraude épaisse ; régions (provinces) plus fines.
+  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 2 }] },
+  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#1f9e80' }, { weight: 1 }] },
+  // Noms de pays LISIBLES : remplissage clair + halo sombre (jamais en noir).
+  { featureType: 'administrative.country', elementType: 'labels.text', stylers: [{ visibility: 'on' }] },
+  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#dbe4f0' }] },
+  { featureType: 'administrative.country', elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }, { weight: 3 }] },
+  // Labels secondaires masqués (évite le bruit et les petits libellés sombres).
+  { featureType: 'administrative.province', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
