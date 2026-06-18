@@ -1,7 +1,7 @@
 # CamWallet — TODO & Fonctionnalités manquantes
 
 > Comparatif CDC v1.0 (Juin 2026) vs implémentation actuelle.  
-> Dernière mise à jour : 2026-06-15 (v2.3.0)
+> Dernière mise à jour : 2026-06-18 (v3.2.17)
 
 ---
 
@@ -126,6 +126,31 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 
 ---
 
+## 🟢 Post-MVP — Livré en v2.4.0 → v3.2.17
+
+Travaux menés après la clôture du MVP (au-delà du périmètre CDC initial), intégrés au code et déployés en prod.
+
+### Paiements & Webhooks
+
+- [x] **[INTÉGRATION] CamPay comme agrégateur Mobile Money** — `campay/campay.service.ts` (recharge/retrait OM + MTN via une API unique). Webhook `POST /webhooks/campay` avec vérification de signature + cross-validation du montant payload vs DB. `webhooks.service.ts`.
+- [x] **[SÉCU] Validation signatures webhooks (réelle, fail-closed)** — OM (HMAC-SHA256 + `timingSafeEqual`), MTN (compare constant-time SHA-256), CamPay (signature + montant). `500` en prod si le secret est absent ; traitement idempotent (seules les tx `PENDING` sont touchées). _(Doc `CLAUDE.md` corrigée en conséquence.)_
+
+### SMS OTP
+
+- [x] **[INTÉGRATION] SMS OTP réel via AfricasTalking** — `sms/sms.service.ts` dédié (FR/EN, bascule sandbox auto quand `username === 'sandbox'`, mode `[SMS DEV]` log si non configuré, 1 retry). Ajouté à `GET /admin/health/integrations`. _En prod : mode sandbox/log en attendant une clé live valide._
+- [x] **[SÉCU] Normalisation téléphone E.164** — `common/phone.util.ts` : `normalizeCameroonPhone()` (gère +237/00237/237/national, valide `^[26]\d{8}`). Appliquée à register (strict), login, pin-reset, p2p (tolérant).
+
+### KYC assisté par IA (Claude Vision)
+
+- [x] **[KYC] Pré-validation automatique des documents** — `kyc/kyc-ai.service.ts` (`KycAiService`, modèle `claude-opus-4-8`, structured outputs). Score 0-100 + suggestion (APPROVE/REJECT/MANUAL_REVIEW) + issues par document (recto/verso/selfie), agrégés. Analyse en arrière-plan après soumission, persistée sur `KycDocument` (`aiScore`, `aiSuggestion`, `aiIssues`, `aiAnalyzedAt`).
+- [x] **[KYC] Badges + actions IA dans le dashboard admin** — badge score/suggestion dans la file KYC, panneau IA dans la modale détail : « Lancer l'analyse IA » (`POST /admin/kyc/:userId/analyze`), « Appliquer la suggestion IA », « Relancer ».
+- [x] **[KYC] Auto-approbation conditionnelle** — si `aiSuggestion === 'APPROVE'` ET `aiScore >= seuil` ET toggle admin `kyc_auto_approve` actif → approbation auto + `AuditLog { action: 'KYC_AUTO_APPROVED' }` + push. Sinon maintien en file.
+- [x] **[KYC] Seuil d'auto-approbation réglable depuis l'admin** — clé `kyc_auto_approve_threshold` (slider 70-100 dans Paramètres), priorité DB > env `KYC_AUTO_APPROVE_THRESHOLD` > défaut 95.
+- [x] **[ADMIN] Anthropic (IA KYC) dans la santé des intégrations** — entrée « IA KYC (Claude Vision) » (UP/DOWN/SIMULATED via `kycAi.ping()`) dans `GET /admin/health/integrations`.
+- [x] **[SÉCU] Durcissement SSRF `imageUrlToBase64`** — allowlist hôte Cloudinary + https uniquement, `redirect: 'error'`, content-type `image/*`, plafond 10 Mo. `admin.service.ts`.
+
+---
+
 ## Récapitulatif
 
 | Priorité | Nombre d'items | Domaines principaux |
@@ -133,5 +158,6 @@ Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MV
 | 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
 | 🟠 Haute | 0 *(tous ✅)* | — |
 | 🟡 Moyenne | 0 *(tous ✅)* | — |
+| 🟢 Post-MVP (v2.4→v3.2.17) | 0 *(tous ✅)* | CamPay, webhooks signés, SMS AfricasTalking, KYC IA |
 | 🔵 Phase 2 | 1 hors scope | WhatsApp Business API officielle (approbation Meta) |
-| **Total** | **61** | |
+| **Total** | **70** | |
