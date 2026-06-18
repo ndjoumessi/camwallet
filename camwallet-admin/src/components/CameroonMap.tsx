@@ -244,7 +244,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           ))}
         </div>
         <GoogleMap
-          mapContainerStyle={{ width: '100%', height: 'clamp(340px, 60vh, 580px)', background: BG }}
+          mapContainerStyle={{ width: '100%', height: 'clamp(400px, 65vh, 620px)', background: BG }}
           center={CAMEROON_CENTER}
           zoom={MAP_ZOOM}
           onLoad={(m) => {
@@ -255,8 +255,8 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             // …puis, une fois la carte stabilisée, on FORCE le centre + zoom exacts du
             // Cameroun (fitBounds décalait légèrement le cadrage selon les polygones).
             g.maps.event.addListenerOnce(m, 'idle', () => {
-              m.setCenter({ lat: 7.3, lng: 12.35 })
-              m.setZoom(6)
+              m.setCenter({ lat: 7.8, lng: 12.5 })
+              m.setZoom(5.8)
             })
           }}
           onUnmount={() => setMap(null)}
@@ -382,7 +382,7 @@ function MarkerLegend() {
 // État de chargement de marque (spinner émeraude) — remplace le texte brut.
 function MapLoading() {
   return (
-    <div style={{ height: 'clamp(340px, 60vh, 580px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: MUTED, fontSize: 13, background: BG, borderRadius: 12, border: '1px solid rgba(0, 200, 150, 0.15)' }}>
+    <div style={{ height: 'clamp(400px, 65vh, 620px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: MUTED, fontSize: 13, background: BG, borderRadius: 12, border: '1px solid rgba(0, 200, 150, 0.15)' }}>
       <style>{`@keyframes cw-spin{to{transform:rotate(360deg)}}`}</style>
       <span style={{ width: 34, height: 34, borderRadius: '50%', border: '3px solid #1E2D45', borderTopColor: GRAD_HI, animation: 'cw-spin .8s linear infinite' }} />
       {i18n.t('common.loading')}
