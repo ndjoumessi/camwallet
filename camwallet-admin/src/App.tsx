@@ -3567,6 +3567,7 @@ function SettingsPage() {
   const { data: health, refetch: refetchHealth, loading: healthLoading } = useFetch(getHealthIntegrations, [])
   const { data: anifImpact } = useFetch(getAnifStats, [])
   const { data: history, refetch: refetchHistory } = useFetch(() => getAudit({ action: 'SETTINGS_UPDATE', take: 10 }), [])
+  const { data: emailAlerts } = useFetch(() => getEmailAlertHistory(), [])
 
   // Initialise le formulaire dès que les données arrivent
   useEffect(() => {
@@ -3668,6 +3669,44 @@ function SettingsPage() {
             {ToggleRow({ k: "notify_kyc_submitted", label: i18n.t('x.set.notify_kyc'), desc: i18n.t('x.set.notify_kyc_desc') })}
             {ToggleRow({ k: "notify_high_value", label: i18n.t('x.set.notify_high'), desc: i18n.t('x.set.notify_high_desc') })}
             {ToggleRow({ k: "notify_failed_payment", label: i18n.t('x.set.notify_failed'), desc: i18n.t('x.set.notify_failed_desc') })}
+          </div>
+
+          {/* Alertes email automatiques */}
+          <div style={card}>
+            <h2 style={h2}>{i18n.t('x.set.email_alerts')}</h2>
+            {ToggleRow({ k: "email_alerts_enabled", label: i18n.t('x.set.email_master'), desc: i18n.t('x.set.email_master_desc') })}
+            <div style={{ padding: '12px 0', borderTop: `1px solid ${C.border}` }}>
+              <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{i18n.t('x.set.email_recipient')}</label>
+              <input type="email" value={form['alert_email'] ?? ''} disabled={isReadOnly()} placeholder="alertes@exemple.cm"
+                onChange={(e) => setVal('alert_email', e.target.value)}
+                style={{ width: '100%', maxWidth: 360, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 13 }} />
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>{i18n.t('x.set.email_recipient_desc')}</div>
+            </div>
+            {ToggleRow({ k: "email_alert_high_value", label: i18n.t('x.set.email_high'), desc: i18n.t('x.set.email_high_desc') })}
+            {ToggleRow({ k: "email_alert_failure_rate", label: i18n.t('x.set.email_failure'), desc: i18n.t('x.set.email_failure_desc') })}
+            {ToggleRow({ k: "email_alert_signups", label: i18n.t('x.set.email_signups'), desc: i18n.t('x.set.email_signups_desc') })}
+            {ToggleRow({ k: "email_alert_kyc_score", label: i18n.t('x.set.email_kyc'), desc: i18n.t('x.set.email_kyc_desc') })}
+            {ToggleRow({ k: "email_alert_admin_failed", label: i18n.t('x.set.email_admin'), desc: i18n.t('x.set.email_admin_desc') })}
+
+            {/* Historique des 10 dernières alertes envoyées */}
+            <div style={{ marginTop: 14, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 8 }}>{i18n.t('x.set.email_history')}</div>
+              {(emailAlerts ?? []).length === 0 ? (
+                <div style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.set.email_history_empty')}</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {(emailAlerts ?? []).map((a) => (
+                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: C.text }}>
+                        <Siren size={13} color={C.yellow} />
+                        {a.detail || a.kind} {a.value ? <strong style={{ color: C.yellow }}>· {a.value}</strong> : null}
+                      </span>
+                      <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{relativeTime(a.createdAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Intégrations — statut + test de connexion */}
