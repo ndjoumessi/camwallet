@@ -40,9 +40,6 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 const CAMEROON_CENTER = { lat: 5.5, lng: 12.5 }
 const MAP_ZOOM = 6 // zoom de secours avant que fitBounds (dans onLoad) ne s'applique
-// Restriction (strictBounds) : verrouille la vue sur le Cameroun + frange minime, pour
-// ne pas voir les pays voisins (Ghana, Burkina, Bénin, Togo…).
-const CAMEROON_BOUNDS = { north: 14.0, south: 1.0, west: 7.5, east: 17.0 }
 // Bornes géographiques SERRÉES du Cameroun pour fitBounds : SW côte atlantique
 // (1.65, 8.4) → NE lac Tchad (13.1, 16.2). On cadre exactement le pays.
 const CAMEROON_FIT_BOUNDS = { north: 13.1, south: 1.65, west: 8.4, east: 16.2 }
@@ -183,7 +180,7 @@ const MAP_STYLES = [
   { elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
   // Frontières bien visibles : pays = émeraude épaisse ; régions (provinces) émeraude plus fines.
   { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 2.5 }] },
-  { featureType: 'administrative.country', elementType: 'geometry.fill', stylers: [{ visibility: 'on' }, { color: '#111827' }] },
+  { featureType: 'administrative.country', elementType: 'geometry.fill', stylers: [{ visibility: 'on' }, { color: '#080d18' }] },
   { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 1.5 }] },
   // Noms de pays MASQUÉS (on ne veut pas voir les voisins) ; le label « Cameroun »
   // est rajouté en overlay custom (Google ne permet pas de cibler un seul pays).
@@ -196,8 +193,8 @@ const MAP_STYLES = [
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
   { featureType: 'water', elementType: 'labels.text', stylers: [{ visibility: 'on' }, { color: '#1e6ea8' }] },
   { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ visibility: 'on' }, { color: '#1e4a7a' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
-  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#0f1923' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#080d18' }] },
+  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#080d18' }] },
   { featureType: 'road', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
@@ -247,18 +244,19 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           ))}
         </div>
         <GoogleMap
-          mapContainerStyle={{ width: '100%', height: 'clamp(340px, 56vh, 520px)', background: BG }}
+          mapContainerStyle={{ width: '100%', height: 'clamp(340px, 60vh, 580px)', background: BG }}
           center={CAMEROON_CENTER}
           zoom={MAP_ZOOM}
           onLoad={(m) => {
             setMap(m)
-            // Cadrage sur les bornes serrées du Cameroun (padding 40px)…
+            // Cadrage sur les bornes serrées du Cameroun (padding 20px)…
             const bounds = new g.maps.LatLngBounds({ lat: CAMEROON_FIT_BOUNDS.south, lng: CAMEROON_FIT_BOUNDS.west }, { lat: CAMEROON_FIT_BOUNDS.north, lng: CAMEROON_FIT_BOUNDS.east })
             m.fitBounds(bounds, { top: 20, right: 20, bottom: 20, left: 20 })
-            // …puis on plafonne le zoom à 7 si fitBounds a trop zoomé (petits écrans).
-            g.maps.event.addListenerOnce(m, 'bounds_changed', () => {
-              const z = m.getZoom()
-              if (z && z > 7) m.setZoom(7)
+            // …puis, une fois la carte stabilisée, on FORCE le centre + zoom exacts du
+            // Cameroun (fitBounds décalait légèrement le cadrage selon les polygones).
+            g.maps.event.addListenerOnce(m, 'idle', () => {
+              m.setCenter({ lat: 7.3, lng: 12.35 })
+              m.setZoom(6)
             })
           }}
           onUnmount={() => setMap(null)}
@@ -269,11 +267,10 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             backgroundColor: BG,
             gestureHandling: 'cooperative',
             scrollwheel: false,
-            minZoom: 5.8,
+            minZoom: 5.5,
             maxZoom: 10,
-            // strictBounds: false → indispensable, sinon la restriction bloque le dézoom
-            // de fitBounds avant que le pays entier ne tienne dans la vue.
-            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
+            // PAS de restriction latLngBounds : elle interférait avec fitBounds et décalait
+            // le cadrage. Le centrage est piloté par setCenter/setZoom dans onLoad.
           }}
         >
           {/* Label « Cameroun » custom (les noms de pays natifs sont masqués) — émeraude,
@@ -385,7 +382,7 @@ function MarkerLegend() {
 // État de chargement de marque (spinner émeraude) — remplace le texte brut.
 function MapLoading() {
   return (
-    <div style={{ height: 'clamp(340px, 56vh, 520px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: MUTED, fontSize: 13, background: BG, borderRadius: 12, border: '1px solid rgba(0, 200, 150, 0.15)' }}>
+    <div style={{ height: 'clamp(340px, 60vh, 580px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: MUTED, fontSize: 13, background: BG, borderRadius: 12, border: '1px solid rgba(0, 200, 150, 0.15)' }}>
       <style>{`@keyframes cw-spin{to{transform:rotate(360deg)}}`}</style>
       <span style={{ width: 34, height: 34, borderRadius: '50%', border: '3px solid #1E2D45', borderTopColor: GRAD_HI, animation: 'cw-spin .8s linear infinite' }} />
       {i18n.t('common.loading')}
