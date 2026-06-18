@@ -4,7 +4,7 @@
 // la lib échoue, repli automatique sur une carte SVG d3-geo (vrais contours),
 // elle-même repliée sur une carte schématique. Aucune fonctionnalité perdue.
 import { Component, useMemo, useState, type ReactNode } from 'react'
-import { GoogleMap, useJsApiLoader, HeatmapLayer, Marker, InfoWindow } from '@react-google-maps/api'
+import { GoogleMap, useJsApiLoader, Circle, MarkerF, InfoWindowF } from '@react-google-maps/api'
 import { geoMercator, geoPath } from 'd3-geo'
 import { scaleLinear } from 'd3-scale'
 import i18n from '../i18n'
@@ -40,7 +40,6 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 const CAMEROON_CENTER = { lat: 5.5, lng: 12.3 }
 const MAP_ZOOM = 6
-const GMAPS_LIBRARIES: ('visualization')[] = ['visualization']
 
 // Coordonnées (ville principale) de chaque région.
 const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
@@ -69,7 +68,8 @@ const MAP_STYLES = [
 ]
 
 function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRegionDatum[] }) {
-  const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey, libraries: GMAPS_LIBRARIES })
+  // Plus de bibliothèque « visualization » : Circle/Marker sont dans le cœur.
+  const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey })
   const [selected, setSelected] = useState<string | null>(null)
   const byName = new Map(regions.map((r) => [r.name, r]))
 
@@ -77,19 +77,17 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   if (!isLoaded) return <div style={{ height: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTED, fontSize: 13, background: BG, borderRadius: 12 }}>{i18n.t('common.loading')}</div>
 
   const g = (window as any).google
-  // Marqueur : gris (0 tx), vert clair (1-50), émeraude + plus gros (50+).
+  // Échelle de couleur des cercles (#1a4a3a à 0 tx → #00C896 au max).
+  const maxVol = Math.max(1, ...regions.map((r) => r.volume))
+  const circleColor = scaleLinear<string>().domain([0, maxVol]).range([GRAD_LO, GRAD_HI]).clamp(true)
+  // Rayon proportionnel au volume : 20 km (0 tx) → 80 km (max).
+  const radiusFor = (volume: number) => 20000 + (Math.min(volume, maxVol) / maxVol) * 60000
+  // Marqueur (ville) : gris (0 tx), vert clair (1-50), émeraude + plus gros (50+).
   const iconFor = (tx: number) => {
     const color = tx === 0 ? '#64748B' : tx <= 50 ? '#34D399' : '#00C896'
     const scale = tx > 50 ? 12 : tx > 0 ? 9 : 6
     return { path: g.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 0.95, strokeColor: '#0A0F1E', strokeWeight: 1.5, scale }
   }
-  // Heatmap pondérée par le volume.
-  const heatmapData = Object.entries(REGION_COORDS)
-    .map(([name, c]) => {
-      const d = byName.get(name)
-      return d && d.transactions > 0 ? { location: new g.maps.LatLng(c.lat, c.lng), weight: toFcfa(d.volume) } : null
-    })
-    .filter(Boolean) as any[]
 
   return (
     <div style={{ position: 'relative', background: BG, borderRadius: 12, padding: 8 }}>
@@ -99,23 +97,29 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
         zoom={MAP_ZOOM}
         options={{ styles: MAP_STYLES as any, disableDefaultUI: true, zoomControl: true, backgroundColor: BG, gestureHandling: 'cooperative' }}
       >
-        {heatmapData.length > 0 && (
-          <HeatmapLayer data={heatmapData} options={{ radius: 45, opacity: 0.55, gradient: ['rgba(0,200,150,0)', 'rgba(26,74,58,0.6)', 'rgba(0,200,150,0.85)', '#00C896'] }} />
-        )}
+        {/* Cercles colorés par région (rayon + teinte selon le volume) */}
         {Object.entries(REGION_COORDS).map(([name, c]) => {
           const d = datumFor(byName, name)
-          return <Marker key={name} position={c} icon={iconFor(d.transactions)} onClick={() => setSelected(name)} />
+          return (
+            <Circle key={`c-${name}`} center={c} radius={radiusFor(d.volume)} onClick={() => setSelected(name)}
+              options={{ fillColor: circleColor(d.volume) as string, fillOpacity: 0.6, strokeColor: STROKE, strokeWeight: 1, clickable: true }} />
+          )
+        })}
+        {/* Marqueur ville cliquable (MarkerF = variante fonctionnelle, sans warning) */}
+        {Object.entries(REGION_COORDS).map(([name, c]) => {
+          const d = datumFor(byName, name)
+          return <MarkerF key={`m-${name}`} position={c} icon={iconFor(d.transactions)} onClick={() => setSelected(name)} />
         })}
         {selected && (() => {
           const d = datumFor(byName, selected)
           return (
-            <InfoWindow position={REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
+            <InfoWindowF position={REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
               <div style={{ minWidth: 150, fontFamily: 'Inter, sans-serif' }}>
                 <div style={{ fontWeight: 800, fontSize: 14, color: '#0A0F1E', marginBottom: 3 }}>{selected}</div>
                 <div style={{ fontSize: 12, color: '#475569' }}>{i18n.t('analytics.tx_count', { n: d.transactions })}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#008F6A' }}>{fmtFcfa(d.volume)}</div>
               </div>
-            </InfoWindow>
+            </InfoWindowF>
           )
         })()}
       </GoogleMap>
