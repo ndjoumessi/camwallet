@@ -1,17 +1,23 @@
 import { KycService } from './kyc.service';
 import { KycAggregateResult } from './kyc-ai.service';
 
-const makeService = (opts: { setting?: { value: string } | null; threshold?: string } = {}) => {
+// opts.toggle : valeur de kyc_auto_approve en base ('on'/'off'/absent).
+// opts.dbThreshold : valeur de kyc_auto_approve_threshold en base (absent = non défini).
+// opts.envThreshold : variable d'env KYC_AUTO_APPROVE_THRESHOLD (absent = undefined).
+const makeService = (opts: { toggle?: string; dbThreshold?: string; envThreshold?: string } = {}) => {
+  const rows: { key: string; value: string }[] = [];
+  if (opts.toggle !== undefined) rows.push({ key: 'kyc_auto_approve', value: opts.toggle });
+  if (opts.dbThreshold !== undefined) rows.push({ key: 'kyc_auto_approve_threshold', value: opts.dbThreshold });
+
   const prisma = {
-    systemSettings: { findUnique: jest.fn().mockResolvedValue('setting' in opts ? opts.setting : { value: 'on' }) },
+    systemSettings: { findMany: jest.fn().mockResolvedValue(rows) },
     user: { update: jest.fn().mockReturnValue('user-op') },
     kycDocument: { update: jest.fn().mockReturnValue('doc-op') },
     auditLog: { create: jest.fn().mockReturnValue('audit-op') },
     $transaction: jest.fn().mockResolvedValue([]),
   };
   const notifications = { sendToUser: jest.fn().mockResolvedValue(undefined) };
-  // threshold non fourni → get() renvoie undefined → le code applique son défaut.
-  const config = { get: jest.fn().mockReturnValue(opts.threshold) };
+  const config = { get: jest.fn().mockReturnValue(opts.envThreshold) };
   const eventEmitter = { emit: jest.fn() };
   const svc = new KycService(
     prisma as any,
@@ -29,7 +35,7 @@ const autoApprove = (svc: KycService, res: KycAggregateResult) =>
   (svc as any).maybeAutoApprove('u1', res);
 
 const result = (over: Partial<KycAggregateResult>): KycAggregateResult => ({
-  score: 95,
+  score: 96,
   suggestion: 'APPROVE',
   issues: [],
   ...over,
@@ -37,9 +43,9 @@ const result = (over: Partial<KycAggregateResult>): KycAggregateResult => ({
 
 describe('KycService.maybeAutoApprove', () => {
   it('auto-approuve si APPROVE + score ≥ seuil + toggle activé', async () => {
-    const { svc, prisma, notifications, eventEmitter } = makeService({ setting: { value: 'on' }, threshold: '90' });
+    const { svc, prisma, notifications, eventEmitter } = makeService({ toggle: 'on', dbThreshold: '95' });
 
-    await autoApprove(svc, result({ score: 95 }));
+    await autoApprove(svc, result({ score: 96 }));
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).toHaveBeenCalledWith(
@@ -56,44 +62,54 @@ describe('KycService.maybeAutoApprove', () => {
   });
 
   it('n\'auto-approuve pas si le toggle est désactivé', async () => {
-    const { svc, prisma, notifications } = makeService({ setting: { value: 'off' } });
+    const { svc, prisma, notifications } = makeService({ toggle: 'off', dbThreshold: '95' });
     await autoApprove(svc, result({ score: 99 }));
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(notifications.sendToUser).not.toHaveBeenCalled();
   });
 
   it('n\'auto-approuve pas si le toggle n\'existe pas (défaut désactivé)', async () => {
-    const { svc, prisma } = makeService({ setting: null });
+    const { svc, prisma } = makeService({ dbThreshold: '95' }); // pas de ligne toggle
     await autoApprove(svc, result({ score: 99 }));
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('n\'auto-approuve pas si le score est sous le seuil', async () => {
-    const { svc, prisma } = makeService({ setting: { value: 'on' }, threshold: '90' });
-    await autoApprove(svc, result({ score: 89 }));
+  it('n\'auto-approuve pas si le score est sous le seuil (base)', async () => {
+    const { svc, prisma } = makeService({ toggle: 'on', dbThreshold: '95' });
+    await autoApprove(svc, result({ score: 94 })); // 94 < 95
     expect(prisma.$transaction).not.toHaveBeenCalled();
-    // court-circuit avant même la lecture du toggle
-    expect(prisma.systemSettings.findUnique).not.toHaveBeenCalled();
   });
 
-  it('n\'auto-approuve pas si la suggestion n\'est pas APPROVE', async () => {
-    const { svc, prisma } = makeService({ setting: { value: 'on' } });
+  it('n\'auto-approuve pas si la suggestion n\'est pas APPROVE (court-circuit avant lecture base)', async () => {
+    const { svc, prisma } = makeService({ toggle: 'on', dbThreshold: '95' });
     await autoApprove(svc, result({ score: 99, suggestion: 'MANUAL_REVIEW' }));
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.systemSettings.findMany).not.toHaveBeenCalled();
   });
 
-  it('respecte un seuil personnalisé via KYC_AUTO_APPROVE_THRESHOLD', async () => {
-    const { svc, prisma } = makeService({ setting: { value: 'on' }, threshold: '90' });
-    await autoApprove(svc, result({ score: 89 })); // 89 < 90 → refusé
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+  it('priorité : le seuil en base l\'emporte sur la variable d\'env', async () => {
+    // base = 98, env = 90 → un score de 95 doit être refusé (98 prioritaire).
+    const refus = makeService({ toggle: 'on', dbThreshold: '98', envThreshold: '90' });
+    await autoApprove(refus.svc, result({ score: 95 }));
+    expect(refus.prisma.$transaction).not.toHaveBeenCalled();
+
+    const ok = makeService({ toggle: 'on', dbThreshold: '98', envThreshold: '90' });
+    await autoApprove(ok.svc, result({ score: 98 }));
+    expect(ok.prisma.$transaction).toHaveBeenCalledTimes(1);
   });
 
-  it('applique le défaut 95 quand le seuil n\'est pas configuré', async () => {
-    const under = makeService({ setting: { value: 'on' } }); // pas de threshold → défaut 95
+  it('repli sur l\'env quand aucun seuil en base', async () => {
+    const { svc, prisma } = makeService({ toggle: 'on', envThreshold: '90' }); // pas de dbThreshold
+    await autoApprove(svc, result({ score: 92 })); // 92 ≥ 90 (env) → approuvé
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('repli sur le défaut 95 quand ni base ni env', async () => {
+    const under = makeService({ toggle: 'on' }); // ni dbThreshold ni env
     await autoApprove(under.svc, result({ score: 94 }));
     expect(under.prisma.$transaction).not.toHaveBeenCalled(); // 94 < 95
 
-    const ok = makeService({ setting: { value: 'on' } });
+    const ok = makeService({ toggle: 'on' });
     await autoApprove(ok.svc, result({ score: 95 }));
     expect(ok.prisma.$transaction).toHaveBeenCalledTimes(1); // 95 ≥ 95
   });

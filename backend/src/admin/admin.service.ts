@@ -1489,8 +1489,9 @@ export class AdminService {
     anif_frequency_max:      '10',     // seuil fréquence tx/24h
     // Sécurité
     require_2fa:             'off',    // 2FA obligatoire pour les admins
-    // KYC — auto-approbation par IA (si score IA ≥ KYC_AUTO_APPROVE_THRESHOLD)
-    kyc_auto_approve:        'off',    // approuver sans agent quand l'IA recommande APPROVE
+    // KYC — auto-approbation par IA (si score IA ≥ seuil)
+    kyc_auto_approve:           'off', // approuver sans agent quand l'IA recommande APPROVE
+    kyc_auto_approve_threshold: '95',  // seuil de score IA (70-100) ; prioritaire sur l'env
     // Notifications (événements déclenchant alertes email/SMS)
     notify_kyc_submitted:    'on',
     notify_high_value:       'on',
@@ -1502,6 +1503,13 @@ export class AdminService {
     const result = { ...this.SETTINGS_DEFAULTS };
     for (const row of rows) {
       result[row.key] = row.value;
+    }
+
+    // Seuil d'auto-approbation KYC — priorité : base > env > défaut (95).
+    // Si aucune ligne en base, on reflète la variable d'env pour l'affichage.
+    if (!rows.some((r) => r.key === 'kyc_auto_approve_threshold')) {
+      const envThreshold = this.config.get<string>('KYC_AUTO_APPROVE_THRESHOLD');
+      if (envThreshold) result['kyc_auto_approve_threshold'] = envThreshold;
     }
 
     // Vérification expiration mot de passe admin (rotation 90 jours).
@@ -1534,6 +1542,15 @@ export class AdminService {
         );
       }
       entries = entries.filter(([k]) => k.startsWith('anif_'));
+    }
+
+    // Validation : le seuil d'auto-approbation KYC doit être un entier 70-100.
+    const thr = entries.find(([k]) => k === 'kyc_auto_approve_threshold');
+    if (thr) {
+      const n = Number(thr[1]);
+      if (!Number.isInteger(n) || n < 70 || n > 100) {
+        throw new BadRequestException('Le seuil d\'auto-approbation doit être un entier entre 70 et 100.');
+      }
     }
 
     await Promise.all(

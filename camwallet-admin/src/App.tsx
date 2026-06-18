@@ -3591,7 +3591,8 @@ function SettingsPage() {
           {/* Vérification KYC (IA) */}
           <div style={card}>
             <h2 style={h2}>{i18n.t('x.set.kyc_section')}</h2>
-            {ToggleRow({ k: "kyc_auto_approve", label: i18n.t('x.set.kyc_auto_approve'), desc: i18n.t('x.set.kyc_auto_approve_desc') })}
+            {ToggleRow({ k: "kyc_auto_approve", label: i18n.t('x.set.kyc_auto_approve'), desc: i18n.t('x.set.kyc_auto_approve_desc', { threshold: form['kyc_auto_approve_threshold'] ?? '95' }) })}
+            {SliderRow({ k: "kyc_auto_approve_threshold", label: i18n.t('x.set.kyc_threshold'), min: 70, max: 100, step: 1, fmt: (n: number) => n + ' / 100' })}
           </div>
 
           {/* Notifications */}

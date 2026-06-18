@@ -111,15 +111,19 @@ export class KycService {
   private async maybeAutoApprove(userId: string, res: KycAggregateResult): Promise<void> {
     if (res.suggestion !== 'APPROVE') return;
 
-    const threshold =
-      Number(this.config.get<string>('KYC_AUTO_APPROVE_THRESHOLD')) || DEFAULT_AUTO_APPROVE_THRESHOLD;
-    if (res.score < threshold) return;
-
-    // Toggle admin (SystemSettings.kyc_auto_approve = 'on') — désactivé par défaut.
-    const setting = await this.prisma.systemSettings.findUnique({
-      where: { key: 'kyc_auto_approve' },
+    // Lecture des réglages admin (toggle + seuil) en une requête.
+    const rows = await this.prisma.systemSettings.findMany({
+      where: { key: { in: ['kyc_auto_approve', 'kyc_auto_approve_threshold'] } },
     });
-    if (setting?.value !== 'on') return;
+    // Toggle admin (désactivé par défaut).
+    if (rows.find((r) => r.key === 'kyc_auto_approve')?.value !== 'on') return;
+
+    // Seuil — priorité : base > env KYC_AUTO_APPROVE_THRESHOLD > défaut (95).
+    const dbThreshold = rows.find((r) => r.key === 'kyc_auto_approve_threshold')?.value;
+    const threshold =
+      Number(dbThreshold ?? this.config.get<string>('KYC_AUTO_APPROVE_THRESHOLD')) ||
+      DEFAULT_AUTO_APPROVE_THRESHOLD;
+    if (res.score < threshold) return;
 
     const message = `KYC auto-approuvé par IA (score: ${res.score}/100)`;
     await this.prisma.$transaction([
