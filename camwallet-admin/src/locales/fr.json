@@ -1272,6 +1272,7 @@
     "no_data": "Aucune donnée",
     "tx_count": "{{n}} tx",
     "geo_legend_low": "Faible",
-    "geo_legend_high": "Élevé"
+    "geo_legend_high": "Élevé",
+    "geo_legend_none": "Aucune"
   }
 }
