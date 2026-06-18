@@ -7,6 +7,7 @@ import { SmsService } from '../sms/sms.service';
 import { KycAiService } from '../kyc/kyc-ai.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CacheService, CacheKeys, CacheTtl } from '../cache/cache.service';
+import { LoyaltyService, LoyaltyReason } from '../loyalty/loyalty.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -32,6 +33,7 @@ export class AdminService {
     private kycAi: KycAiService,
     private cloudinary: CloudinaryService,
     private cache: CacheService,
+    private loyalty: LoyaltyService,
     private config: ConfigService,
   ) {}
 
@@ -102,7 +104,11 @@ export class AdminService {
     const pct = (cur: number, prev: number): number | null =>
       prev > 0 ? Math.round(((cur - prev) / prev) * 100) : cur > 0 ? 100 : null;
 
+    // Répartition du programme de fidélité (total distribué + par niveau).
+    const loyalty = await this.loyalty.getDistribution();
+
     return {
+      loyalty,
       trends: {
         users: pct(usersCur, usersPrev),
         transactions: pct(txCur, txPrev),
@@ -520,6 +526,11 @@ export class AdminService {
     await this.writeAudit(adminId, `KYC_${dto.decision}`, `User:${userId}`, {
       comment: dto.comment,
     });
+
+    // Fidélité : +10 points à l'approbation KYC (fire-and-forget).
+    if (newStatus === KycStatus.APPROVED) {
+      void this.loyalty.award(userId, 10, LoyaltyReason.KYC_APPROVED);
+    }
 
     // Notifications push + SMS selon la décision — fire-and-forget
     const pushConfig: Record<string, { title: string; body: string; sms: string }> = {

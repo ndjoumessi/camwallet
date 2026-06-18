@@ -15,7 +15,7 @@ import {
   ShieldAlert, ArrowLeftRight, Activity, Wifi, WifiOff,
   Settings, Shield, Loader2, Plus, Pencil, Eye, RotateCcw,
   Copy, Smartphone, ArrowDownToLine, ArrowUpFromLine, Percent,
-  LifeBuoy, Send, MessageSquare, Trash2, ArrowLeft,
+  LifeBuoy, Send, MessageSquare, Trash2, ArrowLeft, Award,
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
@@ -730,6 +730,38 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
           )}
         </div>
       </div>
+
+      {/* Programme de fidélité — total distribué + répartition par niveau */}
+      {stats?.loyalty && (
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Award size={16} color={C.yellow} /> {i18n.t('x.loyalty.title', { defaultValue: 'Programme de fidélité' })}
+            </h2>
+            <div style={{ display: 'flex', gap: 20 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.loyalty.total_distributed', { defaultValue: 'Points distribués' })}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{stats.loyalty.totalDistributed.toLocaleString('fr-FR')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.textMuted }}>{i18n.t('x.loyalty.members', { defaultValue: 'Membres' })}</div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: C.text }}>{stats.loyalty.members.toLocaleString('fr-FR')}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+            {stats.loyalty.byLevel.map((lv: { key: string; label: string; emoji: string; count: number }) => (
+              <div key={lv.key} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>{lv.emoji}</span>
+                <div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>{lv.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{lv.count.toLocaleString('fr-FR')}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Évolution temporelle — sélecteur de période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 4 }}>

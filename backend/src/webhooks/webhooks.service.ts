@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CamPayService } from '../campay/campay.service';
 import { CacheService, CacheKeys } from '../cache/cache.service';
+import { LoyaltyService, LoyaltyReason } from '../loyalty/loyalty.service';
 import {
   MobileOperator,
   TransactionStatus,
@@ -22,6 +23,7 @@ export class WebhooksService {
     private notifications: NotificationsService,
     private campay: CamPayService,
     private cache: CacheService,
+    private loyalty: LoyaltyService,
   ) {}
 
   // ─── CamPay ──────────────────────────────────────────────────────────────
@@ -221,9 +223,10 @@ export class WebhooksService {
       `✅ ${tx.type} confirmée : ${tx.amount} XAF (ref=${tx.operatorRef})`,
     );
 
-    // Solde crédité (recharge) → invalider le cache du bénéficiaire.
+    // Solde crédité (recharge) → invalider le cache + attribuer 5 points fidélité.
     if (tx.type === TransactionType.RECHARGE && tx.receiverId) {
       await this.cache.del(CacheKeys.walletBalance(tx.receiverId));
+      void this.loyalty.award(tx.receiverId, 5, LoyaltyReason.RECHARGE);
     }
 
     // Notification push après crédit d'une recharge (hors transaction, non bloquant).

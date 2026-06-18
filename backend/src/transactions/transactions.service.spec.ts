@@ -3,6 +3,7 @@ import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CacheService } from '../cache/cache.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
@@ -51,6 +52,7 @@ describe('TransactionsService', () => {
         },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: CacheService, useValue: { wrap: (_k: string, _t: number, fn: () => any) => fn(), del: jest.fn() } },
+        { provide: LoyaltyService, useValue: { award: jest.fn().mockResolvedValue(undefined), pointsForP2p: () => 0 } },
       ],
     }).compile();
 

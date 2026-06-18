@@ -9,6 +9,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CacheService, CacheKeys } from '../cache/cache.service';
+import { LoyaltyService, LoyaltyReason } from '../loyalty/loyalty.service';
 import { normalizeCameroonPhone } from '../common/phone.util';
 import { TransactionType, TransactionStatus } from '@prisma/client';
 
@@ -21,6 +22,7 @@ export class TransactionsService {
     private notifications: NotificationsService,
     private readonly eventEmitter: EventEmitter2,
     private readonly cache: CacheService,
+    private readonly loyalty: LoyaltyService,
   ) {}
 
   // ─── Paiement P2P (CamWallet → CamWallet) ────────────────────────────────
@@ -81,6 +83,9 @@ export class TransactionsService {
 
     // Soldes modifiés (émetteur + destinataire) → invalider leurs caches.
     await this.cache.del(CacheKeys.walletBalance(senderId), CacheKeys.walletBalance(receiver.id));
+
+    // Fidélité : +1 point / 1000 FCFA envoyés (fire-and-forget).
+    void this.loyalty.award(senderId, this.loyalty.pointsForP2p(amount), LoyaltyReason.P2P_SEND);
 
     // Événement temps réel pour le dashboard admin (non bloquant).
     this.eventEmitter.emit('transaction.created', { type: 'P2P', amount: Number(amount) / 100 });

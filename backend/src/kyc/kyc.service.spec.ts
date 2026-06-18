@@ -19,6 +19,7 @@ const makeService = (opts: { toggle?: string; dbThreshold?: string; envThreshold
   const notifications = { sendToUser: jest.fn().mockResolvedValue(undefined) };
   const config = { get: jest.fn().mockReturnValue(opts.envThreshold) };
   const eventEmitter = { emit: jest.fn() };
+  const loyalty = { award: jest.fn().mockResolvedValue(undefined) };
   const svc = new KycService(
     prisma as any,
     {} as any,
@@ -26,8 +27,9 @@ const makeService = (opts: { toggle?: string; dbThreshold?: string; envThreshold
     notifications as any,
     config as any,
     eventEmitter as any,
+    loyalty as any,
   );
-  return { svc, prisma, notifications, eventEmitter };
+  return { svc, prisma, notifications, eventEmitter, loyalty };
 };
 
 // maybeAutoApprove est privée — on l'appelle directement pour tester le gating.
