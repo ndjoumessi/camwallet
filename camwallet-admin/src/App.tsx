@@ -5,7 +5,7 @@ import i18n from './i18n'
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, LabelList,
+  ResponsiveContainer, PieChart, Pie, Cell, LabelList, Sector,
 } from 'recharts'
 import {
   LayoutGrid, AlertTriangle, Users as UsersIcon, ClipboardCheck, Zap, Wallet,
@@ -483,6 +483,15 @@ const ChartTooltip = ({ active, payload, label }: any) => {
   )
 }
 
+// Forme active du donut : segment survolé agrandi (+6px de rayon externe).
+const renderDonutActiveShape = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props
+  return (
+    <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 6}
+      startAngle={startAngle} endAngle={endAngle} fill={fill} />
+  )
+}
+
 // ── Pages ────────────────────────────────────────────────
 function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const { t } = useTranslation()
@@ -524,42 +533,44 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
   useLiveEvents(handleLiveEvent)
 
-  const chart = (ts?.series ?? []).map((p) => ({
+  // Données de graphes mémoïsées : recalcul uniquement quand la source change
+  // (évite de tout recalculer à chaque rendu, ex. hover donut, événements SSE).
+  const chart = useMemo(() => (ts?.series ?? []).map((p) => ({
     date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
     volume: toFcfa(p.volume),
     fees: toFcfa(p.fees),
     tx: p.transactions,
     users: p.users,
-  }))
+  })), [ts])
   const PERIODS: { key: '7d' | '30d' | '90d'; label: string }[] = [
     { key: '7d', label: t('dashboard.period_7d') },
     { key: '30d', label: t('dashboard.period_30d') },
     { key: '90d', label: t('dashboard.period_90d') },
   ]
 
-  const donut = (stats?.transactions.byType ?? []).map((tp) => ({
+  const donut = useMemo(() => (stats?.transactions.byType ?? []).map((tp) => ({
     name: TX_TYPE_LABEL[tp.type] ?? tp.type,
     value: tp.count,
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
-  }))
-  const donutTotal = donut.reduce((s, d) => s + d.value, 0)
+  })), [stats])
+  const donutTotal = useMemo(() => donut.reduce((s, d) => s + d.value, 0), [donut])
   // Volume par type (centimes → FCFA) pour le BarChart coloré.
-  const volByType = (stats?.transactions.byType ?? []).map((tp) => ({
+  const volByType = useMemo(() => (stats?.transactions.byType ?? []).map((tp) => ({
     name: TX_TYPE_LABEL[tp.type] ?? tp.type,
     volume: toFcfa(tp.volume),
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
-  }))
+  })), [stats])
 
   // Volume groupé par type sur la période (BarChart groupé).
-  const volTypeData = (volType?.series ?? []).map((p) => ({
+  const volTypeData = useMemo(() => (volType?.series ?? []).map((p) => ({
     date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
     P2P: toFcfa(p.P2P), QR: toFcfa(p.QR_PAYMENT), RECHARGE: toFcfa(p.RECHARGE), WITHDRAWAL: toFcfa(p.WITHDRAWAL),
-  }))
+  })), [volType])
   // Tendance des revenus : moyenne mobile (fenêtre 3) sur les frais.
-  const chartTrend = chart.map((c, i, arr) => {
+  const chartTrend = useMemo(() => chart.map((c, i, arr) => {
     const w = arr.slice(Math.max(0, i - 2), i + 1)
     return { ...c, trend: Math.round(w.reduce((s, x) => s + x.fees, 0) / w.length) }
-  })
+  }), [chart])
   // Taux de succès (jauge) depuis byStatus.
   const stByStatus = (s: string) => stats?.transactions.byStatus.find((x) => x.status === s)?.count ?? 0
   const okCount = stByStatus('COMPLETED')
@@ -567,6 +578,27 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
   const successRate = okCount + koCount > 0 ? Math.round((okCount / (okCount + koCount)) * 100) : null
   const VOL_PERIODS: ('7d' | '30d' | '90d')[] = ['7d', '30d', '90d']
   const GEO_MAX = Math.max(1, ...(dashGeo?.regions ?? []).map((r) => toFcfa(r.volume)))
+
+  // Transactions par heure (agrégées depuis la heatmap dow×heure) → heures de pointe.
+  const { data: heat } = useFetch(() => getAnalyticsHeatmap(), [])
+  const byHour = useMemo(() => {
+    const buckets = Array.from({ length: 24 }, (_, h) => ({ hour: h, label: String(h).padStart(2, '0') + 'h', count: 0 }))
+    for (const c of heat?.cells ?? []) if (c.hour >= 0 && c.hour < 24) buckets[c.hour].count += c.count
+    return buckets
+  }, [heat])
+  const hourPeak = useMemo(() => byHour.reduce((m, b) => (b.count > m.count ? b : m), byHour[0]), [byHour])
+  // Donut interactif (segment survolé agrandi) + légende cliquable du BarChart groupé.
+  const [activeDonut, setActiveDonut] = useState<number | undefined>(undefined)
+  const [hiddenVol, setHiddenVol] = useState<Set<string>>(new Set())
+  const toggleVol = useCallback((k: string) => setHiddenVol((prev) => {
+    const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n
+  }), [])
+  const VOL_SERIES = [
+    { k: 'P2P', label: TX_TYPE_LABEL['P2P'], color: TX_TYPE_COLOR['P2P'] ?? C.blue },
+    { k: 'QR', label: TX_TYPE_LABEL['QR_PAYMENT'], color: TX_TYPE_COLOR['QR_PAYMENT'] ?? C.green },
+    { k: 'RECHARGE', label: TX_TYPE_LABEL['RECHARGE'], color: TX_TYPE_COLOR['RECHARGE'] ?? C.yellow },
+    { k: 'WITHDRAWAL', label: TX_TYPE_LABEL['WITHDRAWAL'], color: TX_TYPE_COLOR['WITHDRAWAL'] ?? C.purple },
+  ]
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
@@ -628,7 +660,10 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={donut} cx="50%" cy="50%" innerRadius={48} outerRadius={70} dataKey="value"
-                    paddingAngle={donut.length > 1 ? 3 : 0} stroke="none">
+                    paddingAngle={donut.length > 1 ? 3 : 0} stroke="none"
+                    activeIndex={activeDonut} activeShape={renderDonutActiveShape}
+                    onMouseEnter={(_, i) => setActiveDonut(i)} onMouseLeave={() => setActiveDonut(undefined)}
+                    animationBegin={0} animationDuration={800}>
                     {donut.map((d, i) => <Cell key={i} fill={d.color} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
@@ -670,6 +705,18 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
             ))}
           </div>
         </div>
+        {/* Légende interactive : clic pour masquer/afficher une série */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          {VOL_SERIES.map((s) => {
+            const off = hiddenVol.has(s.k)
+            return (
+              <button key={s.k} onClick={() => toggleVol(s.k)} aria-pressed={!off}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${C.border}`, background: C.surface, color: off ? C.textMuted : C.text, opacity: off ? 0.5 : 1 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flexShrink: 0 }} /> {s.label}
+              </button>
+            )
+          })}
+        </div>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={volTypeData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
@@ -677,13 +724,40 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
             <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={40}
               tickFormatter={(v) => v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k'} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: C.greenLight }} />
-            <Bar dataKey="P2P" name={TX_TYPE_LABEL['P2P']} fill={TX_TYPE_COLOR['P2P'] ?? C.blue} radius={[3, 3, 0, 0]} />
-            <Bar dataKey="QR" name={TX_TYPE_LABEL['QR_PAYMENT']} fill={TX_TYPE_COLOR['QR_PAYMENT'] ?? C.green} radius={[3, 3, 0, 0]} />
-            <Bar dataKey="RECHARGE" name={TX_TYPE_LABEL['RECHARGE']} fill={TX_TYPE_COLOR['RECHARGE'] ?? C.yellow} radius={[3, 3, 0, 0]} />
-            <Bar dataKey="WITHDRAWAL" name={TX_TYPE_LABEL['WITHDRAWAL']} fill={TX_TYPE_COLOR['WITHDRAWAL'] ?? C.purple} radius={[3, 3, 0, 0]} />
+            {VOL_SERIES.map((s) => (
+              <Bar key={s.k} dataKey={s.k} name={s.label} fill={s.color} radius={[3, 3, 0, 0]}
+                hide={hiddenVol.has(s.k)} animationBegin={0} animationDuration={800} />
+            ))}
           </BarChart>
         </ResponsiveContainer>
         {volTypeData.length === 0 && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 8 }}>{t('dashboard.chart_no_tx')}</div>}
+      </div>
+
+      {/* Transactions par heure (heures de pointe) — AreaChart 24h, gradient émeraude */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('dashboard.chart_by_hour', { defaultValue: 'Transactions par heure' })}</h2>
+          {hourPeak && hourPeak.count > 0 && (
+            <span style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('dashboard.chart_peak', { hour: hourPeak.label, count: hourPeak.count, defaultValue: `Pic : ${hourPeak.label} (${hourPeak.count})` })}</span>
+          )}
+        </div>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={byHour} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="hourGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={C.green} stopOpacity={0.45} />
+                <stop offset="100%" stopColor={C.green} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="label" stroke={C.textMuted} fontSize={9} tickLine={false} axisLine={{ stroke: C.border }} interval={2} />
+            <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={34} allowDecimals={false} />
+            <Tooltip content={<ChartTooltip />} cursor={{ stroke: C.green, strokeWidth: 1 }} />
+            <Area type="monotone" dataKey="count" name={i18n.t('dashboard.chart_series_tx', { defaultValue: 'Transactions' })}
+              stroke={C.green} strokeWidth={2} fill="url(#hourGrad)" animationBegin={0} animationDuration={800} />
+          </AreaChart>
+        </ResponsiveContainer>
+        {byHour.every((b) => b.count === 0) && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 8 }}>{t('dashboard.chart_no_tx')}</div>}
       </div>
 
       {/* Taux de succès (jauge) + Répartition géographique */}
@@ -1183,7 +1257,10 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
   const label = (t: string) => <div style={{ fontSize: 10, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{t}</div>
   const photoTile = (src: string, cap: string) => (
     <button onClick={() => setLightbox({ url: src, alt: cap })} style={{ flex: 1, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-      <img src={src} alt={cap} style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+      {/* loading lazy + fond placeholder (fondu à l'arrivée de l'image) */}
+      <img src={src} alt={cap} loading="lazy" decoding="async"
+        onLoad={(e) => { (e.currentTarget.style.filter = 'none'); (e.currentTarget.style.opacity = '1') }}
+        style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, filter: 'blur(8px)', opacity: 0.6, transition: 'filter .3s, opacity .3s' }} />
       <div style={{ fontSize: 11, color: C.textMuted, textAlign: 'center', marginTop: 4 }}>{cap}</div>
     </button>
   )
@@ -1753,7 +1830,9 @@ function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: Admi
                 <div key={key}>
                   {url ? (
                     <button onClick={() => setLightboxUrl(url)} title="Agrandir" style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', cursor: 'zoom-in', background: 'none', padding: 0, display: 'block' }}>
-                      <img src={url} alt={label} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
+                      <img src={url} alt={label} loading="lazy" decoding="async"
+                        onLoad={(e) => { e.currentTarget.style.filter = 'none'; e.currentTarget.style.opacity = '1' }}
+                        style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: C.surface, filter: 'blur(8px)', opacity: 0.6, transition: 'filter .3s, opacity .3s' }} />
                     </button>
                   ) : (
                     <div style={{ height: 130, border: `1px dashed ${C.border}`, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: C.textMuted, fontSize: 12 }}>

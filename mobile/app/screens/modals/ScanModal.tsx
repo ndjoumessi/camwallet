@@ -1,15 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
+  Pressable,
   Animated,
   Easing,
   Dimensions,
   ScrollView,
   AccessibilityInfo,
+  PanResponder,
 } from 'react-native';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -17,6 +19,8 @@ const SCAN_BOX_SIZE = Math.min(Math.max(SCREEN_W - 96, 240), 300);
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { useTranslation } from 'react-i18next';
@@ -28,13 +32,30 @@ export interface ScannedRecipient {
   amount?: string;
 }
 
+// Type de QR détecté (paiement CamWallet, lien web, ou texte brut non payable).
+type QrKind = 'camwallet' | 'url' | 'text';
+
 interface ScanModalProps {
   visible: boolean;
   onClose: () => void;
   onDetected: (recipient: ScannedRecipient) => void;
 }
 
-// Décode le contenu d'un QR : URI camwallet://pay, JSON, ou numéro brut.
+const HISTORY_KEY = 'cw_scan_history';
+const HISTORY_MAX = 5;
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+// Détecte le type d'un QR sans le décoder entièrement.
+function detectQrKind(raw: string): QrKind {
+  const v = raw.trim();
+  if (v.startsWith('camwallet://') || v.startsWith('{')) return 'camwallet';
+  if (/^https?:\/\//i.test(v)) return 'url';
+  const digits = v.replace(/[^0-9+]/g, '');
+  if (/^\+?\d{8,15}$/.test(digits)) return 'camwallet';
+  return 'text';
+}
+
+// Décode le contenu d'un QR CamWallet : URI camwallet://pay, JSON, ou numéro brut.
 function parseQr(raw: string): ScannedRecipient | null {
   const value = raw.trim();
   try {
@@ -72,13 +93,53 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState<ScannedRecipient | null>(null);
   const [error, setError] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [zoom, setZoom] = useState(0);
+  const [history, setHistory] = useState<ScannedRecipient[]>([]);
   const scanLine = useState(new Animated.Value(0))[0];
+  const checkScale = useRef(new Animated.Value(0)).current;
   const reduceMotionRef = useRef(false);
+
+  // Zoom : suivi de l'écart entre deux doigts (pinch-to-zoom maison, cross-platform).
+  const zoomRef = useRef(0);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  const pinchStart = useRef<{ dist: number; zoom: number } | null>(null);
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (e) => e.nativeEvent.touches.length === 2,
+      onPanResponderMove: (e) => {
+        const ts = e.nativeEvent.touches;
+        if (ts.length !== 2) return;
+        const dist = Math.hypot(ts[0].pageX - ts[1].pageX, ts[0].pageY - ts[1].pageY);
+        if (!pinchStart.current) { pinchStart.current = { dist, zoom: zoomRef.current }; return; }
+        const delta = (dist - pinchStart.current.dist) / 220; // sensibilité
+        setZoom(clamp(pinchStart.current.zoom + delta, 0, 1));
+      },
+      onPanResponderRelease: () => { pinchStart.current = null; },
+      onPanResponderTerminate: () => { pinchStart.current = null; },
+    }),
+  ).current;
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled()
       .then((rm) => { reduceMotionRef.current = rm; })
       .catch(() => {});
+  }, []);
+
+  // Charge l'historique des derniers QR scannés à l'ouverture.
+  useEffect(() => {
+    if (!visible) return;
+    AsyncStorage.getItem(HISTORY_KEY)
+      .then((raw) => { if (raw) setHistory(JSON.parse(raw)); })
+      .catch(() => {});
+  }, [visible]);
+
+  const pushHistory = useCallback((rec: ScannedRecipient) => {
+    setHistory((prev) => {
+      const next = [rec, ...prev.filter((r) => r.phone !== rec.phone)].slice(0, HISTORY_MAX);
+      AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
   }, []);
 
   // Demande la permission caméra à la première ouverture.
@@ -90,10 +151,10 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
 
   // Réinitialise + anime la ligne de scan tant qu'aucun QR n'est détecté.
   useEffect(() => {
-    if (!visible) { setScanned(null); setError(false); return; }
+    if (!visible) { setScanned(null); setError(false); setTorch(false); setZoom(0); return; }
     if (scanned) return;
     if (reduceMotionRef.current) {
-      scanLine.setValue(0.5); // ligne statique au centre quand reduce-motion est activé
+      scanLine.setValue(0.5);
       return;
     }
     const anim = Animated.loop(
@@ -106,16 +167,31 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
     return () => anim.stop();
   }, [visible, scanned]);
 
+  // Animation du checkmark à la détection (spring) + haptique.
+  useEffect(() => {
+    if (scanned) {
+      checkScale.setValue(0);
+      Animated.spring(checkScale, { toValue: 1, damping: 8, stiffness: 180, useNativeDriver: true }).start();
+    }
+  }, [scanned, checkScale]);
+
   const handleBarcode = ({ data }: { data: string }) => {
     if (scanned) return; // évite les détections répétées
-    const parsed = parseQr(data);
+    const kind = detectQrKind(data);
+    const parsed = kind === 'camwallet' ? parseQr(data) : null;
     if (parsed) {
       setError(false);
       setScanned(parsed);
+      pushHistory(parsed);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } else {
       setError(true);
+      // Message spécifique selon le type non payable détecté.
+      setErrorKind(kind);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
     }
   };
+  const [errorKind, setErrorKind] = useState<QrKind>('text');
 
   const scanLineTranslate = scanLine.interpolate({ inputRange: [0, 1], outputRange: [0, SCAN_BOX_SIZE - 60] });
   const granted = permission?.granted ?? false;
@@ -139,6 +215,12 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
   };
 
+  const errorMsg = errorKind === 'url'
+    ? t('scan.hintUrl', { defaultValue: 'Lien web détecté (non payable)' })
+    : errorKind === 'text'
+      ? t('scan.hintText', { defaultValue: 'Texte détecté (non payable)' })
+      : t('scan.hintNotRecognized');
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
@@ -156,12 +238,12 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
               color={scanned ? Colors.primary : error ? Colors.yellow : Colors.textSoft}
             />
             <Text style={styles.hint}>
-              {scanned ? t('scan.hintDetected') : error ? t('scan.hintNotRecognized') : t('scan.hintAim')}
+              {scanned ? t('scan.hintDetected') : error ? errorMsg : t('scan.hintAim')}
             </Text>
           </View>
 
-          {/* Scanner viewfinder */}
-          <View style={styles.scanBox}>
+          {/* Scanner viewfinder (pinch-to-zoom via PanResponder) */}
+          <View style={styles.scanBox} {...panResponder.panHandlers}>
             {!granted ? (
               <View style={styles.cameraPlaceholder}>
                 <Ionicons name="close-circle-outline" size={40} color={Colors.textMuted} style={styles.cameraIcon} />
@@ -175,15 +257,30 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
               <CameraView
                 style={StyleSheet.absoluteFill}
                 facing="back"
+                zoom={zoom}
+                enableTorch={torch}
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 onBarcodeScanned={scanned ? undefined : handleBarcode}
               />
             )}
 
+            {/* Torche (en haut à droite du viewfinder) */}
+            {granted && !scanned && (
+              <Pressable
+                onPress={() => setTorch((v) => !v)}
+                style={styles.torchBtn}
+                accessibilityRole="button"
+                accessibilityLabel={t('scan.torchA11y', { defaultValue: 'Lampe torche' })}
+                accessibilityState={{ selected: torch }}
+              >
+                <Ionicons name={torch ? 'flashlight' : 'flashlight-outline'} size={20} color={torch ? Colors.yellow : '#fff'} />
+              </Pressable>
+            )}
+
             {scanned && (
-              <View style={styles.scannedOverlay}>
-                <Ionicons name="checkmark-circle" size={64} color={Colors.primary} />
-              </View>
+              <Animated.View style={[styles.scannedOverlay, { transform: [{ scale: checkScale }] }]}>
+                <Ionicons name="checkmark-circle" size={72} color={Colors.primary} />
+              </Animated.View>
             )}
 
             {/* Corner markers */}
@@ -196,6 +293,11 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
             {granted && !scanned && (
               <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineTranslate }] }]} />
             )}
+
+            {/* Indicateur de zoom */}
+            {granted && !scanned && zoom > 0.02 && (
+              <View style={styles.zoomBadge}><Text style={styles.zoomText}>{Math.round(zoom * 100)}%</Text></View>
+            )}
           </View>
 
           {/* Permission CTA */}
@@ -205,17 +307,40 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
             </View>
           )}
 
-          {/* Result card */}
+          {/* Aperçu marchand avant paiement */}
           {scanned && (
             <View style={styles.resultCard}>
               <View style={styles.resultAvatar}>
                 <Text style={styles.resultAvatarText}>{initials(scanned.name, scanned.phone)}</Text>
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.resultName}>{scanned.name ?? t('scan.resultDefaultName')}</Text>
                 <Text style={styles.resultPhone}>+237 {scanned.phone.replace(/^\+?237/, '')}</Text>
-                {scanned.amount && <Text style={styles.resultPhone}>{t('scan.resultAmount', { amount: scanned.amount })}</Text>}
+                {scanned.amount && <Text style={styles.resultAmount}>{t('scan.resultAmount', { amount: scanned.amount })}</Text>}
               </View>
+            </View>
+          )}
+
+          {/* Historique des derniers QR scannés */}
+          {granted && !scanned && history.length > 0 && (
+            <View style={styles.historyWrap}>
+              <Text style={styles.historyTitle}>{t('scan.recentTitle', { defaultValue: 'Derniers scans' })}</Text>
+              {history.map((h, i) => (
+                <Pressable
+                  key={`${h.phone}-${i}`}
+                  onPress={() => { setScanned(h); setError(false); Haptics.selectionAsync().catch(() => {}); }}
+                  style={styles.historyRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={h.name ?? h.phone}
+                >
+                  <View style={styles.historyAvatar}><Text style={styles.historyAvatarText}>{initials(h.name, h.phone)}</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.historyName} numberOfLines={1}>{h.name ?? t('scan.resultDefaultName')}</Text>
+                    <Text style={styles.historyPhone}>+237 {h.phone.replace(/^\+?237/, '')}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+                </Pressable>
+              ))}
             </View>
           )}
 
@@ -274,6 +399,16 @@ const styles = StyleSheet.create({
   } as any,
   cameraIcon: { fontSize: 40, marginBottom: Spacing.sm },
   cameraText: { color: Colors.textMuted, fontSize: Typography.sm, textAlign: 'center' },
+  torchBtn: {
+    position: 'absolute', top: 10, right: 10, zIndex: 5,
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
+  },
+  zoomBadge: {
+    position: 'absolute', bottom: 10, alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
+  },
+  zoomText: { color: '#fff', fontSize: Typography.xs, fontWeight: Typography.bold },
   scannedOverlay: {
     position: 'absolute', inset: 0,
     backgroundColor: Colors.primary + '20',
@@ -307,6 +442,21 @@ const styles = StyleSheet.create({
   resultAvatarText: { color: Colors.yellow, fontWeight: Typography.black, fontSize: Typography.sm },
   resultName: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
   resultPhone: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
+  resultAmount: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.bold, marginTop: 3 },
+  historyWrap: { width: '85%', gap: Spacing.sm },
+  historyTitle: { color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold, textTransform: 'uppercase', letterSpacing: 0.5 },
+  historyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, padding: Spacing.sm,
+  },
+  historyAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.primary + '18', alignItems: 'center', justifyContent: 'center',
+  },
+  historyAvatarText: { color: Colors.primary, fontWeight: Typography.bold, fontSize: Typography.xs },
+  historyName: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold },
+  historyPhone: { color: Colors.textMuted, fontSize: Typography.xs },
   cancelBtn: { padding: Spacing.md, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   cancelText: { color: Colors.textMuted, fontSize: Typography.base },
 });
