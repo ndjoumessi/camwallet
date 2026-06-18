@@ -44,9 +44,12 @@ const MAP_ZOOM = 6.0
 // proche. strictBounds verrouille la vue sur le pays (impossible de dériver dehors).
 const CAMEROON_BOUNDS = { north: 13.5, south: 1.6, west: 8.4, east: 16.2 }
 
-// GeoJSON distant des 10 régions (deldersveld/topojson). Si indisponible/404, repli
-// silencieux sur les polygones embarqués (assets/cameroon-regions.geo.json).
-const REMOTE_REGIONS_URL = 'https://raw.githubusercontent.com/deldersveld/topojson/master/countries/cameroon/cameroon-regions.json'
+// GeoJSON distant des 10 régions (geoBoundaries CMR/ADM1, simplifié) — URL épinglée
+// sur un commit (stable) et servie avec CORS (access-control-allow-origin: *). Les
+// libellés sont en anglais : rattachés à nos noms FR par centroïde (canonicalRegionName).
+// Si indisponible, repli silencieux sur les polygones embarqués (assets/cameroon-regions.geo.json).
+// NB : media.githubusercontent.com doit figurer dans connect-src de la CSP (vercel.json).
+const REMOTE_REGIONS_URL = 'https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/9469f09592ced973a3448cf66b6100b741b64c0d/releaseData/gbOpen/CMR/ADM1/geoBoundaries-CMR-ADM1_simplified.geojson'
 
 interface RegionPoly { name: string; paths: { lat: number; lng: number }[][]; center: { lat: number; lng: number } }
 
