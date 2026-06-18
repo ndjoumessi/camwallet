@@ -180,8 +180,8 @@ const styles = StyleSheet.create({
   },
   titleWrap: {
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 40,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xxl + Spacing.lg,
   },
   title: {
     fontSize: Typography.hero,
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   },
   version: {
     position: 'absolute',
-    bottom: 40,
+    bottom: Spacing.xxl + Spacing.lg,
     color: Colors.textMuted,
     fontSize: Typography.xs,
   },

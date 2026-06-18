@@ -44,7 +44,7 @@ function buildPdfHtml(
       <td>${tx.date}</td>
       <td>${tx.name ?? tr.noName}</td>
       <td>${txMeta(tx.type).label}</td>
-      <td style="color:${tx.amount >= 0 ? '#00C896' : '#FF4D6D'};font-weight:700">
+      <td style="color:${tx.amount >= 0 ? Colors.primary : Colors.error};font-weight:700">
         ${tx.amount >= 0 ? '+' : ''}${fmt(tx.amount)}
       </td>
     </tr>`,
@@ -57,11 +57,11 @@ function buildPdfHtml(
 <meta charset="UTF-8"/>
 <style>
   body { font-family: Arial, sans-serif; margin: 32px; color: #1a1a2e; }
-  .logo { font-size: 28px; font-weight: 900; color: #00C896; }
+  .logo { font-size: 28px; font-weight: 900; color: ${Colors.primary}; }
   .logo span { color: #1a1a2e; }
   .meta { margin: 16px 0 24px; color: #555; font-size: 13px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { background: #00C896; color: #fff; padding: 8px 12px; text-align: left; }
+  th { background: ${Colors.primary}; color: #fff; padding: 8px 12px; text-align: left; }
   td { padding: 8px 12px; border-bottom: 1px solid #eee; }
   tr:nth-child(even) td { background: #f9f9f9; }
   .total { text-align: right; margin-top: 20px; font-size: 15px; font-weight: 700; }

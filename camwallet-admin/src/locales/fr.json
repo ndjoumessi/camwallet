@@ -592,7 +592,8 @@
       "no_audit": "Aucune action enregistrée",
       "note_delete_confirm": "Supprimer cette note ?",
       "kyc_confirm_approve": "Approuver ce dossier KYC ?",
-      "kyc_confirm_reject": "Rejeter ce dossier KYC ?"
+      "kyc_confirm_reject": "Rejeter ce dossier KYC ?",
+      "note_delete_failed": "Échec de la suppression de la note"
     },
     "users": {
       "title": "Utilisateurs",
@@ -649,7 +650,8 @@
       "stat_kyc": "KYC approuvés",
       "stat_kyc_sub": "comptes vérifiés",
       "stat_merchants": "Marchands",
-      "stat_merchants_sub": "comptes commerçants"
+      "stat_merchants_sub": "comptes commerçants",
+      "pin_reset_failed": "Échec de la réinitialisation du PIN"
     },
     "kyc": {
       "title": "Vérification KYC",
@@ -954,7 +956,8 @@
       "resolution_ph": "Résolution (obligatoire)…",
       "report_ph": "Rapport ANIF (optionnel)…",
       "confirm_close": "Confirmer la clôture",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "close_failed": "Échec de la clôture du dossier"
     },
     "audit": {
       "cat_security": "Sécurité",
@@ -1226,7 +1229,8 @@
       "desc_ph": "Détails du problème…",
       "cancel": "Annuler",
       "creating": "Création…",
-      "create": "Créer le ticket"
+      "create": "Créer le ticket",
+      "delete_failed": "Échec de la suppression du ticket"
     },
     "al": {
       "title": "Alertes & Surveillance",

@@ -161,9 +161,9 @@ export default function MerchantScreen({ onBack }: MerchantScreenProps) {
         <html>
         <head><meta charset="utf-8"><style>
           body { font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 40px; }
-          h1 { color: #00C896; font-size: 24px; margin-bottom: 8px; }
+          h1 { color: ${Colors.primary}; font-size: 24px; margin-bottom: 8px; }
           .amount { font-size: 32px; font-weight: bold; color: #0F172A; margin: 16px 0; }
-          .qr-container { border: 3px solid #00C896; border-radius: 16px; padding: 20px; margin: 20px 0; }
+          .qr-container { border: 3px solid ${Colors.primary}; border-radius: 16px; padding: 20px; margin: 20px 0; }
           img { width: 220px; height: 220px; }
           .footer { color: #64748B; font-size: 12px; margin-top: 24px; text-align: center; }
         </style></head>

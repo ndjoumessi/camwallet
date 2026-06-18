@@ -592,7 +592,8 @@
       "no_audit": "No action recorded",
       "note_delete_confirm": "Delete this note?",
       "kyc_confirm_approve": "Approve this KYC submission?",
-      "kyc_confirm_reject": "Reject this KYC submission?"
+      "kyc_confirm_reject": "Reject this KYC submission?",
+      "note_delete_failed": "Failed to delete note"
     },
     "users": {
       "title": "Users",
@@ -649,7 +650,8 @@
       "stat_kyc": "KYC approved",
       "stat_kyc_sub": "verified accounts",
       "stat_merchants": "Merchants",
-      "stat_merchants_sub": "merchant accounts"
+      "stat_merchants_sub": "merchant accounts",
+      "pin_reset_failed": "Failed to reset PIN"
     },
     "kyc": {
       "title": "KYC Verification",
@@ -954,7 +956,8 @@
       "resolution_ph": "Resolution (required)…",
       "report_ph": "ANIF report (optional)…",
       "confirm_close": "Confirm closing",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "close_failed": "Failed to close case"
     },
     "audit": {
       "cat_security": "Security",
@@ -1226,7 +1229,8 @@
       "desc_ph": "Problem details…",
       "cancel": "Cancel",
       "creating": "Creating…",
-      "create": "Create ticket"
+      "create": "Create ticket",
+      "delete_failed": "Failed to delete ticket"
     },
     "al": {
       "title": "Alerts & Monitoring",
