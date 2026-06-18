@@ -38,8 +38,11 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 // 1) Google Maps
 // ════════════════════════════════════════════════════════════════════════════
-const CAMEROON_CENTER = { lat: 5.5, lng: 12.3 }
+const CAMEROON_CENTER = { lat: 4.5, lng: 12.3 }
 const MAP_ZOOM = 6
+// Bornes restrictives : Cameroun + frange limitrophe proche (empêche de dériver
+// vers le Nigeria, le Tchad, etc.). strictBounds verrouille la vue.
+const CAMEROON_BOUNDS = { north: 13.5, south: 1.0, west: 7.6, east: 16.6 }
 
 // Coordonnées (ville principale) de chaque région.
 const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
@@ -55,22 +58,28 @@ const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
   'Nord-Ouest': { lat: 5.95, lng: 10.15 },
 }
 
-// Style dark CamWallet.
+// Style dark premium CamWallet — focus Cameroun, frontières émeraude, voisins
+// estompés (POI/routes/transports masqués, localités sans label).
 const MAP_STYLES = [
-  { elementType: 'geometry', stylers: [{ color: '#0A0F1E' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#00C896' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0A0F1E' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0d1b2a' }] },
+  { elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8b949e' }] },
+  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 1.5 }] },
+  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 0.8 }, { visibility: 'on' }] },
+  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#00C896' }, { visibility: 'simplified' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
   { featureType: 'road', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 2 }] },
-  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 1 }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
 ]
 
 function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRegionDatum[] }) {
   // Plus de bibliothèque « visualization » : Circle/Marker sont dans le cœur.
   const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey })
   const [selected, setSelected] = useState<string | null>(null)
+  const [hovered, setHovered] = useState<string | null>(null)
   const byName = new Map(regions.map((r) => [r.name, r]))
 
   if (loadError) return <SvgFallback regions={regions} />
@@ -80,50 +89,67 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   // Échelle de couleur des cercles (#1a4a3a à 0 tx → #00C896 au max).
   const maxVol = Math.max(1, ...regions.map((r) => r.volume))
   const circleColor = scaleLinear<string>().domain([0, maxVol]).range([GRAD_LO, GRAD_HI]).clamp(true)
-  // Rayon proportionnel au volume : 20 km (0 tx) → 80 km (max).
-  const radiusFor = (volume: number) => 20000 + (Math.min(volume, maxVol) / maxVol) * 60000
+  // Rayon proportionnel au volume : 20 km (1+ tx) → 80 km (max). Sans data : petit
+  // repère gris (15 km) pour signaler l'emplacement sans attirer l'œil.
+  const radiusFor = (d: GeoRegionDatum) => (d.transactions === 0 ? 15000 : 20000 + (Math.min(d.volume, maxVol) / maxVol) * 60000)
   // Marqueur (ville) : gris (0 tx), vert clair (1-50), émeraude + plus gros (50+).
   const iconFor = (tx: number) => {
     const color = tx === 0 ? '#64748B' : tx <= 50 ? '#34D399' : '#00C896'
     const scale = tx > 50 ? 12 : tx > 0 ? 9 : 6
-    return { path: g.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 0.95, strokeColor: '#0A0F1E', strokeWeight: 1.5, scale }
+    return { path: g.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 0.95, strokeColor: '#0d1117', strokeWeight: 1.5, scale }
   }
 
   return (
     <div style={{ position: 'relative', background: BG, borderRadius: 12, padding: 8 }}>
-      <GoogleMap
-        mapContainerStyle={{ width: '100%', height: '500px', borderRadius: 10, background: BG }}
-        center={CAMEROON_CENTER}
-        zoom={MAP_ZOOM}
-        options={{ styles: MAP_STYLES as any, disableDefaultUI: true, zoomControl: true, backgroundColor: BG, gestureHandling: 'cooperative' }}
-      >
-        {/* Cercles colorés par région (rayon + teinte selon le volume) */}
-        {Object.entries(REGION_COORDS).map(([name, c]) => {
-          const d = datumFor(byName, name)
-          return (
-            <Circle key={`c-${name}`} center={c} radius={radiusFor(d.volume)} onClick={() => setSelected(name)}
-              options={{ fillColor: circleColor(d.volume) as string, fillOpacity: 0.6, strokeColor: STROKE, strokeWeight: 1, clickable: true }} />
-          )
-        })}
-        {/* Marqueur ville cliquable (MarkerF = variante fonctionnelle, sans warning) */}
-        {Object.entries(REGION_COORDS).map(([name, c]) => {
-          const d = datumFor(byName, name)
-          return <MarkerF key={`m-${name}`} position={c} icon={iconFor(d.transactions)} onClick={() => setSelected(name)} />
-        })}
-        {selected && (() => {
-          const d = datumFor(byName, selected)
-          return (
-            <InfoWindowF position={REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
-              <div style={{ minWidth: 150, fontFamily: 'Inter, sans-serif' }}>
-                <div style={{ fontWeight: 800, fontSize: 14, color: '#0A0F1E', marginBottom: 3 }}>{selected}</div>
-                <div style={{ fontSize: 12, color: '#475569' }}>{i18n.t('analytics.tx_count', { n: d.transactions })}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#008F6A' }}>{fmtFcfa(d.volume)}</div>
-              </div>
-            </InfoWindowF>
-          )
-        })()}
-      </GoogleMap>
-      <MarkerLegend />
+      <div className="cw-gmap-wrap" style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(0, 200, 150, 0.15)', boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)' }}>
+        {/* Atténue le branding Google (logo + mentions) pour un rendu épuré */}
+        <style>{`.cw-gmap-wrap a[href^="https://maps.google.com"],.cw-gmap-wrap .gm-style-cc{opacity:.35;filter:grayscale(1)}`}</style>
+        <GoogleMap
+          mapContainerStyle={{ width: '100%', height: '520px', background: BG }}
+          center={CAMEROON_CENTER}
+          zoom={MAP_ZOOM}
+          options={{
+            styles: MAP_STYLES as any,
+            disableDefaultUI: true,
+            zoomControl: true,
+            zoomControlOptions: { position: g.maps.ControlPosition.TOP_RIGHT },
+            backgroundColor: BG,
+            gestureHandling: 'cooperative',
+            scrollwheel: false,
+            minZoom: 5,
+            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
+          }}
+        >
+          {/* Cercles colorés par région (rayon + teinte selon le volume), hover plus opaque */}
+          {Object.entries(REGION_COORDS).map(([name, c]) => {
+            const d = datumFor(byName, name)
+            return (
+              <Circle key={`c-${name}`} center={c} radius={radiusFor(d)} onClick={() => setSelected(name)}
+                onMouseOver={() => setHovered(name)} onMouseOut={() => setHovered((h) => (h === name ? null : h))}
+                options={{ fillColor: d.transactions === 0 ? '#64748B' : (circleColor(d.volume) as string), fillOpacity: hovered === name ? 0.7 : 0.4, strokeColor: STROKE, strokeWeight: 2, strokeOpacity: 0.9, clickable: true }} />
+            )
+          })}
+          {/* Marqueur ville cliquable (MarkerF = variante fonctionnelle, sans warning) */}
+          {Object.entries(REGION_COORDS).map(([name, c]) => {
+            const d = datumFor(byName, name)
+            return <MarkerF key={`m-${name}`} position={c} icon={iconFor(d.transactions)} onClick={() => setSelected(name)} />
+          })}
+          {selected && (() => {
+            const d = datumFor(byName, selected)
+            return (
+              <InfoWindowF position={REGION_COORDS[selected]} onCloseClick={() => setSelected(null)}>
+                <div style={{ background: '#0d1117', border: '1px solid #00C896', borderRadius: 8, padding: 12, minWidth: 180, fontFamily: 'Inter, sans-serif' }}>
+                  <div style={{ color: '#00C896', fontWeight: 600, fontSize: 14, marginBottom: 8 }}>📍 {selected}</div>
+                  <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 4 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>
+                  <div style={{ color: '#00C896', fontSize: 14, fontWeight: 600 }}>{fmtFcfa(d.volume)}</div>
+                  {d.city && <div style={{ color: '#8b949e', fontSize: 11, marginTop: 8 }}>{i18n.t('analytics.geo_main_city', { city: d.city, defaultValue: `Ville principale : ${d.city}` })}</div>}
+                </div>
+              </InfoWindowF>
+            )
+          })()}
+        </GoogleMap>
+        <MarkerLegend />
+      </div>
     </div>
   )
 }
@@ -135,12 +161,23 @@ function MarkerLegend() {
     { c: '#00C896', label: '50+' },
   ]
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 8, justifyContent: 'center' }}>
-      {items.map((it) => (
-        <span key={it.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: MUTED }}>
-          <span style={{ width: 10, height: 10, borderRadius: 5, background: it.c }} /> {it.label}
-        </span>
-      ))}
+    <div style={{
+      position: 'absolute', bottom: 16, left: 16, zIndex: 10,
+      background: 'rgba(13, 17, 23, 0.9)', border: '1px solid rgba(0, 200, 150, 0.2)',
+      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+      borderRadius: 12, padding: 16, fontFamily: 'Inter, system-ui, sans-serif',
+      boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8b949e', marginBottom: 10 }}>
+        {i18n.t('analytics.geo_legend_title', { defaultValue: 'Transactions' })}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {items.map((it) => (
+          <span key={it.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e6edf3' }}>
+            <span style={{ width: 11, height: 11, borderRadius: 6, background: it.c, boxShadow: `0 0 8px ${it.c}66` }} /> {it.label}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }
