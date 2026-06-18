@@ -117,7 +117,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     userApi
       .getMe()
       .then((d) => { setMe(d); setError(null); })
-      .catch((e) => setError(e?.response?.data?.message ?? 'Erreur de chargement'))
+      .catch((e) => setError(e?.response?.data?.message ?? t('common.error_loading')))
       .finally(() => setLoading(false));
     // Fidélité (non bloquant — n'empêche pas l'affichage du profil en cas d'erreur).
     loyaltyApi.getBalance().then(setLoyalty).catch(() => {});
@@ -288,7 +288,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
     try {
       // Vérification du PIN via login — si le login échoue, le PIN est incorrect.
       const phone = me?.phone;
-      if (!phone) throw new Error('Téléphone introuvable');
+      if (!phone) throw new Error(t('common.phone_not_found'));
       await authApi.login(phone, deletePin);
       // PIN correct : supprimer le compte
       await userApi.deleteAccount();

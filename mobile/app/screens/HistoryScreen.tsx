@@ -195,7 +195,7 @@ export default function HistoryScreen() {
       style={({ pressed }) => [styles.txRow, pressed && styles.pressed]}
       onPress={() => openTransaction(tx)}
       accessibilityRole="button"
-      accessibilityLabel={`${txMeta(tx.type).label} ${tx.name ?? '(sans nom)'}, ${fmt(tx.amount)}`}
+      accessibilityLabel={`${txMeta(tx.type).label} ${tx.name ?? t('common.unnamed')}, ${fmt(tx.amount)}`}
     >
       <View style={[styles.txIcon, { backgroundColor: txMeta(tx.type).amountColor + '22' }]}>
         <Ionicons name={txMeta(tx.type).icon as IoniconName} size={20} color={txMeta(tx.type).amountColor} />

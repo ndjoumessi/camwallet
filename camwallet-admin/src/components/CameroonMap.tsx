@@ -239,7 +239,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
         {/* Contrôle de zoom custom (le natif a un fond blanc qui jure avec le thème dark) */}
         <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[{ s: '+', d: 1 }, { s: '−', d: -1 }].map(({ s, d }) => (
-            <button key={s} onClick={() => zoomBy(d)} aria-label={d > 0 ? 'Zoom avant' : 'Zoom arrière'}
+            <button key={s} onClick={() => zoomBy(d)} aria-label={d > 0 ? i18n.t('analytics.map_zoom_in', { defaultValue: 'Zoom avant' }) : i18n.t('analytics.map_zoom_out', { defaultValue: 'Zoom arrière' })}
               style={{ width: 32, height: 32, borderRadius: 8, background: '#161d2f', border: '1px solid rgba(0,200,150,0.3)', color: '#00C896', fontSize: 18, fontWeight: 700, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>{s}</button>
           ))}
         </div>
@@ -276,7 +276,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           {/* Label « Cameroun » custom (les noms de pays natifs sont masqués) — émeraude,
               discret, non interactif, posé au centre du pays. */}
           <OverlayViewF position={{ lat: 7.0, lng: 12.5 }} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#00C896', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0.28, textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>Cameroun</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#00C896', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0.28, textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{i18n.t('analytics.map_country', { defaultValue: 'Cameroun' })}</div>
           </OverlayViewF>
           {/* Frontières RÉGIONALES (internes) : Polygon émeraude FIN (weight 1.0, opacité 0.5)
               pour se distinguer du contour NATIONAL — ce dernier est tracé par Google
@@ -327,7 +327,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             return (
               <OverlayViewF position={pos} mapPaneName="floatPane" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h - 14 })}>
                 <div style={{ position: 'relative', background: 'rgba(13, 17, 23, 0.95)', border: '1px solid rgba(0, 200, 150, 0.4)', borderRadius: 12, padding: '14px 16px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', minWidth: 200, zIndex: 10, pointerEvents: 'none', fontFamily: 'Inter, sans-serif' }}>
-                  <button onClick={() => setSelected(null)} aria-label="Fermer"
+                  <button onClick={() => setSelected(null)} aria-label={i18n.t('analytics.map_close', { defaultValue: 'Fermer' })}
                     style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1, cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
                   <div style={{ color: '#00C896', fontWeight: 700, fontSize: 14, marginBottom: 8, paddingRight: 18 }}>📍 {selected}</div>
                   <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 6 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>

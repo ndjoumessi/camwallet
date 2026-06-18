@@ -1223,6 +1223,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
   }
 
   const handleDeleteNote = async (noteId: string) => {
+    if (!window.confirm(i18n.t('x.ud.note_delete_confirm', { defaultValue: 'Supprimer cette note ?' }))) return
     try {
       await deleteAdminNote(noteId)
       refetchNotes()
@@ -1332,9 +1333,9 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
               )}
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
-                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'), i18n.t('x.ud.kyc_approved'))}
+                  <button className="cw-btn" disabled={acting} onClick={() => { if (window.confirm(i18n.t('x.ud.kyc_confirm_approve', { defaultValue: 'Approuver ce dossier KYC ?' }))) run(() => reviewKyc(u.id, 'APPROVED'), i18n.t('x.ud.kyc_approved')) }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><Check size={14} /> {i18n.t('x.ud.approve_kyc')}</button>
-                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'), i18n.t('x.ud.kyc_rejected'))}
+                  <button className="cw-btn" disabled={acting} onClick={() => { if (window.confirm(i18n.t('x.ud.kyc_confirm_reject', { defaultValue: 'Rejeter ce dossier KYC ?' }))) run(() => reviewKyc(u.id, 'REJECTED'), i18n.t('x.ud.kyc_rejected')) }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><X size={14} /> {i18n.t('x.ud.reject_kyc')}</button>
                 </>
               )}
@@ -1774,6 +1775,13 @@ function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: Admi
       toast(i18n.t('x.kycd.comment_required'), 'error')
       return
     }
+    // Confirmation avant une décision KYC irréversible.
+    const confirmMsg = decision === 'APPROVED'
+      ? i18n.t('x.kycd.confirm_approve', { defaultValue: 'Approuver ce dossier KYC ?' })
+      : decision === 'REJECTED'
+        ? i18n.t('x.kycd.confirm_reject', { defaultValue: 'Rejeter ce dossier KYC ?' })
+        : i18n.t('x.kycd.confirm_resubmit', { defaultValue: 'Demander une nouvelle soumission ?' })
+    if (!window.confirm(confirmMsg)) return
     setActing(decision)
     try {
       await reviewKyc(entry.id, decision, finalComment || undefined)
@@ -1829,7 +1837,7 @@ function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: Admi
               return (
                 <div key={key}>
                   {url ? (
-                    <button onClick={() => setLightboxUrl(url)} title="Agrandir" style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', cursor: 'zoom-in', background: 'none', padding: 0, display: 'block' }}>
+                    <button onClick={() => setLightboxUrl(url)} title={i18n.t('common.enlarge', { defaultValue: 'Agrandir' })} style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden', cursor: 'zoom-in', background: 'none', padding: 0, display: 'block' }}>
                       <img src={url} alt={label} loading="lazy" decoding="async"
                         onLoad={(e) => { e.currentTarget.style.filter = 'none'; e.currentTarget.style.opacity = '1' }}
                         style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block', background: C.surface, filter: 'blur(8px)', opacity: 0.6, transition: 'filter .3s, opacity .3s' }} />
@@ -4016,7 +4024,7 @@ function SettingsPage() {
             {ToggleRow({ k: "email_alerts_enabled", label: i18n.t('x.set.email_master'), desc: i18n.t('x.set.email_master_desc') })}
             <div style={{ padding: '12px 0', borderTop: `1px solid ${C.border}` }}>
               <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{i18n.t('x.set.email_recipient')}</label>
-              <input type="email" value={form['alert_email'] ?? ''} disabled={isReadOnly()} placeholder="alertes@exemple.cm"
+              <input type="email" value={form['alert_email'] ?? ''} disabled={isReadOnly()} placeholder={i18n.t('x.set.alert_email_ph', { defaultValue: 'alertes@exemple.cm' })}
                 onChange={(e) => setVal('alert_email', e.target.value)}
                 style={{ width: '100%', maxWidth: 360, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 13 }} />
               <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>{i18n.t('x.set.email_recipient_desc')}</div>

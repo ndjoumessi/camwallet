@@ -34,7 +34,8 @@
     "in_progress": "In progress…",
     "page": "Page",
     "prev": "Prev.",
-    "next": "Next"
+    "next": "Next",
+    "enlarge": "Enlarge"
   },
   "status": {
     "success": "Success",
@@ -588,7 +589,10 @@
       "kyc_id_back": "ID back",
       "kyc_selfie": "Selfie",
       "no_kyc_doc": "No KYC document submitted",
-      "no_audit": "No action recorded"
+      "no_audit": "No action recorded",
+      "note_delete_confirm": "Delete this note?",
+      "kyc_confirm_approve": "Approve this KYC submission?",
+      "kyc_confirm_reject": "Reject this KYC submission?"
     },
     "users": {
       "title": "Users",
@@ -701,7 +705,10 @@
       "approve": "Approve",
       "reject": "Reject",
       "resubmit": "New doc",
-      "doc_alt": "KYC document"
+      "doc_alt": "KYC document",
+      "confirm_approve": "Approve this KYC submission?",
+      "confirm_reject": "Reject this KYC submission?",
+      "confirm_resubmit": "Request a new KYC submission?"
     },
     "tx": {
       "title": "Transactions",
@@ -1064,7 +1071,8 @@
       "email_admin": "Failed admin logins",
       "email_admin_desc": "Alert above 5 failed admin logins within 15 min.",
       "email_history": "Last alerts sent",
-      "email_history_empty": "No alert sent yet."
+      "email_history_empty": "No alert sent yet.",
+      "alert_email_ph": "alerts@example.cm"
     },
     "team": {
       "title": "Admin Team",
@@ -1282,6 +1290,18 @@
     "geo_stat_regions": "Active regions",
     "geo_stat_top": "Top region",
     "geo_stat_share": "{{pct}}% of volume",
-    "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod)."
+    "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod).",
+    "map_zoom_in": "Zoom in",
+    "map_zoom_out": "Zoom out",
+    "map_country": "Cameroon",
+    "map_close": "Close"
+  },
+  "pdf": {
+    "generated_on": "Generated on {{date}}",
+    "footer_auto": "CamWallet · Automatically generated report · Confidential",
+    "filters_applied": "Filters applied — {{filters}}",
+    "totals": "Totals",
+    "confidential": "Confidential — CamWallet © 2026",
+    "no_data": "No data."
   }
 }

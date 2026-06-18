@@ -34,7 +34,8 @@
     "in_progress": "En cours…",
     "page": "Page",
     "prev": "Préc.",
-    "next": "Suiv."
+    "next": "Suiv.",
+    "enlarge": "Agrandir"
   },
   "status": {
     "success": "Succès",
@@ -588,7 +589,10 @@
       "kyc_id_back": "CNI verso",
       "kyc_selfie": "Selfie",
       "no_kyc_doc": "Aucun document KYC soumis",
-      "no_audit": "Aucune action enregistrée"
+      "no_audit": "Aucune action enregistrée",
+      "note_delete_confirm": "Supprimer cette note ?",
+      "kyc_confirm_approve": "Approuver ce dossier KYC ?",
+      "kyc_confirm_reject": "Rejeter ce dossier KYC ?"
     },
     "users": {
       "title": "Utilisateurs",
@@ -701,7 +705,10 @@
       "approve": "Approuver",
       "reject": "Rejeter",
       "resubmit": "Nouveau doc",
-      "doc_alt": "Document KYC"
+      "doc_alt": "Document KYC",
+      "confirm_approve": "Approuver ce dossier KYC ?",
+      "confirm_reject": "Rejeter ce dossier KYC ?",
+      "confirm_resubmit": "Demander une nouvelle soumission KYC ?"
     },
     "tx": {
       "title": "Transactions",
@@ -1064,7 +1071,8 @@
       "email_admin": "Connexions admin échouées",
       "email_admin_desc": "Alerter au-delà de 5 échecs de connexion admin en 15 min.",
       "email_history": "Dernières alertes envoyées",
-      "email_history_empty": "Aucune alerte envoyée pour le moment."
+      "email_history_empty": "Aucune alerte envoyée pour le moment.",
+      "alert_email_ph": "alertes@exemple.cm"
     },
     "team": {
       "title": "Équipe Administration",
@@ -1282,6 +1290,18 @@
     "geo_stat_regions": "Régions actives",
     "geo_stat_top": "Région en tête",
     "geo_stat_share": "{{pct}} % du volume",
-    "geo_missing_key": "Clé Google Maps manquante — carte de secours affichée. Définir VITE_GOOGLE_MAPS_API_KEY (Vercel en prod)."
+    "geo_missing_key": "Clé Google Maps manquante — carte de secours affichée. Définir VITE_GOOGLE_MAPS_API_KEY (Vercel en prod).",
+    "map_zoom_in": "Zoom avant",
+    "map_zoom_out": "Zoom arrière",
+    "map_country": "Cameroun",
+    "map_close": "Fermer"
+  },
+  "pdf": {
+    "generated_on": "Généré le {{date}}",
+    "footer_auto": "CamWallet · Rapport généré automatiquement · Confidentiel",
+    "filters_applied": "Filtres appliqués — {{filters}}",
+    "totals": "Totaux",
+    "confidential": "Confidentiel — CamWallet © 2026",
+    "no_data": "Aucune donnée."
   }
 }

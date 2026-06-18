@@ -52,6 +52,8 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (errTimer.current) clearTimeout(errTimer.current); }, []);
 
   // Pré-remplir le numéro avec le téléphone de l'utilisateur à l'ouverture
   useEffect(() => {
@@ -95,6 +97,8 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? t('recharge.errorFallback');
       setError(Array.isArray(msg) ? msg.join(', ') : msg);
+      if (errTimer.current) clearTimeout(errTimer.current);
+      errTimer.current = setTimeout(() => setError(null), 4000);
     } finally {
       setLoading(false);
     }
@@ -166,7 +170,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
               {/* Numéro MoMo */}
               {method.id !== 'agent' && (
                 <View style={styles.phoneRow}>
-                  <Text style={styles.phoneLabel}>Numéro {method.label.split(' ')[0]}</Text>
+                  <Text style={styles.phoneLabel}>{t('recharge.amount.phoneLabel', { op: method.label.split(' ')[0] })}</Text>
                   <TextInput
                     style={styles.phoneInput}
                     value={phone}
@@ -176,7 +180,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                     keyboardType="phone-pad"
                     autoCorrect={false}
                     autoCapitalize="none"
-                    accessibilityLabel={`Numéro ${method?.label?.split(' ')[0] ?? ''}`}
+                    accessibilityLabel={t('recharge.amount.phoneLabel', { op: method?.label?.split(' ')[0] ?? '' })}
                   />
                 </View>
               )}

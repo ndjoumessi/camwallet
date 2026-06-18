@@ -13,7 +13,15 @@
     "close": "Fermer",
     "continue": "Continuer",
     "finish": "Terminer",
-    "error_title": "Erreur"
+    "error_title": "Erreur",
+    "error_loading": "Erreur de chargement",
+    "unnamed": "(sans nom)",
+    "phone_not_found": "Téléphone introuvable"
+  },
+  "tabs": {
+    "home": "Accueil",
+    "history": "Historique",
+    "profile": "Profil"
   },
   "splash": {
     "tagline": "Votre portefeuille numérique"
@@ -40,7 +48,8 @@
     },
     "a11y": {
       "skipIntro": "Passer l'introduction et créer un compte",
-      "dotsTablist": "Étape {{current}} sur {{total}}"
+      "dotsTablist": "Étape {{current}} sur {{total}}",
+      "digit": "Chiffre {{digit}}"
     },
     "phone": {
       "title": "Votre numéro",
@@ -136,6 +145,7 @@
     }
   },
   "home": {
+    "notificationsA11y": "Notifications",
     "greeting": "Bonjour 👋",
     "availableBalance": "Solde disponible",
     "recentTransactions": "Transactions récentes",
@@ -575,6 +585,7 @@
     "infoBox": "Votre argent reste chez l'opérateur. CamWallet crédite votre solde QR instantanément après confirmation.",
     "amount": {
       "phonePlaceholder": "+237 6XX XXX XXX",
+      "phoneLabel": "Numéro {{op}}",
       "amountLabel": "Montant à recharger"
     },
     "sandbox": {
