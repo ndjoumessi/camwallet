@@ -584,12 +584,34 @@ export class AdminService {
   }
 
   // Convertit une URL d'image (data URI dev ou URL Cloudinary) en base64 brut.
+  // Anti-SSRF : les URLs KYC sont produites par CloudinaryService (data URI ou
+  // secure_url Cloudinary) ; on n'autorise donc QUE le data URI ou un hôte
+  // Cloudinary en https, et on bloque les redirections (rebond interne).
   private async imageUrlToBase64(url: string): Promise<string> {
     const dataUri = url.match(/^data:image\/[a-z]+;base64,(.+)$/i);
     if (dataUri) return dataUri[1];
-    const resp = await fetch(url);
+
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new BadRequestException('URL image invalide.');
+    }
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
+    const allowedHost = host === 'res.cloudinary.com' || host.endsWith('.cloudinary.com');
+    if (parsed.protocol !== 'https:' || !allowedHost) {
+      throw new BadRequestException('Source image non autorisée.');
+    }
+
+    // redirect: 'error' → empêche un 3xx de rebondir vers un hôte interne.
+    const resp = await fetch(url, { redirect: 'error' });
     if (!resp.ok) throw new BadRequestException(`Image inaccessible (${resp.status})`);
-    return Buffer.from(await resp.arrayBuffer()).toString('base64');
+    if (!(resp.headers.get('content-type') ?? '').toLowerCase().startsWith('image/')) {
+      throw new BadRequestException('Contenu non-image refusé.');
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length > 10 * 1024 * 1024) throw new BadRequestException('Image trop volumineuse (max 10 Mo).');
+    return buf.toString('base64');
   }
 
   // ─── Alertes (dérivées des données réelles) ───────────────────────────────
