@@ -10,7 +10,8 @@ const makeService = (opts: { setting?: { value: string } | null; threshold?: str
     $transaction: jest.fn().mockResolvedValue([]),
   };
   const notifications = { sendToUser: jest.fn().mockResolvedValue(undefined) };
-  const config = { get: jest.fn().mockReturnValue(opts.threshold ?? '90') };
+  // threshold non fourni → get() renvoie undefined → le code applique son défaut.
+  const config = { get: jest.fn().mockReturnValue(opts.threshold) };
   const eventEmitter = { emit: jest.fn() };
   const svc = new KycService(
     prisma as any,
@@ -82,8 +83,18 @@ describe('KycService.maybeAutoApprove', () => {
   });
 
   it('respecte un seuil personnalisé via KYC_AUTO_APPROVE_THRESHOLD', async () => {
-    const { svc, prisma } = makeService({ setting: { value: 'on' }, threshold: '95' });
-    await autoApprove(svc, result({ score: 92 })); // 92 < 95 → refusé
+    const { svc, prisma } = makeService({ setting: { value: 'on' }, threshold: '90' });
+    await autoApprove(svc, result({ score: 89 })); // 89 < 90 → refusé
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('applique le défaut 95 quand le seuil n\'est pas configuré', async () => {
+    const under = makeService({ setting: { value: 'on' } }); // pas de threshold → défaut 95
+    await autoApprove(under.svc, result({ score: 94 }));
+    expect(under.prisma.$transaction).not.toHaveBeenCalled(); // 94 < 95
+
+    const ok = makeService({ setting: { value: 'on' } });
+    await autoApprove(ok.svc, result({ score: 95 }));
+    expect(ok.prisma.$transaction).toHaveBeenCalledTimes(1); // 95 ≥ 95
   });
 });

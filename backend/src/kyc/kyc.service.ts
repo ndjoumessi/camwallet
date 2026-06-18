@@ -7,7 +7,7 @@ import { KycAiService, KycAggregateResult } from './kyc-ai.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { KycStatus } from '@prisma/client';
 
-const DEFAULT_AUTO_APPROVE_THRESHOLD = 90;
+const DEFAULT_AUTO_APPROVE_THRESHOLD = 95;
 
 @Injectable()
 export class KycService {
