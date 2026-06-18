@@ -665,7 +665,18 @@
       "no_queue": "Aucune demande KYC",
       "id_front": "CNI Recto",
       "id_back": "CNI Verso",
-      "selfie": "Selfie"
+      "selfie": "Selfie",
+      "pdf_title": "Rapport KYC CamWallet",
+      "pdf_count": "{{count}} dossier(s)",
+      "pdf_approval_rate": "Taux d’approbation",
+      "pdf_avg_time": "Temps moyen de traitement",
+      "pdf_hours": "{{h}} h",
+      "pdf_avg_score": "Score IA moyen",
+      "pdf_col_user": "Utilisateur",
+      "pdf_col_status": "Statut",
+      "pdf_col_score": "Score IA",
+      "pdf_col_submitted": "Soumis le",
+      "pdf_col_decided": "Décision le"
     },
     "kycd": {
       "comment_required": "Un commentaire est requis pour rejeter ou demander un nouveau document",
@@ -729,7 +740,11 @@
       "col_date": "Date",
       "select_aria": "Sélectionner",
       "resolved_aria": "Résolu",
-      "no_tx": "Aucune transaction"
+      "no_tx": "Aucune transaction",
+      "pdf_period": "Période : {{value}}",
+      "pdf_total_count": "Nombre de transactions",
+      "pdf_total_volume": "Volume total",
+      "pdf_total_fees": "Frais perçus"
     },
     "txd": {
       "title": "Détail transaction",
@@ -961,7 +976,16 @@
       "col_resource": "Ressource",
       "col_ip": "IP / Agent",
       "col_date": "Date",
-      "no_entries": "Aucune entrée d'audit"
+      "no_entries": "Aucune entrée d'audit",
+      "pdf_period": "Période",
+      "pdf_category": "Catégorie",
+      "pdf_actor": "Acteur",
+      "pdf_resource": "Ressource",
+      "pdf_title": "Journal d’audit CamWallet",
+      "pdf_count": "{{count}} entrée(s)",
+      "preset_today": "Aujourd’hui",
+      "preset_7d": "7 derniers jours",
+      "preset_30d": "30 derniers jours"
     },
     "set": {
       "title": "Paramètres système",

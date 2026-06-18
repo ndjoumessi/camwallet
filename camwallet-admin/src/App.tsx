@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
+import { generatePdfReport } from './lib/pdf'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
@@ -210,45 +211,19 @@ function CopyableRef({ value, truncate }: { value: string; truncate?: number }) 
   )
 }
 
-// Génère un rapport PDF imprimable : ouvre une fenêtre mise en page aux couleurs
-// CamWallet et déclenche l'impression navigateur (l'utilisateur enregistre en PDF).
-// Retourne false si le navigateur a bloqué la fenêtre (popup bloqué).
+// Génère un rapport PDF de marque (jsPDF + AutoTable, cf. lib/pdf.ts) et le
+// télécharge directement. Signature historique conservée (title, columns, rows)
+// pour les appelants existants (Finance, ANIF, détail transaction…). Les pages
+// Transactions / KYC / Audit appellent generatePdfReport() directement pour
+// bénéficier des filtres, statistiques et totaux.
 function exportPdfReport(title: string, columns: string[], rows: (string | number)[][]): boolean {
-  const esc = (s: any) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
-  const dateStr = new Date().toLocaleString('fr-FR')
-  const thead = columns.map((c) => `<th>${esc(c)}</th>`).join('')
-  const tbody = rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')
-  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
-<title>${esc(title)}</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; margin: 28px; color: #161D2F; }
-  .logo { font-size: 24px; font-weight: 900; color: #00C896; }
-  .logo span { color: #161D2F; }
-  .meta { margin: 12px 0 20px; color: #555; font-size: 12px; }
-  h1 { font-size: 16px; margin: 0 0 4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  th { background: #00C896; color: #fff; padding: 7px 9px; text-align: left; }
-  td { padding: 6px 9px; border-bottom: 1px solid #eee; }
-  tr:nth-child(even) td { background: #f7f9fc; }
-  .footer { margin-top: 28px; font-size: 10px; color: #aaa; text-align: center; }
-</style></head>
-<body onload="window.print()">
-  <div class="logo">Cam<span>Wallet</span> · Admin</div>
-  <div class="meta"><h1>${esc(title)}</h1>${rows.length} ligne(s) · Généré le ${esc(dateStr)}</div>
-  <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
-  <div class="footer">CamWallet · Rapport généré automatiquement · Confidentiel</div>
-</body></html>`
-  // Blob URL plutôt que document.write() (évite l'injection et les soucis de perf).
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-  const w = window.open(url, '_blank')
-  if (!w) {
-    URL.revokeObjectURL(url)
-    return false
-  }
-  w.focus()
-  // Libère l'URL après ouverture (laisse le temps au navigateur de charger).
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  return true
+  const slug = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return generatePdfReport({
+    title,
+    columns,
+    rows,
+    filename: `${slug || 'rapport'}-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+  })
 }
 
 // Export CSV généré côté client (séparateur « ; » pour Excel FR, BOM UTF-8).
@@ -1802,6 +1777,7 @@ function KYCPage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<AdminKycEntry | null>(null)
+  const toast = useToast()
 
   const filtered = queue.filter((k) => {
     if (filterStatus !== 'all' && k.kycStatus !== filterStatus) return false
@@ -1827,12 +1803,46 @@ function KYCPage() {
     { label: i18n.t('x.kyc.filter_resubmit'), value: 'RESUBMIT_REQUIRED' },
   ]
 
+  // Export PDF des dossiers KYC affichés (stats : taux d'approbation, temps
+  // moyen de traitement, score IA moyen).
+  const handleExportKycPdf = () => {
+    const withScore = filtered.filter((k) => typeof k.kycDocument?.aiScore === 'number')
+    const avgAi = withScore.length ? Math.round(withScore.reduce((s, k) => s + (k.kycDocument!.aiScore as number), 0) / withScore.length) : null
+    const reviewed = filtered.filter((k) => k.kycDocument?.submittedAt && k.kycDocument?.reviewedAt)
+    const avgHours = reviewed.length ? Math.round(reviewed.reduce((s, k) => s + (new Date(k.kycDocument!.reviewedAt as string).getTime() - new Date(k.kycDocument!.submittedAt).getTime()), 0) / reviewed.length / 3_600_000) : null
+    const ok = generatePdfReport({
+      title: i18n.t('x.kyc.pdf_title'),
+      subtitle: i18n.t('x.kyc.pdf_count', { count: filtered.length }),
+      stats: [
+        { label: i18n.t('x.kyc.pdf_approval_rate'), value: approvalRateLabel },
+        { label: i18n.t('x.kyc.pdf_avg_time'), value: avgHours == null ? '—' : i18n.t('x.kyc.pdf_hours', { h: avgHours }) },
+        { label: i18n.t('x.kyc.pdf_avg_score'), value: avgAi == null ? '—' : `${avgAi} / 100` },
+      ],
+      columns: [i18n.t('x.kyc.pdf_col_user'), i18n.t('x.kyc.pdf_col_status'), i18n.t('x.kyc.pdf_col_score'), i18n.t('x.kyc.pdf_col_submitted'), i18n.t('x.kyc.pdf_col_decided')],
+      rows: filtered.map((k) => [
+        `${k.fullName ?? '—'} (${k.phone})`,
+        i18n.t('kyc_status.' + k.kycStatus),
+        typeof k.kycDocument?.aiScore === 'number' ? `${k.kycDocument.aiScore}/100` : '—',
+        k.kycDocument?.submittedAt ? fmtDate(k.kycDocument.submittedAt) : '—',
+        k.kycDocument?.reviewedAt ? fmtDate(k.kycDocument.reviewedAt) : '—',
+      ]),
+      filename: `kyc-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
+    toast(ok ? i18n.t('common.pdf_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       {/* Header */}
-      <div style={{ marginBottom: 22 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('kyc.title')}</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.kyc.subtitle', { count: counts.pending })}</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('kyc.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.kyc.subtitle', { count: counts.pending })}</p>
+        </div>
+        <button className="cw-btn" onClick={handleExportKycPdf} disabled={!filtered.length}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: filtered.length ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
+          <FileText size={14} /> {i18n.t('common.export_pdf')}
+        </button>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
@@ -2075,12 +2085,29 @@ function TransactionsPage() {
     }
   }
 
-  // Export PDF des transactions actuellement affichées (filtre appliqué).
+  // Libellé lisible de la période sélectionnée (pour le sous-titre du rapport).
+  const periodLabel = period === 'custom'
+    ? `${customFrom || '…'} → ${customTo || '…'}`
+    : period === '7d' ? i18n.t('dashboard.period_7d') : period === '30d' ? i18n.t('dashboard.period_30d') : i18n.t('dashboard.period_90d')
+
+  // Export PDF des transactions actuellement affichées (filtres + totaux).
   const handleExportTxPdf = () => {
-    const ok = exportPdfReport(
-      i18n.t('x.tx.pdf_title'),
-      [i18n.t('x.tx.pdf_ref'), i18n.t('x.tx.pdf_type'), i18n.t('x.tx.pdf_from'), i18n.t('x.tx.pdf_to'), i18n.t('x.tx.pdf_amount'), i18n.t('x.tx.pdf_fees'), i18n.t('x.tx.pdf_status'), i18n.t('x.tx.pdf_date')],
-      txs.map((tx) => [
+    const filters: { label: string; value: string }[] = []
+    if (txFilter !== 'all') filters.push({ label: i18n.t('x.tx.pdf_type'), value: TX_TYPE_LABEL[TX_TYPE_FILTER[txFilter]] ?? txFilter })
+    if (statusFilter) filters.push({ label: i18n.t('x.tx.pdf_status'), value: statusFilter })
+    if (search) filters.push({ label: i18n.t('common.search'), value: search })
+    if (amountMin || amountMax) filters.push({ label: i18n.t('x.tx.pdf_amount'), value: `${amountMin || '0'} – ${amountMax || '∞'} FCFA` })
+
+    const volume = txs.reduce((s, tx) => s + tx.amount, 0)
+    const fees = txs.reduce((s, tx) => s + tx.fee, 0)
+
+    const ok = generatePdfReport({
+      title: i18n.t('x.tx.pdf_title'),
+      subtitle: i18n.t('x.tx.pdf_period', { value: periodLabel }),
+      filters,
+      orientation: 'landscape',
+      columns: [i18n.t('x.tx.pdf_ref'), i18n.t('x.tx.pdf_type'), i18n.t('x.tx.pdf_from'), i18n.t('x.tx.pdf_to'), i18n.t('x.tx.pdf_amount'), i18n.t('x.tx.pdf_fees'), i18n.t('x.tx.pdf_status'), i18n.t('x.tx.pdf_date')],
+      rows: txs.map((tx) => [
         tx.reference,
         TX_TYPE_LABEL[tx.type] ?? tx.type,
         partyLabel(tx.sender, i18n.t('common.operator')),
@@ -2090,7 +2117,13 @@ function TransactionsPage() {
         tx.status,
         fmtDate(tx.createdAt),
       ]),
-    )
+      totals: [
+        { label: i18n.t('x.tx.pdf_total_count'), value: txs.length.toLocaleString('fr-FR') },
+        { label: i18n.t('x.tx.pdf_total_volume'), value: formatFCFA(volume) },
+        { label: i18n.t('x.tx.pdf_total_fees'), value: formatFCFA(fees) },
+      ],
+      filename: `transactions-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
     toast(ok ? i18n.t('common.pdf_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
   }
 
@@ -3338,6 +3371,31 @@ function AuditPage() {
     { label: i18n.t('x.audit.kpi_last'), value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action ? auditActionLabel(stats.lastAction.action) : undefined, icon: Clock, color: C.purple },
   ] : []
 
+  // Filtres appliqués (affichés en haut du rapport PDF).
+  const presetLabel = preset === 'today' ? i18n.t('x.audit.preset_today') : preset === '7d' ? i18n.t('x.audit.preset_7d') : preset === '30d' ? i18n.t('x.audit.preset_30d') : `${range.from} → ${range.to}`
+  const handleExportAuditPdf = () => {
+    const filters: { label: string; value: string }[] = [{ label: i18n.t('x.audit.pdf_period'), value: presetLabel }]
+    if (category) filters.push({ label: i18n.t('x.audit.pdf_category'), value: auditCategory(category).label })
+    if (debActor) filters.push({ label: i18n.t('x.audit.pdf_actor'), value: actorSearch.trim() })
+    if (debResource) filters.push({ label: i18n.t('x.audit.pdf_resource'), value: resource.trim() })
+    generatePdfReport({
+      title: i18n.t('x.audit.pdf_title'),
+      subtitle: i18n.t('x.audit.pdf_count', { count: entries.length }),
+      filters,
+      orientation: 'landscape',
+      columns: [i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_date')],
+      rows: entries.map((e) => [
+        e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'),
+        auditActionLabel(e.action),
+        auditCategory(e.action).label,
+        e.resource ?? '—',
+        e.ipAddress ?? '—',
+        fmtDate(e.createdAt),
+      ]),
+      filename: `audit-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
@@ -3345,12 +3403,18 @@ function AuditPage() {
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('x.audit.title')}</h1>
           <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.audit.subtitle', { count: entries.length })}</p>
         </div>
-        <button className="cw-btn" disabled={!entries.length}
-          onClick={() => downloadCsv('audit-camwallet.csv', [i18n.t('x.audit.csv_date'), i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_role'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_details')],
-            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'), e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
-          <FileText size={14} /> {i18n.t('common.export_csv')}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="cw-btn" disabled={!entries.length}
+            onClick={() => downloadCsv('audit-camwallet.csv', [i18n.t('x.audit.csv_date'), i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_role'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_details')],
+              entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'), e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
+            <FileText size={14} /> {i18n.t('common.export_csv')}
+          </button>
+          <button className="cw-btn" disabled={!entries.length} onClick={handleExportAuditPdf}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.blue}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: entries.length ? 'pointer' : 'not-allowed', background: C.blueLight, color: C.blue }}>
+            <FileText size={14} /> {i18n.t('common.export_pdf')}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}

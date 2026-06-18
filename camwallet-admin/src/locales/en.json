@@ -665,7 +665,18 @@
       "no_queue": "No KYC request",
       "id_front": "ID Front",
       "id_back": "ID Back",
-      "selfie": "Selfie"
+      "selfie": "Selfie",
+      "pdf_title": "CamWallet KYC Report",
+      "pdf_count": "{{count}} case(s)",
+      "pdf_approval_rate": "Approval rate",
+      "pdf_avg_time": "Average processing time",
+      "pdf_hours": "{{h}} h",
+      "pdf_avg_score": "Average AI score",
+      "pdf_col_user": "User",
+      "pdf_col_status": "Status",
+      "pdf_col_score": "AI score",
+      "pdf_col_submitted": "Submitted",
+      "pdf_col_decided": "Decided"
     },
     "kycd": {
       "comment_required": "A comment is required to reject or request a new document",
@@ -729,7 +740,11 @@
       "col_date": "Date",
       "select_aria": "Select",
       "resolved_aria": "Resolved",
-      "no_tx": "No transactions"
+      "no_tx": "No transactions",
+      "pdf_period": "Period: {{value}}",
+      "pdf_total_count": "Number of transactions",
+      "pdf_total_volume": "Total volume",
+      "pdf_total_fees": "Fees collected"
     },
     "txd": {
       "title": "Transaction detail",
@@ -961,7 +976,16 @@
       "col_resource": "Resource",
       "col_ip": "IP / Agent",
       "col_date": "Date",
-      "no_entries": "No audit entry"
+      "no_entries": "No audit entry",
+      "pdf_period": "Period",
+      "pdf_category": "Category",
+      "pdf_actor": "Actor",
+      "pdf_resource": "Resource",
+      "pdf_title": "CamWallet Audit Log",
+      "pdf_count": "{{count}} entry(ies)",
+      "preset_today": "Today",
+      "preset_7d": "Last 7 days",
+      "preset_30d": "Last 30 days"
     },
     "set": {
       "title": "System settings",
