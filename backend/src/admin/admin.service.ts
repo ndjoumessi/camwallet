@@ -540,6 +540,58 @@ export class AdminService {
     return user;
   }
 
+  // Relance manuelle de la pré-validation IA (Claude Vision) sur un dossier KYC.
+  // Utile pour les dossiers soumis avant l'activation de l'IA (champs aiScore
+  // nuls) : un agent peut déclencher l'analyse à la demande depuis la modale.
+  async analyzeKyc(adminId: string, userId: string) {
+    if (!this.kycAi.isConfigured()) {
+      throw new BadRequestException('Analyse IA non configurée (ANTHROPIC_API_KEY absente).');
+    }
+
+    const doc = await this.prisma.kycDocument.findUnique({
+      where: { userId },
+      select: { idFrontUrl: true, idBackUrl: true, selfieUrl: true },
+    });
+    if (!doc?.idFrontUrl || !doc.idBackUrl || !doc.selfieUrl) {
+      throw new NotFoundException('Documents KYC introuvables ou incomplets.');
+    }
+
+    const [idFront, idBack, selfie] = await Promise.all([
+      this.imageUrlToBase64(doc.idFrontUrl),
+      this.imageUrlToBase64(doc.idBackUrl),
+      this.imageUrlToBase64(doc.selfieUrl),
+    ]);
+
+    const res = await this.kycAi.analyzeSubmission({ idFront, idBack, selfie });
+
+    const updated = await this.prisma.kycDocument.update({
+      where: { userId },
+      data: {
+        aiScore: res.score,
+        aiSuggestion: res.suggestion,
+        aiIssues: res.issues,
+        aiAnalyzedAt: new Date(),
+      },
+      select: { aiScore: true, aiSuggestion: true, aiIssues: true, aiAnalyzedAt: true },
+    });
+
+    await this.writeAudit(adminId, 'KYC_AI_ANALYZE', `User:${userId}`, {
+      score: res.score,
+      suggestion: res.suggestion,
+    });
+
+    return updated;
+  }
+
+  // Convertit une URL d'image (data URI dev ou URL Cloudinary) en base64 brut.
+  private async imageUrlToBase64(url: string): Promise<string> {
+    const dataUri = url.match(/^data:image\/[a-z]+;base64,(.+)$/i);
+    if (dataUri) return dataUri[1];
+    const resp = await fetch(url);
+    if (!resp.ok) throw new BadRequestException(`Image inaccessible (${resp.status})`);
+    return Buffer.from(await resp.arrayBuffer()).toString('base64');
+  }
+
   // ─── Alertes (dérivées des données réelles) ───────────────────────────────
   async getAlerts() {
     const d7 = new Date(Date.now() - 7 * 24 * 3600 * 1000);

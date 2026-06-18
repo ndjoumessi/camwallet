@@ -146,6 +146,14 @@ export class AdminController {
     return this.adminService.reviewKyc(req.user.id, userId, dto);
   }
 
+  @Post('kyc/:userId/analyze')
+  @RequirePermission('kyc:write')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Relancer la pré-validation IA (Claude Vision) du dossier KYC' })
+  analyzeKyc(@Request() req: any, @Param('userId') userId: string) {
+    return this.adminService.analyzeKyc(req.user.id, userId);
+  }
+
   @Get('alerts')
   @RequirePermission('dashboard:read')
   @ApiOperation({ summary: 'Alertes et transactions signalées (données réelles)' })

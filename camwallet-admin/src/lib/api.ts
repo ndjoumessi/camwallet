@@ -174,7 +174,18 @@ export interface AdminKycEntry {
     selfieUrl: string | null
     reviewNote: string | null
     reviewedAt: string | null
+    aiScore: number | null
+    aiSuggestion: 'APPROVE' | 'REJECT' | 'MANUAL_REVIEW' | null
+    aiIssues: string[]
+    aiAnalyzedAt: string | null
   } | null
+}
+
+export interface KycAiResult {
+  aiScore: number | null
+  aiSuggestion: 'APPROVE' | 'REJECT' | 'MANUAL_REVIEW' | null
+  aiIssues: string[]
+  aiAnalyzedAt: string | null
 }
 
 export interface AdminKyc {
@@ -336,6 +347,9 @@ export function getAudit(params: { action?: string; actorId?: string; resource?:
 export interface OperatorRate { name: string; total: number; completed: number; rate: number }
 export interface OperatorRatesResponse { operators: OperatorRate[]; period: string }
 export const getOperatorRates = () => request<OperatorRatesResponse>('/admin/stats/operator-rates')
+
+export const analyzeKyc = (userId: string) =>
+  request<KycAiResult>(`/admin/kyc/${userId}/analyze`, { method: 'POST' })
 
 export function reviewKyc(userId: string, decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED', comment?: string) {
   return request(`/admin/kyc/${userId}`, {

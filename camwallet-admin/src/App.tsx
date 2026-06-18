@@ -21,7 +21,7 @@ import LoginPage from './LoginPage'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
-  getKyc, getAlerts, getAlertsTimeline, getAudit, getAuditStats, reviewKyc, setUserStatus,
+  getKyc, getAlerts, getAlertsTimeline, getAudit, getAuditStats, reviewKyc, analyzeKyc, setUserStatus,
   getUserDetail, resetUserPin,
   getAnifAlerts, openAnifCase, closeAnifCase, assignAnifCase, getAnifStats,
   getOperations, retryOperation, WebhookEvent, AdminOperation,
@@ -1572,10 +1572,14 @@ function KYCLightbox({ url, alt, onClose }: { url: string; alt: string; onClose:
 }
 
 // ── Modal détail KYC ────────────────────────────────────────
-function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; onClose: () => void; onDecision: () => void }) {
+function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: AdminKycEntry; onClose: () => void; onDecision: () => void; onRefresh: () => void }) {
   const [comment, setComment] = useState('')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [acting, setActing] = useState<string | null>(null)
+  // Résultat IA local : initialisé depuis le document, mis à jour après une
+  // relance manuelle pour refléter le verdict sans recharger toute la file.
+  const [aiOverride, setAiOverride] = useState<{ aiScore: number | null; aiSuggestion: string | null; aiIssues: string[]; aiAnalyzedAt: string | null } | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
   const toast = useToast()
 
   const decide = async (decision: 'APPROVED' | 'REJECTED' | 'RESUBMIT_REQUIRED', overrideComment?: string) => {
@@ -1675,34 +1679,73 @@ function KYCDetailModal({ entry, onClose, onDecision }: { entry: AdminKycEntry; 
         </div>
 
         {/* Pré-validation IA (Claude Vision) */}
-        {doc?.aiAnalyzedAt && (() => {
-          const sug = doc.aiSuggestion as 'APPROVE' | 'REJECT' | 'MANUAL_REVIEW' | null
-          const aiScore = typeof doc.aiScore === 'number' ? doc.aiScore : null
+        {doc && (() => {
+          // Valeurs effectives : override local (après relance) sinon document.
+          const ai = aiOverride ?? {
+            aiScore: typeof doc.aiScore === 'number' ? doc.aiScore : null,
+            aiSuggestion: doc.aiSuggestion ?? null,
+            aiIssues: Array.isArray(doc.aiIssues) ? doc.aiIssues : [],
+            aiAnalyzedAt: doc.aiAnalyzedAt ?? null,
+          }
+
+          const runAnalysis = async () => {
+            setAnalyzing(true)
+            try {
+              const res = await analyzeKyc(entry.id)
+              setAiOverride(res)
+              toast(`Analyse IA : ${res.aiSuggestion ?? '—'} · ${res.aiScore ?? '—'}/100`, 'success')
+              onRefresh()
+            } catch (e) {
+              toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error')
+            } finally { setAnalyzing(false) }
+          }
+
+          // Dossier non encore analysé (ex. documents de démo) → relance manuelle.
+          if (!ai.aiAnalyzedAt) {
+            return (
+              <div style={{ background: C.surface, borderRadius: 12, padding: '14px 16px', marginBottom: 18, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, color: C.textMuted }}>🤖 Aucune pré-validation IA pour ce dossier.</span>
+                <button onClick={runAnalysis} disabled={analyzing || !!acting}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: `1px solid ${C.blue}40`, background: C.blue + '15', color: C.blue, fontWeight: 700, fontSize: 12.5, cursor: analyzing ? 'wait' : 'pointer', opacity: analyzing ? .6 : 1 }}>
+                  <RotateCcw size={13} /> {analyzing ? 'Analyse en cours…' : 'Lancer l\'analyse IA'}
+                </button>
+              </div>
+            )
+          }
+
+          const sug = ai.aiSuggestion as 'APPROVE' | 'REJECT' | 'MANUAL_REVIEW' | null
           const meta = sug === 'APPROVE' ? { label: 'IA : Approuver ✅', color: C.green }
             : sug === 'REJECT' ? { label: 'IA : Rejeter ❌', color: C.red }
             : { label: 'IA : Révision 🔍', color: C.yellow }
-          const issues: string[] = Array.isArray(doc.aiIssues) ? doc.aiIssues : []
+          const issues: string[] = ai.aiIssues
+
           return (
             <div style={{ background: meta.color + '0F', border: `1px solid ${meta.color}30`, borderRadius: 12, padding: '14px 16px', marginBottom: 18 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: issues.length ? 10 : 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>{meta.label}</span>
-                {aiScore !== null && <span style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>Score IA : {aiScore}/100</span>}
+                {ai.aiScore !== null && <span style={{ fontSize: 13, fontWeight: 800, color: meta.color }}>Score IA : {ai.aiScore}/100</span>}
               </div>
               {issues.length > 0 && (
                 <ul style={{ margin: 0, paddingLeft: 18, color: C.textSoft, fontSize: 12, lineHeight: 1.6 }}>
                   {issues.map((it, i) => <li key={i}>{it}</li>)}
                 </ul>
               )}
-              {(sug === 'APPROVE' || sug === 'REJECT') && (
-                <button
-                  onClick={() => sug === 'APPROVE'
-                    ? decide('APPROVED')
-                    : decide('REJECTED', issues.length ? issues.join(' ; ') : 'Rejet sur recommandation IA')}
-                  disabled={!!acting}
-                  style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: 'none', background: meta.color, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
-                  <Check size={13} /> Appliquer la suggestion IA
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                {(sug === 'APPROVE' || sug === 'REJECT') && (
+                  <button
+                    onClick={() => sug === 'APPROVE'
+                      ? decide('APPROVED')
+                      : decide('REJECTED', issues.length ? issues.join(' ; ') : 'Rejet sur recommandation IA')}
+                    disabled={!!acting}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: 'none', background: meta.color, color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: acting ? 'wait' : 'pointer', opacity: acting ? .6 : 1 }}>
+                    <Check size={13} /> Appliquer la suggestion IA
+                  </button>
+                )}
+                <button onClick={runAnalysis} disabled={analyzing || !!acting}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: `1px solid ${C.border}`, background: 'transparent', color: C.textSoft, fontWeight: 700, fontSize: 12.5, cursor: analyzing ? 'wait' : 'pointer', opacity: analyzing ? .6 : 1 }}>
+                  <RotateCcw size={13} /> {analyzing ? 'Analyse…' : 'Relancer'}
                 </button>
-              )}
+              </div>
             </div>
           )
         })()}
@@ -1906,7 +1949,7 @@ function KYCPage() {
       </div>
 
       {selected && (
-        <KYCDetailModal entry={selected} onClose={() => setSelected(null)} onDecision={() => { setSelected(null); refetch() }} />
+        <KYCDetailModal entry={selected} onClose={() => setSelected(null)} onDecision={() => { setSelected(null); refetch() }} onRefresh={refetch} />
       )}
     </div>
   )
