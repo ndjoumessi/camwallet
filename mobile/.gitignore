@@ -4,3 +4,10 @@
 
 expo-env.d.ts
 # @end expo-cli
+
+# expo-updates code-signing — la clé privée ne doit JAMAIS être committée.
+# Seul le certificat (certs/certificate.pem) est versionné (cf. plus bas).
+# La clé privée vit dans un secret CI/EAS (EXPO_UPDATES_PRIVATE_KEY).
+keys/
+*.pem
+!certs/certificate.pem

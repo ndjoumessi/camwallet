@@ -23,6 +23,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "android": {
         "buildType": "apk",
         "env": {
@@ -40,6 +41,7 @@
       }
     },
     "production": {
+      "channel": "production",
       "android": {
         "buildType": "app-bundle",
         "env": {
