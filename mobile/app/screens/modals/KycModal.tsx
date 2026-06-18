@@ -8,6 +8,7 @@ import {
   Image,
   Alert,
   Animated,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -181,6 +182,14 @@ export default function KycModal({ visible, onClose, onSubmitted }: KycModalProp
             />
           </View>
         </View>
+
+        {/* Overlay de progression pendant l'upload Cloudinary (bloque les interactions) */}
+        {submitting && (
+          <View style={styles.overlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.overlayText}>{t('kyc.uploading')}</Text>
+          </View>
+        )}
         </Animated.View>
       </SafeAreaView>
     </Modal>
@@ -217,4 +226,10 @@ const styles = StyleSheet.create({
   thumbImg: { width: '100%', height: '100%' },
   thumbIdx: { color: Colors.textMuted, fontSize: Typography.lg, fontWeight: Typography.bold },
   thumbLabel: { color: Colors.textMuted, fontSize: Typography.xs },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    alignItems: 'center', justifyContent: 'center', gap: Spacing.md,
+  } as any,
+  overlayText: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.semibold },
 });

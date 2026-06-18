@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OtpService } from '../auth/otp.service';
 import { SmsService } from '../sms/sms.service';
 import { KycAiService } from '../kyc/kyc-ai.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -28,6 +29,7 @@ export class AdminService {
     private otpService: OtpService,
     private sms: SmsService,
     private kycAi: KycAiService,
+    private cloudinary: CloudinaryService,
     private config: ConfigService,
   ) {}
 
@@ -1486,14 +1488,16 @@ export class AdminService {
 
     // Santé opérateur sur 7 jours (le sandbox a peu de trafic sur 24h → souvent « Non testé »).
     // Pings AfricasTalking + Anthropic en parallèle (no-op si clé non configurée).
-    const [om, mtn, smsPing, aiPing] = await Promise.all([
+    const [om, mtn, smsPing, aiPing, cloudPing] = await Promise.all([
       this.operatorHealth('ORANGE_MONEY', d7d, gateway.reachable),
       this.operatorHealth('MTN_MOMO', d7d, gateway.reachable),
       this.sms.ping(),
       this.kycAi.ping(),
+      this.cloudinary.ping(),
     ]);
     const smsConfigured = this.sms.isConfigured();
     const aiConfigured = this.kycAi.isConfigured();
+    const cloudConfigured = this.cloudinary.isConfigured;
 
     return {
       integrations: [
@@ -1561,6 +1565,22 @@ export class AdminService {
               ? 'Anthropic opérationnel (pré-validation KYC)'
               : 'Anthropic injoignable / clé invalide'
             : 'Pré-validation IA désactivée (clé non configurée)',
+        },
+        {
+          name: 'Cloudinary KYC',
+          key: 'cloudinary_kyc',
+          // Configuré (credentials présents) → « UP » si le ping répond, sinon
+          // « DOWN ». Non configuré → « SIMULATED » (stockage local base64).
+          status: cloudConfigured ? (cloudPing.reachable ? 'UP' : 'DOWN') : 'SIMULATED',
+          latency: cloudPing.latency,
+          txCount7d: null,
+          lastSuccess: null,
+          uptime: null,
+          note: cloudConfigured
+            ? cloudPing.reachable
+              ? 'Cloudinary opérationnel (stockage documents KYC)'
+              : 'Cloudinary injoignable / credentials invalides'
+            : 'Stockage local base64 (Cloudinary non configuré)',
         },
       ],
       stalePendingTx: stalePending,

@@ -653,6 +653,7 @@
     "btnRetakeA11y": "Reprendre cette photo",
     "btnCapture": "Capturer",
     "btnSubmitting": "Envoi…",
+    "uploading": "Envoi en cours…",
     "btnSubmit": "Soumettre le KYC",
     "alertSuccessTitle": "KYC envoyé",
     "alertSuccessMsg": "Vos documents ont été soumis et sont en cours de vérification.",

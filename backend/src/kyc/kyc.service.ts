@@ -32,11 +32,13 @@ export class KycService {
       throw new BadRequestException('Trois images requises : CNI recto, CNI verso et selfie');
     }
 
-    // Le type est validé par signature binaire dans CloudinaryService.
+    // Upload des 3 images en parallèle, dans des dossiers Cloudinary dédiés. Le type
+    // est validé par signature binaire et, en cas d'échec Cloudinary, CloudinaryService
+    // bascule automatiquement sur un data URI base64 (repli, avec log d'erreur).
     const [idFrontUrl, idBackUrl, selfieUrl] = await Promise.all([
-      this.cloudinary.uploadImage(files.idFront, 'camwallet/kyc'),
-      this.cloudinary.uploadImage(files.idBack, 'camwallet/kyc'),
-      this.cloudinary.uploadImage(files.selfie, 'camwallet/kyc'),
+      this.cloudinary.uploadImage(files.idFront, 'camwallet/kyc/cni_recto'),
+      this.cloudinary.uploadImage(files.idBack, 'camwallet/kyc/cni_verso'),
+      this.cloudinary.uploadImage(files.selfie, 'camwallet/kyc/selfie'),
     ]);
 
     await this.prisma.$transaction([

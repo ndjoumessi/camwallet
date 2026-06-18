@@ -38,27 +38,68 @@ export class CloudinaryService {
     return null;
   }
 
-  // Upload un buffer image vers Cloudinary et renvoie l'URL sécurisée.
-  // En dev (Cloudinary non configuré), renvoie un data URI base64 afin que la
-  // fonctionnalité reste pleinement utilisable. Le type est validé par
-  // signature binaire (jamais le mimetype client) pour éviter une injection.
-  async uploadImage(buffer: Buffer, folder = 'camwallet/avatars'): Promise<string> {
+  // Upload un buffer image vers Cloudinary et renvoie l'URL sécurisée HTTPS.
+  // En dev (Cloudinary non configuré) OU en cas d'échec Cloudinary (réseau/API),
+  // renvoie un data URI base64 (repli) afin que la fonctionnalité reste utilisable
+  // et que le flux KYC ne soit jamais bloqué. Le type est validé par signature
+  // binaire (jamais le mimetype client) pour éviter une injection.
+  // `quality: auto` + `fetch_format: auto` → optimisation automatique à l'upload.
+  async uploadImage(buffer: Buffer, folder = 'camwallet/avatars', publicId?: string): Promise<string> {
     const type = this.detectImageType(buffer);
     if (!type) {
       throw new BadRequestException('Format non supporté (PNG, JPEG ou WEBP attendu)');
     }
+    const dataUri = () => `data:${type};base64,${buffer.toString('base64')}`;
     if (!this.configured) {
-      return `data:${type};base64,${buffer.toString('base64')}`;
+      return dataUri();
     }
-    return new Promise<string>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        { folder, resource_type: 'image' },
-        (err, result) => {
-          if (err || !result) return reject(err ?? new Error('Upload Cloudinary échoué'));
-          resolve(result.secure_url);
-        },
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder,
+            ...(publicId ? { public_id: publicId } : {}),
+            resource_type: 'image',
+            transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+          },
+          (err, result) => {
+            if (err || !result) return reject(err ?? new Error('Upload Cloudinary échoué'));
+            resolve(result.secure_url);
+          },
+        );
+        stream.end(buffer);
+      });
+    } catch (err) {
+      // Échec Cloudinary → repli base64 + log d'erreur (ne bloque pas la soumission).
+      this.logger.error(
+        `Upload Cloudinary échoué (repli base64) : ${err instanceof Error ? err.message : String(err)}`,
       );
-      stream.end(buffer);
-    });
+      return dataUri();
+    }
+  }
+
+  // Supprime une image par son public_id (no-op si Cloudinary non configuré).
+  async deleteImage(publicId: string): Promise<void> {
+    if (!this.configured) return;
+    try {
+      await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+    } catch (err) {
+      this.logger.error(
+        `Suppression Cloudinary échouée (${publicId}) : ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  // Ping de santé pour GET /admin/health/integrations.
+  async ping(): Promise<{ reachable: boolean; latency: number | null }> {
+    if (!this.configured) return { reachable: false, latency: null };
+    const start = Date.now();
+    try {
+      await cloudinary.api.ping();
+      return { reachable: true, latency: Date.now() - start };
+    } catch (err) {
+      this.logger.error('Ping Cloudinary échoué', err instanceof Error ? err.stack : String(err));
+      return { reachable: false, latency: null };
+    }
   }
 }
