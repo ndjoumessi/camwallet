@@ -43,9 +43,20 @@ const MAP_ZOOM = 6 // zoom de secours avant que fitBounds (dans onLoad) ne s'app
 // Restriction (strictBounds) : verrouille la vue sur le Cameroun + frange minime, pour
 // ne pas voir les pays voisins (Ghana, Burkina, Bénin, Togo…).
 const CAMEROON_BOUNDS = { north: 14.0, south: 1.0, west: 7.5, east: 17.0 }
-// Bornes géographiques SERRÉES du Cameroun pour fitBounds : on cadre exactement le
-// pays (et non l'enveloppe des polygones, qui débordait sur l'Afrique voisine).
-const CAMEROON_FIT_BOUNDS = { north: 13.1, south: 1.65, west: 8.5, east: 16.2 }
+// Bornes géographiques SERRÉES du Cameroun pour fitBounds : SW côte atlantique
+// (1.65, 8.4) → NE lac Tchad (13.1, 16.2). On cadre exactement le pays.
+const CAMEROON_FIT_BOUNDS = { north: 13.1, south: 1.65, west: 8.4, east: 16.2 }
+
+// Décalages manuels (degrés) de certains labels de régions du sud (petites, labels qui
+// se chevauchent). Les régions absentes utilisent le centroïde exact.
+const LABEL_OFFSETS: Record<string, { lat: number; lng: number }> = {
+  'Littoral': { lat: -0.3, lng: -0.5 },
+  'Ouest': { lat: 0.2, lng: -0.8 },
+  'Sud-Ouest': { lat: -0.3, lng: -0.8 },
+  'Nord-Ouest': { lat: 0.3, lng: -0.5 },
+  'Centre': { lat: 0.0, lng: 0.5 },
+  'Sud': { lat: -0.5, lng: 0.3 },
+}
 
 // GeoJSON distant des 10 régions (geoBoundaries CMR/ADM1, simplifié) — URL épinglée
 // sur un commit (stable) et servie avec CORS (access-control-allow-origin: *). Les
@@ -243,7 +254,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             setMap(m)
             // Cadrage sur les bornes serrées du Cameroun (padding 40px)…
             const bounds = new g.maps.LatLngBounds({ lat: CAMEROON_FIT_BOUNDS.south, lng: CAMEROON_FIT_BOUNDS.west }, { lat: CAMEROON_FIT_BOUNDS.north, lng: CAMEROON_FIT_BOUNDS.east })
-            m.fitBounds(bounds, 40)
+            m.fitBounds(bounds, { top: 20, right: 20, bottom: 20, left: 20 })
             // …puis on plafonne le zoom à 7 si fitBounds a trop zoomé (petits écrans).
             g.maps.event.addListenerOnce(m, 'bounds_changed', () => {
               const z = m.getZoom()
@@ -258,7 +269,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             backgroundColor: BG,
             gestureHandling: 'cooperative',
             scrollwheel: false,
-            minZoom: 5,
+            minZoom: 5.8,
             maxZoom: 10,
             // strictBounds: false → indispensable, sinon la restriction bloque le dézoom
             // de fitBounds avant que le pays entier ne tienne dans la vue.
@@ -270,10 +281,10 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           <OverlayViewF position={{ lat: 7.0, lng: 12.5 }} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
             <div style={{ fontSize: 16, fontWeight: 700, color: '#00C896', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0.28, textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>Cameroun</div>
           </OverlayViewF>
-          {/* Frontières des 10 régions (Google ne dessine pas les provinces du Cameroun) :
-              superposées en Polygon émeraude INTERACTIF. Fill transparent ; subtil si data ;
-              hover = fill 0.15 + bordure 2px (les cercles au-dessus sont non-cliquables,
-              donc le survol atteint bien le polygone). Clic → InfoWindow au centroïde. */}
+          {/* Frontières RÉGIONALES (internes) : Polygon émeraude FIN (weight 1.0, opacité 0.5)
+              pour se distinguer du contour NATIONAL — ce dernier est tracé par Google
+              (administrative.country geometry.stroke : weight 2.5, opacité 1.0). Fill subtil
+              si data (0.08), transparent sinon ; hover = fill 0.15 + bordure 2px. */}
           {polys.map((rp) => {
             const d = datumFor(byName, rp.name)
             const hasData = d.transactions > 0
@@ -282,15 +293,20 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
               <PolygonF key={`poly-${rp.name}`} paths={rp.paths}
                 onMouseOver={() => setHovered(rp.name)} onMouseOut={() => setHovered((h) => (h === rp.name ? null : h))}
                 onClick={() => setSelected(rp.name)}
-                options={{ strokeColor: '#00C896', strokeOpacity: 0.8, strokeWeight: isHover ? 2 : hasData ? 1.5 : 1.2, fillColor: '#00C896', fillOpacity: isHover ? 0.15 : hasData ? 0.06 : 0, clickable: true, zIndex: isHover ? 3 : 1 }} />
+                options={{ strokeColor: '#00C896', strokeOpacity: isHover ? 0.9 : 0.5, strokeWeight: isHover ? 2 : 1.0, fillColor: '#00C896', fillOpacity: isHover ? 0.15 : hasData ? 0.08 : 0, clickable: true, zIndex: isHover ? 3 : 1 }} />
             )
           })}
-          {/* Label du nom de région au centroïde (discret, non interactif) */}
-          {polys.map((rp) => (
-            <OverlayViewF key={`lbl-${rp.name}`} position={rp.center} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
+          {/* Label du nom de région au centroïde (discret, non interactif). Certaines
+              régions du sud reçoivent un décalage manuel pour éviter les chevauchements. */}
+          {polys.map((rp) => {
+            const off = LABEL_OFFSETS[rp.name]
+            const pos = off ? { lat: rp.center.lat + off.lat, lng: rp.center.lng + off.lng } : rp.center
+            return (
+            <OverlayViewF key={`lbl-${rp.name}`} position={pos} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{rp.name}</div>
             </OverlayViewF>
-          ))}
+            )
+          })}
           {/* Cercles colorés par région (rayon + teinte selon le volume) — NON cliquables :
               purement indicatifs, ils laissent passer le survol vers les polygones dessous. */}
           {Object.entries(REGION_COORDS).map(([name, c]) => {
