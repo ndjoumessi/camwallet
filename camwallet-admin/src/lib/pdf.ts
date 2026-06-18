@@ -4,6 +4,7 @@
 // Audit) : ligne de filtres appliqués, bloc statistiques optionnel, totaux en pied.
 import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import i18n from '../i18n'
 
 // Palette (RGB) alignée sur les design tokens de l'admin.
 const DARK: [number, number, number] = [10, 15, 30]      // #0A0F1E
@@ -55,13 +56,13 @@ export function generatePdfReport(opts: PdfReportOptions): boolean {
     // Date de génération (à droite)
     doc.setFontSize(8)
     doc.setTextColor(148, 163, 184)
-    doc.text(`Généré le ${dateStr}`, pageW - M, 11.5, { align: 'right' })
+    doc.text(i18n.t('pdf.generated_on', { date: dateStr, defaultValue: `Généré le ${dateStr}` }), pageW - M, 11.5, { align: 'right' })
 
     // Pied de page : pagination + mention confidentielle
     const page = doc.getNumberOfPages()
     doc.setFontSize(8)
     doc.setTextColor(...MUTED)
-    doc.text('CamWallet · Rapport généré automatiquement · Confidentiel', M, pageH - 7)
+    doc.text(i18n.t('pdf.footer_auto', { defaultValue: 'CamWallet · Rapport généré automatiquement · Confidentiel' }), M, pageH - 7)
     doc.text(`Page ${page}`, pageW - M, pageH - 7, { align: 'right' })
   }
 
@@ -86,7 +87,7 @@ export function generatePdfReport(opts: PdfReportOptions): boolean {
     doc.setFontSize(9)
     doc.setTextColor(...MUTED)
     const parts = opts.filters.map((f) => `${f.label} : ${f.value}`).join('   |   ')
-    const wrapped = doc.splitTextToSize(`Filtres appliqués — ${parts}`, pageW - M * 2)
+    const wrapped = doc.splitTextToSize(i18n.t('pdf.filters_applied', { filters: parts, defaultValue: `Filtres appliqués — ${parts}` }), pageW - M * 2)
     doc.text(wrapped, M, y)
     y += wrapped.length * 4.5 + 1
   }
@@ -136,7 +137,7 @@ export function generatePdfReport(opts: PdfReportOptions): boolean {
     doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(...GREEN)
-    doc.text('Totaux', M + 4, ty + 6)
+    doc.text(i18n.t('pdf.totals', { defaultValue: 'Totaux' }), M + 4, ty + 6)
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(9.5)
@@ -177,7 +178,7 @@ export function generateMultiSectionReport(opts: MultiSectionPdfOptions): boolea
   const pageH = doc.internal.pageSize.getHeight()
   const M = 12
   const dateStr = new Date().toLocaleString('fr-FR')
-  const footer = opts.footer ?? 'Confidentiel — CamWallet © 2026'
+  const footer = opts.footer ?? i18n.t('pdf.confidential', { defaultValue: 'Confidentiel — CamWallet © 2026' })
 
   const drawChrome = () => {
     doc.setFillColor(...DARK)
@@ -192,7 +193,7 @@ export function generateMultiSectionReport(opts: MultiSectionPdfOptions): boolea
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(148, 163, 184)
-    doc.text(`Généré le ${dateStr}`, pageW - M, 11.5, { align: 'right' })
+    doc.text(i18n.t('pdf.generated_on', { date: dateStr, defaultValue: `Généré le ${dateStr}` }), pageW - M, 11.5, { align: 'right' })
     // Pied de page : mention confidentielle + pagination
     const page = doc.getNumberOfPages()
     doc.setFontSize(8)
@@ -254,7 +255,7 @@ export function generateMultiSectionReport(opts: MultiSectionPdfOptions): boolea
       doc.setFont('helvetica', 'italic')
       doc.setFontSize(9)
       doc.setTextColor(...MUTED)
-      doc.text(section.empty ?? 'Aucune donnée.', M, sy + 5)
+      doc.text(section.empty ?? i18n.t('pdf.no_data', { defaultValue: 'Aucune donnée.' }), M, sy + 5)
       // Faux tableau vide pour mettre à jour lastAutoTable.finalY
       autoTable(doc, { startY: sy + 8, body: [], margin: { top: 22, left: M, right: M, bottom: 14 }, didDrawPage: drawChrome })
       return

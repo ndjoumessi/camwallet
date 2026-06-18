@@ -34,7 +34,8 @@
     "in_progress": "In progress…",
     "page": "Page",
     "prev": "Prev.",
-    "next": "Next"
+    "next": "Next",
+    "enlarge": "Enlarge"
   },
   "status": {
     "success": "Success",
@@ -1064,7 +1065,8 @@
       "email_admin": "Failed admin logins",
       "email_admin_desc": "Alert above 5 failed admin logins within 15 min.",
       "email_history": "Last alerts sent",
-      "email_history_empty": "No alert sent yet."
+      "email_history_empty": "No alert sent yet.",
+      "alert_email_ph": "alerts@example.cm"
     },
     "team": {
       "title": "Admin Team",
@@ -1282,6 +1284,18 @@
     "geo_stat_regions": "Active regions",
     "geo_stat_top": "Top region",
     "geo_stat_share": "{{pct}}% of volume",
-    "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod)."
+    "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod).",
+    "map_zoom_in": "Zoom in",
+    "map_zoom_out": "Zoom out",
+    "map_country": "Cameroon",
+    "map_close": "Close"
+  },
+  "pdf": {
+    "generated_on": "Generated on {{date}}",
+    "footer_auto": "CamWallet · Automatically generated report · Confidential",
+    "filters_applied": "Filters applied — {{filters}}",
+    "totals": "Totals",
+    "confidential": "Confidential — CamWallet © 2026",
+    "no_data": "No data."
   }
 }
