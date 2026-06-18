@@ -64,15 +64,18 @@ const MAP_STYLES = [
   { elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#8b949e' }] },
+  // Frontières émeraude conservées, mais TOUS les labels administratifs masqués :
+  // évite les noms de pays voisins en noir et garde le focus sur le Cameroun
+  // (les régions sont nommées via les marqueurs/InfoWindow).
+  { featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 1.5 }] },
   { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#00C896' }, { weight: 0.8 }, { visibility: 'on' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#00C896' }, { visibility: 'simplified' }] },
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
+  { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
   { featureType: 'road', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
 ]
 
 function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRegionDatum[] }) {
@@ -105,7 +108,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
         {/* Atténue le branding Google (logo + mentions) pour un rendu épuré */}
         <style>{`.cw-gmap-wrap a[href^="https://maps.google.com"],.cw-gmap-wrap .gm-style-cc{opacity:.35;filter:grayscale(1)}`}</style>
         <GoogleMap
-          mapContainerStyle={{ width: '100%', height: '520px', background: BG }}
+          mapContainerStyle={{ width: '100%', height: 'clamp(340px, 56vh, 520px)', background: BG }}
           center={CAMEROON_CENTER}
           zoom={MAP_ZOOM}
           options={{
