@@ -38,11 +38,11 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // ════════════════════════════════════════════════════════════════════════════
 // 1) Google Maps
 // ════════════════════════════════════════════════════════════════════════════
-const CAMEROON_CENTER = { lat: 4.5, lng: 12.3 }
-const MAP_ZOOM = 6
+const CAMEROON_CENTER = { lat: 5.5, lng: 12.3 }
+const MAP_ZOOM = 6.2
 // Bornes restrictives : Cameroun + frange limitrophe proche (empêche de dériver
 // vers le Nigeria, le Tchad, etc.). strictBounds verrouille la vue.
-const CAMEROON_BOUNDS = { north: 13.5, south: 1.0, west: 7.6, east: 16.6 }
+const CAMEROON_BOUNDS = { north: 14.0, south: 1.5, west: 7.5, east: 17.0 }
 
 // Coordonnées (ville principale) de chaque région.
 const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
@@ -64,20 +64,23 @@ const MAP_STYLES = [
   { elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }, { weight: 3 }] },
   { elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
-  // Frontières bien visibles : pays = émeraude épaisse ; régions (provinces) plus fines.
-  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 2 }] },
-  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#1f9e80' }, { weight: 1 }] },
-  // Noms de pays LISIBLES : remplissage clair + halo sombre (jamais en noir).
+  // Frontières bien visibles : pays = émeraude épaisse ; régions (provinces) émeraude plus fines.
+  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 2.5 }] },
+  { featureType: 'administrative.country', elementType: 'geometry.fill', stylers: [{ visibility: 'on' }, { color: '#111827' }] },
+  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 1.5 }] },
+  // Noms de pays LISIBLES : voisins en gris discret + halo sombre (jamais en noir).
   { featureType: 'administrative.country', elementType: 'labels.text', stylers: [{ visibility: 'on' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#dbe4f0' }] },
+  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#6b7280' }] },
   { featureType: 'administrative.country', elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }, { weight: 3 }] },
   // Labels secondaires masqués (évite le bruit et les petits libellés sombres).
   { featureType: 'administrative.province', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+  // Eau bleu très sombre + relief naturel légèrement différencié du fond.
   { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
   { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
+  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#0f1923' }] },
   { featureType: 'road', stylers: [{ visibility: 'off' }] },
   { featureType: 'poi', stylers: [{ visibility: 'off' }] },
   { featureType: 'transit', stylers: [{ visibility: 'off' }] },
@@ -85,7 +88,8 @@ const MAP_STYLES = [
 
 function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRegionDatum[] }) {
   // Plus de bibliothèque « visualization » : Circle/Marker sont dans le cœur.
-  const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey })
+  // language: 'fr' + region: 'CM' → libellés traduits ("Cameroon" → "Cameroun", "Nigeria" → "Nigéria").
+  const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey, language: 'fr', region: 'CM' })
   const [selected, setSelected] = useState<string | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
   const byName = new Map(regions.map((r) => [r.name, r]))
