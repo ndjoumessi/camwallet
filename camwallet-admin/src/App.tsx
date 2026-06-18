@@ -3775,6 +3775,29 @@ function SettingsPage() {
     }
   }
 
+  // Enregistrement dédié des paramètres de fidélité (validation d'ordre + confirmation).
+  const saveLoyalty = async () => {
+    const silver = num('loyalty_silver_threshold', 100)
+    const gold = num('loyalty_gold_threshold', 500)
+    const platinum = num('loyalty_platinum_threshold', 1000)
+    const pts = ['loyalty_points_per_1000_fcfa', 'loyalty_points_recharge', 'loyalty_points_kyc'].map((k) => num(k))
+    if (!(silver > 0 && gold > silver && platinum > gold) || ![silver, gold, platinum].every(Number.isInteger)) {
+      showToast(i18n.t('x.set.loyalty_invalid', { defaultValue: 'Seuils invalides : Argent < Or < Platine (entiers positifs).' }), 'error'); return
+    }
+    if (!pts.every((n) => Number.isInteger(n) && n >= 0)) {
+      showToast(i18n.t('x.set.loyalty_points_invalid', { defaultValue: 'Les règles de points doivent être des entiers ≥ 0.' }), 'error'); return
+    }
+    if (!window.confirm(i18n.t('x.set.loyalty_confirm', { defaultValue: 'Enregistrer les paramètres du programme de fidélité ?' }))) return
+    try {
+      const keys = ['loyalty_silver_threshold', 'loyalty_gold_threshold', 'loyalty_platinum_threshold', 'loyalty_points_per_1000_fcfa', 'loyalty_points_recharge', 'loyalty_points_kyc']
+      await updateSettings(Object.fromEntries(keys.map((k) => [k, String(form[k] ?? '')])))
+      showToast(i18n.t('x.set.saved'), 'success')
+      refetchHistory()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : i18n.t('x.set.save_error'), 'error')
+    }
+  }
+
   const inputStyle: CSSProperties = { background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 14, width: '100%' }
   const card: CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '20px 24px', marginBottom: 20 }
   const h2: CSSProperties = { color: C.text, fontSize: 15, fontWeight: 700, marginBottom: 18 }
@@ -3819,6 +3842,55 @@ function SettingsPage() {
             {SliderRow({ k: "daily_limit_fcfa", label: i18n.t('x.set.daily_limit'), min: 0, max: 2_000_000, step: 50_000, fmt: fmt })}
             {SliderRow({ k: "monthly_limit_fcfa", label: i18n.t('x.set.monthly_limit'), min: 0, max: 20_000_000, step: 500_000, fmt: fmt })}
             {SliderRow({ k: 'p2p_fee_rate', label: i18n.t('x.set.p2p_fee'), min: 0, max: 5, step: 0.1, fmt: (n: number) => n + ' %' })}
+          </div>
+
+          {/* Programme de fidélité — seuils de niveaux + règles de gain */}
+          <div style={card}>
+            <h2 style={{ ...h2, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Award size={16} color={C.yellow} /> {i18n.t('x.set.loyalty_title', { defaultValue: 'Programme de fidélité' })}
+            </h2>
+
+            <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 10 }}>
+              {i18n.t('x.set.loyalty_thresholds', { defaultValue: 'Seuils des niveaux (points)' })}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 18 }}>
+              {[
+                { k: '', label: '🥉 ' + i18n.t('x.set.loyalty_bronze', { defaultValue: 'Bronze' }), fixed: true },
+                { k: 'loyalty_silver_threshold', label: '🥈 ' + i18n.t('x.set.loyalty_silver', { defaultValue: 'Argent' }) },
+                { k: 'loyalty_gold_threshold', label: '🥇 ' + i18n.t('x.set.loyalty_gold', { defaultValue: 'Or' }) },
+                { k: 'loyalty_platinum_threshold', label: '💎 ' + i18n.t('x.set.loyalty_platinum', { defaultValue: 'Platine' }) },
+              ].map((lv) => (
+                <div key={lv.label}>
+                  <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{lv.label}</label>
+                  {lv.fixed ? (
+                    <input type="number" value={0} disabled style={{ ...inputStyle, opacity: 0.6, cursor: 'not-allowed' }} />
+                  ) : (
+                    <input type="number" min={1} value={num(lv.k)} disabled={isReadOnly()} onChange={(e) => setVal(lv.k, e.target.value)} style={inputStyle} />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 10 }}>
+              {i18n.t('x.set.loyalty_rules', { defaultValue: 'Règles de gain' })}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
+              {[
+                { k: 'loyalty_points_per_1000_fcfa', label: i18n.t('x.set.loyalty_per_1000', { defaultValue: 'Points / 1000 FCFA envoyés' }) },
+                { k: 'loyalty_points_recharge', label: i18n.t('x.set.loyalty_recharge', { defaultValue: 'Points par recharge' }) },
+                { k: 'loyalty_points_kyc', label: i18n.t('x.set.loyalty_kyc', { defaultValue: 'Points KYC approuvé' }) },
+              ].map((r) => (
+                <div key={r.k}>
+                  <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{r.label}</label>
+                  <input type="number" min={0} value={num(r.k)} disabled={isReadOnly()} onChange={(e) => setVal(r.k, e.target.value)} style={inputStyle} />
+                </div>
+              ))}
+            </div>
+
+            <button onClick={saveLoyalty} disabled={isReadOnly()}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: C.green, color: '#04130E', border: 'none', borderRadius: 10, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: isReadOnly() ? 'not-allowed' : 'pointer', opacity: isReadOnly() ? 0.5 : 1 }}>
+              <CheckCircle2 size={16} /> {i18n.t('x.set.loyalty_save', { defaultValue: 'Enregistrer la fidélité' })}
+            </button>
           </div>
 
           {/* Seuils ANIF — avec aperçu d'impact */}

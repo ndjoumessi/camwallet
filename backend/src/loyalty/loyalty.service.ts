@@ -2,17 +2,35 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Programme de fidélité CamWallet.
-// Règles d'attribution :
-//   • +1 point par tranche de 1000 FCFA envoyée (P2P)
-//   • +5 points par recharge confirmée
-//   • +10 points à l'approbation KYC
-// Niveaux : Bronze (0-99) · Argent (100-499) · Or (500-999) · Platine (1000+).
-export const LOYALTY_LEVELS = [
-  { key: 'BRONZE', label: 'Bronze', emoji: '🥉', min: 0 },
-  { key: 'SILVER', label: 'Argent', emoji: '🥈', min: 100 },
-  { key: 'GOLD', label: 'Or', emoji: '🥇', min: 500 },
-  { key: 'PLATINUM', label: 'Platine', emoji: '💎', min: 1000 },
+// Les seuils de niveaux et les règles de gain sont CONFIGURABLES depuis le dashboard
+// admin (system_settings). Valeurs par défaut ci-dessous si non configurées.
+//   • +N points par tranche de 1000 FCFA envoyée (P2P)     [loyalty_points_per_1000_fcfa]
+//   • +N points par recharge confirmée                      [loyalty_points_recharge]
+//   • +N points à l'approbation KYC                         [loyalty_points_kyc]
+// Niveaux : Bronze (0) · Argent · Or · Platine
+//   [loyalty_silver_threshold / loyalty_gold_threshold / loyalty_platinum_threshold]
+const LEVEL_META = [
+  { key: 'BRONZE', label: 'Bronze', emoji: '🥉' },
+  { key: 'SILVER', label: 'Argent', emoji: '🥈' },
+  { key: 'GOLD', label: 'Or', emoji: '🥇' },
+  { key: 'PLATINUM', label: 'Platine', emoji: '💎' },
 ] as const;
+
+// Valeurs par défaut (utilisées si la clé system_settings est absente/invalide).
+export const LOYALTY_DEFAULTS = {
+  silver: 100,
+  gold: 500,
+  platinum: 1000,
+  perThousand: 1,
+  recharge: 5,
+  kyc: 10,
+};
+
+// Niveaux par défaut exposés pour compat (ex. tests). Préférer getConfig() à l'exécution.
+export const LOYALTY_LEVELS = LEVEL_META.map((m, i) => ({
+  ...m,
+  min: [0, LOYALTY_DEFAULTS.silver, LOYALTY_DEFAULTS.gold, LOYALTY_DEFAULTS.platinum][i],
+}));
 
 // Raisons normalisées (libellés FR — l'app est francophone par défaut).
 export const LoyaltyReason = {
@@ -21,14 +39,50 @@ export const LoyaltyReason = {
   KYC_APPROVED: 'KYC approuvé',
 };
 
+interface LoyaltyConfig {
+  silver: number;
+  gold: number;
+  platinum: number;
+  perThousand: number;
+  recharge: number;
+  kyc: number;
+}
+
 @Injectable()
 export class LoyaltyService {
   private readonly logger = new Logger(LoyaltyService.name);
 
   constructor(private prisma: PrismaService) {}
 
-  // Attribue des points (atomique : solde + ligne d'historique). Idempotence non
-  // requise — appelé en fire-and-forget après un mouvement déjà persisté.
+  // Lit les seuils + règles depuis system_settings (repli sur les défauts).
+  async getConfig(): Promise<LoyaltyConfig> {
+    const keys = [
+      'loyalty_silver_threshold', 'loyalty_gold_threshold', 'loyalty_platinum_threshold',
+      'loyalty_points_per_1000_fcfa', 'loyalty_points_recharge', 'loyalty_points_kyc',
+    ];
+    const rows = await this.prisma.systemSettings.findMany({ where: { key: { in: keys } } });
+    const num = (k: string, d: number) => {
+      const v = rows.find((r) => r.key === k)?.value;
+      const n = Number(v);
+      return v != null && v !== '' && Number.isFinite(n) ? n : d;
+    };
+    return {
+      silver: num('loyalty_silver_threshold', LOYALTY_DEFAULTS.silver),
+      gold: num('loyalty_gold_threshold', LOYALTY_DEFAULTS.gold),
+      platinum: num('loyalty_platinum_threshold', LOYALTY_DEFAULTS.platinum),
+      perThousand: num('loyalty_points_per_1000_fcfa', LOYALTY_DEFAULTS.perThousand),
+      recharge: num('loyalty_points_recharge', LOYALTY_DEFAULTS.recharge),
+      kyc: num('loyalty_points_kyc', LOYALTY_DEFAULTS.kyc),
+    };
+  }
+
+  private buildLevels(cfg: LoyaltyConfig) {
+    const mins = [0, cfg.silver, cfg.gold, cfg.platinum];
+    return LEVEL_META.map((m, i) => ({ ...m, min: mins[i] }));
+  }
+
+  // Attribue des points (atomique : solde + ligne d'historique). Appelé en
+  // fire-and-forget après un mouvement déjà persisté.
   async award(userId: string, points: number, reason: string): Promise<void> {
     if (!userId || points <= 0) return;
     try {
@@ -41,40 +95,58 @@ export class LoyaltyService {
         this.prisma.loyaltyEvent.create({ data: { userId, points, reason } }),
       ]);
     } catch (err) {
-      // Ne jamais casser le flux métier pour un échec de fidélité.
       this.logger.error(
         `Attribution fidélité échouée (user=${userId}, +${points}) : ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
 
-  // Points gagnés sur un envoi P2P : 1 point / 1000 FCFA (montant en centimes).
-  pointsForP2p(amountCentimes: bigint): number {
-    return Math.floor(Number(amountCentimes) / 100_000); // 1000 FCFA = 100 000 centimes
+  // Points P2P : (montant en centimes / 1000 FCFA) × points configurés.
+  pointsForP2p(amountCentimes: bigint, perThousand = LOYALTY_DEFAULTS.perThousand): number {
+    return Math.floor(Number(amountCentimes) / 100_000) * perThousand; // 1000 FCFA = 100 000 centimes
   }
 
-  private levelFor(points: number) {
-    let current: (typeof LOYALTY_LEVELS)[number] = LOYALTY_LEVELS[0];
-    for (const l of LOYALTY_LEVELS) if (points >= l.min) current = l;
-    const idx = LOYALTY_LEVELS.findIndex((l) => l.key === current.key);
-    const next = LOYALTY_LEVELS[idx + 1] ?? null;
-    // Progression (%) entre le palier courant et le suivant (100 % si Platine).
+  // Attributions de haut niveau (lisent la config) — utilisées par les flux métier.
+  async awardP2p(userId: string, amountCentimes: bigint): Promise<void> {
+    const cfg = await this.getConfig();
+    await this.award(userId, this.pointsForP2p(amountCentimes, cfg.perThousand), LoyaltyReason.P2P_SEND);
+  }
+  async awardRecharge(userId: string): Promise<void> {
+    const cfg = await this.getConfig();
+    await this.award(userId, cfg.recharge, LoyaltyReason.RECHARGE);
+  }
+  async awardKyc(userId: string): Promise<void> {
+    const cfg = await this.getConfig();
+    await this.award(userId, cfg.kyc, LoyaltyReason.KYC_APPROVED);
+  }
+
+  private levelFor(points: number, levels: ReturnType<LoyaltyService['buildLevels']>) {
+    let current = levels[0];
+    for (const l of levels) if (points >= l.min) current = l;
+    const idx = levels.findIndex((l) => l.key === current.key);
+    const next = levels[idx + 1] ?? null;
     const progress = next
-      ? Math.min(100, Math.round(((points - current.min) / (next.min - current.min)) * 100))
+      ? Math.min(100, Math.max(0, Math.round(((points - current.min) / (next.min - current.min)) * 100)))
       : 100;
     return { current, next, progress };
   }
 
   async getBalance(userId: string) {
-    const row = await this.prisma.loyaltyPoints.findUnique({ where: { userId } });
+    const [cfg, row] = await Promise.all([
+      this.getConfig(),
+      this.prisma.loyaltyPoints.findUnique({ where: { userId } }),
+    ]);
+    const levels = this.buildLevels(cfg);
     const points = row?.points ?? 0;
-    const { current, next, progress } = this.levelFor(points);
+    const { current, next, progress } = this.levelFor(points, levels);
     return {
       points,
       level: { key: current.key, label: current.label, emoji: current.emoji },
       nextLevel: next ? { key: next.key, label: next.label, emoji: next.emoji, at: next.min } : null,
       pointsToNext: next ? Math.max(0, next.min - points) : 0,
       progress,
+      // Seuils configurés (pour l'affichage dynamique côté mobile).
+      levels: levels.map((l) => ({ key: l.key, label: l.label, emoji: l.emoji, min: l.min })),
     };
   }
 
@@ -89,10 +161,14 @@ export class LoyaltyService {
 
   // Stats agrégées pour le dashboard admin : total distribué + répartition par niveau.
   async getDistribution() {
-    const rows = await this.prisma.loyaltyPoints.findMany({ select: { points: true } });
+    const [cfg, rows] = await Promise.all([
+      this.getConfig(),
+      this.prisma.loyaltyPoints.findMany({ select: { points: true } }),
+    ]);
+    const levels = this.buildLevels(cfg);
     const totalDistributed = rows.reduce((s, r) => s + r.points, 0);
-    const byLevel = LOYALTY_LEVELS.map((l, i) => {
-      const next = LOYALTY_LEVELS[i + 1];
+    const byLevel = levels.map((l, i) => {
+      const next = levels[i + 1];
       const count = rows.filter((r) => r.points >= l.min && (!next || r.points < next.min)).length;
       return { key: l.key, label: l.label, emoji: l.emoji, count };
     });

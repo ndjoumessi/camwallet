@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { KycAiService, KycAggregateResult } from './kyc-ai.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { LoyaltyService, LoyaltyReason } from '../loyalty/loyalty.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { KycStatus } from '@prisma/client';
 
 const DEFAULT_AUTO_APPROVE_THRESHOLD = 95;
@@ -158,8 +158,8 @@ export class KycService {
       { type: 'KYC', status: KycStatus.APPROVED },
     );
     this.eventEmitter.emit('kyc.auto_approved', { userId, score: res.score });
-    // Fidélité : +10 points à l'approbation KYC (fire-and-forget).
-    void this.loyalty.award(userId, 10, LoyaltyReason.KYC_APPROVED);
+    // Fidélité : points à l'approbation KYC selon la config admin (fire-and-forget).
+    void this.loyalty.awardKyc(userId);
     this.logger.log(`KYC auto-approuvé par IA : ${userId} (score: ${res.score}/100)`);
   }
 

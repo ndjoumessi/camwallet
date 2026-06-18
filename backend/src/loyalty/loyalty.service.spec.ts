@@ -2,6 +2,7 @@ import { LoyaltyService } from './loyalty.service';
 
 const makeService = (points: number | null) => {
   const prisma = {
+    systemSettings: { findMany: jest.fn().mockResolvedValue([]) }, // → seuils/points par défaut
     loyaltyPoints: {
       findUnique: jest.fn().mockResolvedValue(points === null ? null : { points }),
       upsert: jest.fn().mockReturnValue('pts-op'),

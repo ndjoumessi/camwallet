@@ -52,7 +52,7 @@ describe('TransactionsService', () => {
         },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: CacheService, useValue: { wrap: (_k: string, _t: number, fn: () => any) => fn(), del: jest.fn() } },
-        { provide: LoyaltyService, useValue: { award: jest.fn().mockResolvedValue(undefined), pointsForP2p: () => 0 } },
+        { provide: LoyaltyService, useValue: { awardP2p: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

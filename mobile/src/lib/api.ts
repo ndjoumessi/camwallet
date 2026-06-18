@@ -439,6 +439,8 @@ export interface LoyaltyBalance {
   nextLevel: { key: string; label: string; emoji: string; at: number } | null;
   pointsToNext: number;
   progress: number; // 0-100
+  // Seuils configurés (depuis l'admin) — l'affichage des paliers est dynamique.
+  levels: { key: string; label: string; emoji: string; min: number }[];
 }
 export interface LoyaltyEvent {
   id: string;

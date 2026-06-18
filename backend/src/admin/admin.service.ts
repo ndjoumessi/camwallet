@@ -7,7 +7,7 @@ import { SmsService } from '../sms/sms.service';
 import { KycAiService } from '../kyc/kyc-ai.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { CacheService, CacheKeys, CacheTtl } from '../cache/cache.service';
-import { LoyaltyService, LoyaltyReason } from '../loyalty/loyalty.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -527,9 +527,9 @@ export class AdminService {
       comment: dto.comment,
     });
 
-    // Fidélité : +10 points à l'approbation KYC (fire-and-forget).
+    // Fidélité : points à l'approbation KYC selon la config admin (fire-and-forget).
     if (newStatus === KycStatus.APPROVED) {
-      void this.loyalty.award(userId, 10, LoyaltyReason.KYC_APPROVED);
+      void this.loyalty.awardKyc(userId);
     }
 
     // Notifications push + SMS selon la décision — fire-and-forget
@@ -1795,6 +1795,13 @@ export class AdminService {
     email_alert_kyc_score:    'off', // score IA moyen < 60 sur 24h
     email_alert_admin_failed: 'off', // > 5 connexions admin échouées en 15 min
     alert_email:              '',    // destinataire des alertes (sinon env ALERT_EMAIL)
+    // Programme de fidélité — seuils de niveaux (Bronze = 0, non modifiable) + règles de gain
+    loyalty_silver_threshold:    '100',
+    loyalty_gold_threshold:      '500',
+    loyalty_platinum_threshold:  '1000',
+    loyalty_points_per_1000_fcfa: '1',
+    loyalty_points_recharge:     '5',
+    loyalty_points_kyc:          '10',
   };
 
   async getSettings(): Promise<Record<string, string>> {
@@ -1849,6 +1856,37 @@ export class AdminService {
       const n = Number(thr[1]);
       if (!Number.isInteger(n) || n < 70 || n > 100) {
         throw new BadRequestException('Le seuil d\'auto-approbation doit être un entier entre 70 et 100.');
+      }
+    }
+
+    // Validation des paramètres fidélité (ordre des seuils + entiers).
+    const loyaltyKeys = [
+      'loyalty_silver_threshold', 'loyalty_gold_threshold', 'loyalty_platinum_threshold',
+      'loyalty_points_per_1000_fcfa', 'loyalty_points_recharge', 'loyalty_points_kyc',
+    ];
+    if (entries.some(([k]) => loyaltyKeys.includes(k))) {
+      const current = await this.getSettings();
+      // Valeur effective = valeur entrante si fournie, sinon valeur courante/défaut.
+      const eff = (k: string) => {
+        const inc = entries.find(([ek]) => ek === k);
+        return Number(inc ? inc[1] : current[k] ?? this.SETTINGS_DEFAULTS[k]);
+      };
+      const posInt = (n: number) => Number.isInteger(n) && n > 0;
+      const nonNegInt = (n: number) => Number.isInteger(n) && n >= 0;
+      const silver = eff('loyalty_silver_threshold');
+      const gold = eff('loyalty_gold_threshold');
+      const platinum = eff('loyalty_platinum_threshold');
+      if (![silver, gold, platinum].every(posInt)) {
+        throw new BadRequestException('Les seuils de fidélité doivent être des entiers positifs.');
+      }
+      // Bronze est fixé à 0 → Argent > 0, Or > Argent, Platine > Or.
+      if (!(gold > silver && platinum > gold)) {
+        throw new BadRequestException('Seuils invalides : Argent < Or < Platine (Bronze = 0).');
+      }
+      for (const k of ['loyalty_points_per_1000_fcfa', 'loyalty_points_recharge', 'loyalty_points_kyc']) {
+        if (!nonNegInt(eff(k))) {
+          throw new BadRequestException('Les règles de points doivent être des entiers ≥ 0.');
+        }
       }
     }
 

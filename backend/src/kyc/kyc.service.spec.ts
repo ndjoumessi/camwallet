@@ -19,7 +19,7 @@ const makeService = (opts: { toggle?: string; dbThreshold?: string; envThreshold
   const notifications = { sendToUser: jest.fn().mockResolvedValue(undefined) };
   const config = { get: jest.fn().mockReturnValue(opts.envThreshold) };
   const eventEmitter = { emit: jest.fn() };
-  const loyalty = { award: jest.fn().mockResolvedValue(undefined) };
+  const loyalty = { awardKyc: jest.fn().mockResolvedValue(undefined) };
   const svc = new KycService(
     prisma as any,
     {} as any,
