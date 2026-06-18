@@ -39,7 +39,7 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 // 1) Google Maps
 // ════════════════════════════════════════════════════════════════════════════
 const CAMEROON_CENTER = { lat: 5.5, lng: 12.5 }
-const MAP_ZOOM = 5.5
+const MAP_ZOOM = 6 // zoom de secours avant que fitBounds (dans onLoad) ne s'applique
 // Restriction (strictBounds) : verrouille la vue sur le Cameroun + frange minime, pour
 // ne pas voir les pays voisins (Ghana, Burkina, Bénin, Togo…).
 const CAMEROON_BOUNDS = { north: 14.0, south: 1.0, west: 7.5, east: 17.0 }
@@ -174,10 +174,9 @@ const MAP_STYLES = [
   { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 2.5 }] },
   { featureType: 'administrative.country', elementType: 'geometry.fill', stylers: [{ visibility: 'on' }, { color: '#111827' }] },
   { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 1.5 }] },
-  // Noms de pays LISIBLES : voisins en gris discret + halo sombre (jamais en noir).
-  { featureType: 'administrative.country', elementType: 'labels.text', stylers: [{ visibility: 'on' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.fill', stylers: [{ color: '#6b7280' }] },
-  { featureType: 'administrative.country', elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }, { weight: 3 }] },
+  // Noms de pays MASQUÉS (on ne veut pas voir les voisins) ; le label « Cameroun »
+  // est rajouté en overlay custom (Google ne permet pas de cibler un seul pays).
+  { featureType: 'administrative.country', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   // Labels secondaires masqués (évite le bruit et les petits libellés sombres).
   { featureType: 'administrative.province', elementType: 'labels', stylers: [{ visibility: 'off' }] },
   { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
@@ -242,8 +241,14 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
           zoom={MAP_ZOOM}
           onLoad={(m) => {
             setMap(m)
-            // Cadrage immédiat sur les bornes serrées du Cameroun (padding 50px).
-            m.fitBounds(new g.maps.LatLngBounds({ lat: CAMEROON_FIT_BOUNDS.south, lng: CAMEROON_FIT_BOUNDS.west }, { lat: CAMEROON_FIT_BOUNDS.north, lng: CAMEROON_FIT_BOUNDS.east }), 50)
+            // Cadrage sur les bornes serrées du Cameroun (padding 40px)…
+            const bounds = new g.maps.LatLngBounds({ lat: CAMEROON_FIT_BOUNDS.south, lng: CAMEROON_FIT_BOUNDS.west }, { lat: CAMEROON_FIT_BOUNDS.north, lng: CAMEROON_FIT_BOUNDS.east })
+            m.fitBounds(bounds, 40)
+            // …puis on plafonne le zoom à 7 si fitBounds a trop zoomé (petits écrans).
+            g.maps.event.addListenerOnce(m, 'bounds_changed', () => {
+              const z = m.getZoom()
+              if (z && z > 7) m.setZoom(7)
+            })
           }}
           onUnmount={() => setMap(null)}
           options={{
@@ -253,11 +258,18 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
             backgroundColor: BG,
             gestureHandling: 'cooperative',
             scrollwheel: false,
-            minZoom: 5.5,
+            minZoom: 5,
             maxZoom: 10,
-            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: true },
+            // strictBounds: false → indispensable, sinon la restriction bloque le dézoom
+            // de fitBounds avant que le pays entier ne tienne dans la vue.
+            restriction: { latLngBounds: CAMEROON_BOUNDS, strictBounds: false },
           }}
         >
+          {/* Label « Cameroun » custom (les noms de pays natifs sont masqués) — émeraude,
+              discret, non interactif, posé au centre du pays. */}
+          <OverlayViewF position={{ lat: 7.0, lng: 12.5 }} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#00C896', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0.28, textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>Cameroun</div>
+          </OverlayViewF>
           {/* Frontières des 10 régions (Google ne dessine pas les provinces du Cameroun) :
               superposées en Polygon émeraude INTERACTIF. Fill transparent ; subtil si data ;
               hover = fill 0.15 + bordure 2px (les cercles au-dessus sont non-cliquables,
