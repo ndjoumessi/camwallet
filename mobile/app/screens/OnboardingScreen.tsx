@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
   slide: {
     flex: 1,
     paddingHorizontal: Spacing.xxl,
-    paddingTop: 80,
+    paddingTop: Spacing.huge + Spacing.xxxl,
   },
   slideContent: {
     flex: 1,
@@ -653,7 +653,7 @@ const styles = StyleSheet.create({
   dotInactive: { backgroundColor: Colors.border, width: 8 },
   actions: {
     paddingHorizontal: Spacing.xxl,
-    paddingBottom: 40,
+    paddingBottom: Spacing.xxl + Spacing.lg,
     gap: Spacing.md,
   },
   skipBtn: {
@@ -668,7 +668,7 @@ const styles = StyleSheet.create({
   formContainer: {
     flex: 1,
     paddingHorizontal: Spacing.xxl,
-    paddingTop: 80,
+    paddingTop: Spacing.huge + Spacing.xxxl,
     gap: Spacing.xl,
   },
   stepIconWrap: {
@@ -715,7 +715,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: Colors.text,
     fontSize: Typography.base,
-    paddingVertical: 14,
+    paddingVertical: Spacing.md,
     minHeight: 50,
   },
   otpInput: {
@@ -810,7 +810,7 @@ const styles = StyleSheet.create({
   },
   pinDots: {
     flexDirection: 'row',
-    gap: 14,
+    gap: Spacing.md,
     marginVertical: Spacing.xxl,
   },
   pinDot: {

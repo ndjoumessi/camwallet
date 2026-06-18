@@ -48,6 +48,9 @@ const C = {
   green: '#00C896', greenDark: '#008F6A', greenLight: '#00C89618',
   blue: '#3B82F6', blueLight: '#3B82F615',
   yellow: '#F5C542', yellowLight: '#F5C54215',
+  orange: '#FB923C', orangeLight: '#FB923C18',
+  amber: '#B89000',
+  cyan: '#22D3EE',
   red: '#FF4D6D', redLight: '#FF4D6D15',
   purple: '#A78BFA', purpleLight: '#A78BFA15',
   text: '#EEF2FF', textMuted: '#64748B', textSoft: '#94A3B8',
@@ -93,7 +96,7 @@ const TX_STATUS_BADGE: Record<string, string> = {
 // Niveau de risque (dérivé du volume 30j) → couleur.
 const RISK_META: Record<string, { color: string }> = {
   'Bas': { color: '#00C896' },
-  'Moyen': { color: '#FB923C' },
+  'Moyen': { color: C.orange },
   'Élevé': { color: '#FF4D6D' },
 }
 const USER_ROLE_LABEL: Record<string, string> = { USER: 'Utilisateur', MERCHANT: 'Marchand', ADMIN: 'Admin' }
@@ -384,7 +387,7 @@ function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation()
   const map: Record<string, { bg: string, text: string, label: string, icon?: LucideIcon }> = {
     success: { bg: '#00C89618', text: C.green, label: t('status.success') },
-    pending: { bg: C.yellowLight, text: '#B89000', label: t('status.pending') },
+    pending: { bg: C.yellowLight, text: C.amber, label: t('status.pending') },
     failed: { bg: C.redLight, text: C.red, label: t('status.failed') },
     flagged: { bg: '#A78BFA18', text: C.purple, label: t('status.flagged'), icon: Siren },
     verified: { bg: '#00C89618', text: C.green, label: t('status.verified'), icon: CheckCircle2 },
@@ -392,7 +395,7 @@ function StatusBadge({ status }: { status: string }) {
     suspended: { bg: '#A78BFA18', text: C.purple, label: t('status.suspended') },
     approved: { bg: '#00C89618', text: C.green, label: t('status.approved') },
     rejected: { bg: C.redLight, text: C.red, label: t('status.rejected') },
-    review: { bg: C.yellowLight, text: '#B89000', label: t('status.review') },
+    review: { bg: C.yellowLight, text: C.amber, label: t('status.review') },
   }
   const s = map[status] ?? { bg: '#333', text: '#888', label: status }
   const Icon = s.icon
@@ -408,7 +411,7 @@ function TxTypeBadge({ type }: { type: string }) {
   const map: Record<string, { bg: string, text: string }> = {
     P2P: { bg: C.blueLight, text: C.blue },
     QR: { bg: C.greenLight, text: C.green },
-    RECHARGE: { bg: C.yellowLight, text: '#B89000' },
+    RECHARGE: { bg: C.yellowLight, text: C.amber },
     RETRAIT: { bg: C.purpleLight, text: C.purple },
   }
   const s = map[type] ?? { bg: '#333', text: '#888' }
@@ -964,10 +967,10 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
 // Couleur sémantique d'un statut d'intégration.
 const HEALTH_COLOR: Record<string, string> = {
-  UP: C.green, DEGRADED: '#FB923C', SIMULATED: '#FB923C', DOWN: C.red, UNKNOWN: C.textMuted,
+  UP: C.green, DEGRADED: C.orange, SIMULATED: C.orange, DOWN: C.red, UNKNOWN: C.textMuted,
 }
 // Couleur de la latence selon les seuils (<50ms vert, 50–200 orange, >200 rouge).
-const latencyColor = (ms: number) => (ms < 50 ? C.green : ms <= 200 ? '#FB923C' : C.red)
+const latencyColor = (ms: number) => (ms < 50 ? C.green : ms <= 200 ? C.orange : C.red)
 
 function HealthWidget() {
   const { data, loading, error } = useFetch(getHealthIntegrations, [])
@@ -1020,10 +1023,10 @@ function HealthWidget() {
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: C.textMuted, marginBottom: 3 }}>
                           <span>{i18n.t('health.up')} 7j</span>
-                          <span style={{ fontWeight: 700, color: i.uptime >= 95 ? C.green : i.uptime >= 70 ? '#FB923C' : C.red }}>{i.uptime} %</span>
+                          <span style={{ fontWeight: 700, color: i.uptime >= 95 ? C.green : i.uptime >= 70 ? C.orange : C.red }}>{i.uptime} %</span>
                         </div>
                         <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: 'hidden' }}>
-                          <div style={{ width: `${i.uptime}%`, height: '100%', borderRadius: 3, background: i.uptime >= 95 ? C.green : i.uptime >= 70 ? '#FB923C' : C.red, transition: 'width .4s' }} />
+                          <div style={{ width: `${i.uptime}%`, height: '100%', borderRadius: 3, background: i.uptime >= 95 ? C.green : i.uptime >= 70 ? C.orange : C.red, transition: 'width .4s' }} />
                         </div>
                       </div>
                     )}
@@ -1043,7 +1046,7 @@ function HealthWidget() {
 // Niveau d'alerte → libellé + couleur (error=Critique, warn=Avertissement, info=Info).
 const ALERT_LEVEL: Record<string, { label: string; color: string; bg: string; icon: LucideIcon }> = {
   error: { label: 'alert_level.error', color: C.red, bg: C.redLight, icon: Siren },
-  warn: { label: 'alert_level.warn', color: '#FB923C', bg: '#FB923C18', icon: AlertTriangle },
+  warn: { label: 'alert_level.warn', color: C.orange, bg: C.orangeLight, icon: AlertTriangle },
   info: { label: 'alert_level.info', color: C.blue, bg: C.blueLight, icon: Info },
 }
 
@@ -1096,7 +1099,7 @@ function AlertsPage() {
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.al.per_hour')}</h2>
           <div style={{ display: 'flex', gap: 14 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.red }} />{i18n.t('x.al.leg_failures')}</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: '#FB923C' }} />{i18n.t('x.al.leg_highvalue')}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textSoft }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.orange }} />{i18n.t('x.al.leg_highvalue')}</span>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={180}>
@@ -1106,7 +1109,7 @@ function AlertsPage() {
             <YAxis stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
             <Tooltip cursor={{ fill: C.redLight }} content={<ChartTooltip />} />
             <Bar dataKey="failed" name={i18n.t('x.al.leg_failures')} stackId="a" fill={C.red} radius={[0, 0, 0, 0]} maxBarSize={18} />
-            <Bar dataKey="highValue" name={i18n.t('x.al.leg_highvalue')} stackId="a" fill="#FB923C" radius={[3, 3, 0, 0]} maxBarSize={18} />
+            <Bar dataKey="highValue" name={i18n.t('x.al.leg_highvalue')} stackId="a" fill={C.orange} radius={[3, 3, 0, 0]} maxBarSize={18} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -1229,7 +1232,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
       refetchNotes()
       toast(i18n.t('x.ud.note_deleted'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : i18n.t('x.common.error'), 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.ud.note_delete_failed', { defaultValue: 'Échec de la suppression de la note' }), 'error')
     }
   }
 
@@ -1321,7 +1324,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
               ))}
               {confirmingPinReset ? (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '4px 6px 4px 10px' }}>
-                  <span style={{ fontSize: 12, color: '#B89000', fontWeight: 600 }}>{i18n.t('common.confirm_question')}</span>
+                  <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{i18n.t('common.confirm_question')}</span>
                   <button className="cw-btn" disabled={acting} onClick={() => { setConfirmingPinReset(false); run(() => resetUserPin(u.id), i18n.t('x.ud.pin_reset_ok')) }}
                     style={{ fontSize: 12, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 700 }}>{i18n.t('common.yes')}</button>
                   <button className="cw-btn" onClick={() => setConfirmingPinReset(false)}
@@ -1329,7 +1332,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
                 </div>
               ) : (
                 <button className="cw-btn" disabled={acting} onClick={() => setConfirmingPinReset(true)}
-                  style={{ fontSize: 12, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.reset_pin')}</button>
+                  style={{ fontSize: 12, color: C.amber, background: C.yellowLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.ud.reset_pin')}</button>
               )}
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
@@ -1387,7 +1390,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
                         <div style={{ color: C.text, marginBottom: 2 }}>{n.content}</div>
                         <div style={{ color: C.textMuted, fontSize: 11 }}>{n.author.email ?? n.author.fullName ?? 'Admin'} · {fmtDate(n.createdAt)}</div>
                       </div>
-                      {!isReadOnly() && <button onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', flexShrink: 0 }} aria-label={i18n.t('user_detail.notes_delete_aria')}><X size={14} /></button>}
+                      {!isReadOnly() && <button className="cw-iconbtn" onClick={() => handleDeleteNote(n.id)} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', padding: '2px 4px', borderRadius: 6, flexShrink: 0 }} aria-label={i18n.t('user_detail.notes_delete_aria')}><X size={14} /></button>}
                     </div>
                   ))}
                 </div>
@@ -1553,7 +1556,7 @@ function UsersPage() {
       await resetUserPin(id)
       toast(i18n.t('x.users.pin_reset_ok'), 'success')
     } catch (e) {
-      toast(e instanceof Error ? e.message : i18n.t('common.action_failed'), 'error')
+      toast(e instanceof Error ? e.message : i18n.t('x.users.pin_reset_failed', { defaultValue: 'Échec de la réinitialisation du PIN' }), 'error')
     } finally {
       setActing(null); setPinConfirm(null)
     }
@@ -1713,13 +1716,13 @@ function UsersPage() {
                         )}
                         {pinConfirm === u.id ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: C.yellowLight, border: `1px solid ${C.yellow}60`, borderRadius: 6, padding: '2px 4px 2px 8px' }}>
-                            <span style={{ fontSize: 11, color: '#B89000', fontWeight: 600 }}>{i18n.t('x.users.reset_q')}</span>
+                            <span style={{ fontSize: 11, color: C.amber, fontWeight: 600 }}>{i18n.t('x.users.reset_q')}</span>
                             <button className="cw-btn" onClick={() => doResetPin(u.id)} style={{ fontSize: 11, color: '#1A1206', background: C.yellow, border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontWeight: 700 }}>{i18n.t('common.yes')}</button>
                             <button className="cw-btn" onClick={() => setPinConfirm(null)} aria-label={i18n.t('common.cancel')} style={{ fontSize: 11, color: C.textSoft, background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer' }}>✕</button>
                           </span>
                         ) : (
                           <button className="cw-btn" onClick={() => setPinConfirm(u.id)}
-                            style={{ fontSize: 11, color: '#B89000', background: C.yellowLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.users.reset_pin')}</button>
+                            style={{ fontSize: 11, color: C.amber, background: C.yellowLight, border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.users.reset_pin')}</button>
                         )}
                       </>
                     ))}
@@ -1752,7 +1755,7 @@ function KYCLightbox({ url, alt, onClose }: { url: string; alt: string; onClose:
   }, [onClose])
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-      <button onClick={onClose} style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', display: 'flex', padding: 6 }}><X size={24} /></button>
+      <button className="cw-iconbtn" onClick={onClose} style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,.1)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', display: 'flex', padding: 6 }}><X size={24} /></button>
       <img src={url} alt={alt} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '88vh', borderRadius: 12, objectFit: 'contain', boxShadow: '0 24px 80px rgba(0,0,0,.7)' }} />
     </div>
   )
@@ -1825,7 +1828,7 @@ function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: Admi
               </div>
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex', padding: 4 }}><X size={20} /></button>
+          <button className="cw-iconbtn" onClick={onClose} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', display: 'flex', padding: 4, borderRadius: 8 }}><X size={20} /></button>
         </div>
 
         {/* Photos */}
@@ -2876,7 +2879,7 @@ function WebhookPayloadCell({ wh }: { wh: WebhookEvent }) {
   )
 }
 
-const OP_ORANGE = '#FB923C' // orange retraits (graphe + montants)
+const OP_ORANGE = C.orange // orange retraits (graphe + montants)
 
 function OperationsPage() {
   const [page, setPage] = useState(1)
@@ -3046,7 +3049,7 @@ function OperationsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '10px 14px', background: C.yellowLight, border: `1px solid ${C.yellow}40`, borderRadius: 10 }}>
           <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{i18n.t('x.ops.selected', { count: picked.size })}</span>
           {!isReadOnly() && (
-            <button onClick={handleBulkRetry} disabled={bulkRetrying} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#B89000', background: C.card, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '6px 12px', cursor: bulkRetrying ? 'wait' : 'pointer', fontWeight: 600 }}>
+            <button onClick={handleBulkRetry} disabled={bulkRetrying} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.amber, background: C.card, border: `1px solid ${C.yellow}60`, borderRadius: 8, padding: '6px 12px', cursor: bulkRetrying ? 'wait' : 'pointer', fontWeight: 600 }}>
               <RotateCcw size={13} /> {bulkRetrying ? i18n.t('x.ops.bulk_retrying') : i18n.t('x.ops.bulk_retry')}
             </button>
           )}
@@ -3121,7 +3124,7 @@ function OperationsPage() {
                         {!isReadOnly() && retriable && (
                           <button
                             onClick={() => handleRetry(op.id)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: C.yellow + '20', color: '#B89000', border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: C.yellow + '20', color: C.amber, border: `1px solid ${C.yellow}40`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}
                           >
                             <RotateCcw size={11} /> {i18n.t('x.ops.retry')}
                           </button>
@@ -3199,7 +3202,7 @@ function anifRiskScore(kind: 'highvalue' | 'unusual' | 'smurfing' | 'frequency',
   const ratio = thresholdFcfa > 0 ? amountFcfa / thresholdFcfa : 1
   return Math.min(100, Math.round(45 + ratio * 18))
 }
-const riskBand = (s: number) => (s >= 80 ? { key: 'critique', label: 'x.anif.band_critical', color: C.red } : s >= 50 ? { key: 'eleve', label: 'x.anif.band_high', color: '#FB923C' } : { key: 'moyen', label: 'x.anif.band_medium', color: C.yellow })
+const riskBand = (s: number) => (s >= 80 ? { key: 'critique', label: 'x.anif.band_critical', color: C.red } : s >= 50 ? { key: 'eleve', label: 'x.anif.band_high', color: C.orange } : { key: 'moyen', label: 'x.anif.band_medium', color: C.yellow })
 
 function ANIFPage() {
   const { data, loading, error, refetch } = useFetch(getAnifAlerts, [])
@@ -3242,7 +3245,7 @@ function ANIFPage() {
   // Donut : répartition par type d'alerte.
   const donut = [
     { name: i18n.t('x.anif.t_highvalue'), value: data?.highValue?.length ?? 0, color: C.red },
-    { name: i18n.t('x.anif.t_smurfing'), value: smurfing.length, color: '#FB923C' },
+    { name: i18n.t('x.anif.t_smurfing'), value: smurfing.length, color: C.orange },
     { name: i18n.t('x.anif.t_frequency'), value: frequent.length, color: C.yellow },
     { name: i18n.t('x.anif.t_subthreshold'), value: data?.unusualAmounts?.length ?? 0, color: C.purple },
   ].filter((d) => d.value > 0)
@@ -3269,7 +3272,7 @@ function ANIFPage() {
   const handleClose = async () => {
     if (!closing?.resolution.trim()) { toast(i18n.t('x.anif.resolution_required'), 'error'); return }
     try { await closeAnifCase(closing.id, closing.resolution, closing.report || undefined); toast(i18n.t('x.anif.case_closed'), 'success'); setClosing(null); refetch() }
-    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error') }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.anif.close_failed', { defaultValue: 'Échec de la clôture du dossier' }), 'error') }
   }
   const handleAssign = async (caseId: string, analystId: string) => {
     if (!analystId) return
@@ -3343,7 +3346,7 @@ function ANIFPage() {
 
   const statCards = anifStats ? [
     { label: i18n.t('x.anif.kpi_active'), value: anifStats.activeAlerts.toLocaleString('fr-FR'), icon: Siren, color: C.red },
-    { label: i18n.t('x.anif.kpi_open'), value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: '#FB923C' },
+    { label: i18n.t('x.anif.kpi_open'), value: anifStats.openCases.toLocaleString('fr-FR'), icon: FileText, color: C.orange },
     { label: i18n.t('x.anif.kpi_over'), value: anifStats.overThreshold30d.toLocaleString('fr-FR'), icon: TrendingUp, color: C.purple },
     { label: i18n.t('x.anif.kpi_resolution'), value: anifStats.resolutionRate == null ? '—' : anifStats.resolutionRate + ' %', icon: CheckCircle2, color: C.green },
   ] : []
@@ -3443,7 +3446,7 @@ function ANIFPage() {
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{i18n.t('x.anif.suspects', { count: filteredSuspects.length })}</h2>
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={() => setRiskFilter('')} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === '' ? 700 : 500, background: riskFilter === '' ? C.green : C.surface, border: `1px solid ${riskFilter === '' ? C.green : C.border}`, color: riskFilter === '' ? '#fff' : C.textSoft }}>{i18n.t('x.anif.all')}</button>
-            {[{ k: 'critique', l: 'x.anif.band_critical', c: C.red }, { k: 'eleve', l: 'x.anif.band_high', c: '#FB923C' }, { k: 'moyen', l: 'x.anif.band_medium', c: C.yellow }].map((b) => (
+            {[{ k: 'critique', l: 'x.anif.band_critical', c: C.red }, { k: 'eleve', l: 'x.anif.band_high', c: C.orange }, { k: 'moyen', l: 'x.anif.band_medium', c: C.yellow }].map((b) => (
               <button key={b.k} onClick={() => setRiskFilter(riskFilter === b.k ? '' : b.k)} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: riskFilter === b.k ? 700 : 500, background: riskFilter === b.k ? b.c : b.c + '18', border: `1px solid ${b.c}40`, color: riskFilter === b.k ? '#fff' : b.c }}>{i18n.t(b.l)}</button>
             ))}
           </div>
@@ -3578,7 +3581,7 @@ function ANIFPage() {
 
 // Couleur sémantique d'une action d'audit (BLOCKED=rouge, APPROVED=vert, …).
 // Catégorie sémantique d'une action d'audit → couleur (Sécurité/KYC/Finance/Admin).
-const AUDIT_CYAN = '#22D3EE'
+const AUDIT_CYAN = C.cyan
 const auditCategory = (action: string): { key: string; label: string; color: string } => {
   const a = (action || '').toUpperCase()
   if (/KYC/.test(a)) return { key: 'kyc', label: i18n.t('audit_cat.kyc'), color: C.purple }
@@ -4532,14 +4535,14 @@ function TeamPage() {
 // ── Support & Tickets ─────────────────────────────────────
 const TICKET_CAT: Record<string, { label: string; color: string }> = {
   PAYMENT: { label: 'x.sup.cat_payment', color: C.blue }, ACCOUNT: { label: 'x.sup.cat_account', color: C.purple },
-  KYC: { label: 'x.sup.cat_kyc', color: '#EC4899' }, TECHNICAL: { label: 'x.sup.cat_technical', color: '#22D3EE' }, OTHER: { label: 'x.sup.cat_other', color: C.textMuted },
+  KYC: { label: 'x.sup.cat_kyc', color: '#EC4899' }, TECHNICAL: { label: 'x.sup.cat_technical', color: C.cyan }, OTHER: { label: 'x.sup.cat_other', color: C.textMuted },
 }
 const TICKET_PRIO: Record<string, { label: string; color: string }> = {
-  CRITICAL: { label: 'x.sup.prio_critical', color: C.red }, HIGH: { label: 'x.sup.prio_high', color: '#FB923C' },
+  CRITICAL: { label: 'x.sup.prio_critical', color: C.red }, HIGH: { label: 'x.sup.prio_high', color: C.orange },
   MEDIUM: { label: 'x.sup.prio_medium', color: C.yellow }, LOW: { label: 'x.sup.prio_low', color: C.textMuted },
 }
 const TICKET_STATUS: Record<string, { label: string; color: string }> = {
-  OPEN: { label: 'x.sup.st_open', color: C.blue }, IN_PROGRESS: { label: 'x.sup.st_in_progress', color: '#FB923C' },
+  OPEN: { label: 'x.sup.st_open', color: C.blue }, IN_PROGRESS: { label: 'x.sup.st_in_progress', color: C.orange },
   RESOLVED: { label: 'x.sup.st_resolved', color: C.green }, CLOSED: { label: 'x.sup.st_closed', color: C.textMuted },
 }
 const fmtDuration = (ms: number) => {
@@ -4576,7 +4579,7 @@ function SupportPage() {
 
   const statCards = stats ? [
     { label: i18n.t('x.sup.kpi_open'), value: stats.open.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_unassigned', { count: stats.openUnassigned }), icon: LifeBuoy, color: C.blue },
-    { label: i18n.t('x.sup.kpi_in_progress'), value: stats.inProgress.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_processing'), icon: MessageSquare, color: '#FB923C' },
+    { label: i18n.t('x.sup.kpi_in_progress'), value: stats.inProgress.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_processing'), icon: MessageSquare, color: C.orange },
     { label: i18n.t('x.sup.kpi_resolved_today'), value: stats.resolvedToday.toLocaleString('fr-FR'), sub: i18n.t('x.sup.kpi_closed_today'), icon: CheckCircle2, color: C.green },
     { label: i18n.t('x.sup.kpi_avg'), value: stats.avgResolutionMs == null ? '—' : fmtDuration(stats.avgResolutionMs), sub: i18n.t('x.sup.kpi_avg_sub'), icon: Clock, color: C.purple },
   ] : []
@@ -4712,7 +4715,7 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
     if (!window.confirm(i18n.t('x.sup.delete_confirm', { ref: tk.reference }))) return
     setDeleting(true)
     try { await deleteSupportTicket(ticketId); toast(i18n.t('x.sup.deleted', { ref: tk.reference }), 'success'); onChanged(); onClose() }
-    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.common.failure'), 'error'); setDeleting(false) }
+    catch (e) { toast(e instanceof Error ? e.message : i18n.t('x.sup.delete_failed', { defaultValue: 'Échec de la suppression du ticket' }), 'error'); setDeleting(false) }
   }
 
   const overlay: CSSProperties = { position: 'fixed', inset: 0, background: '#000A', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, overflowY: 'auto' }
@@ -4762,7 +4765,7 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   priorité). Seule la suppression reste réservée au SUPER_ADMIN.
                   L'opérateur Support reste en lecture seule ailleurs (cf. isReadOnly). */}
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, i18n.t('x.sup.taken_short'))} style={{ fontSize: 12, color: '#FB923C', background: '#FB923C18', border: '1px solid #FB923C40', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.take_charge')}</button>}
+                {tk.status !== 'IN_PROGRESS' && tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'IN_PROGRESS' }, i18n.t('x.sup.taken_short'))} style={{ fontSize: 12, color: C.orange, background: C.orangeLight, border: `1px solid ${C.orange}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.take_charge')}</button>}
                 {tk.status !== 'RESOLVED' && tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'RESOLVED' }, i18n.t('x.sup.resolved'))} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}40`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.resolve')}</button>}
                 {tk.status !== 'CLOSED' && <button onClick={() => patch({ status: 'CLOSED' }, i18n.t('x.sup.closed'))} style={{ fontSize: 12, color: C.textSoft, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontWeight: 600 }}>{i18n.t('x.sup.close')}</button>}
                 <span style={{ width: 1, height: 22, background: C.border }} />
@@ -4795,7 +4798,7 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: mine ? C.green : C.text }}>{m.author?.fullName ?? m.author?.email ?? (mine ? i18n.t('x.sup.support_word') : i18n.t('x.sup.client_word'))}</span>
                         <span style={{ fontSize: 10, color: C.textMuted }}>{mine ? (m.author?.adminRole ? i18n.t('roles.' + m.author.adminRole) : i18n.t('x.sup.admin_word')) : i18n.t('x.sup.client_word')}</span>
-                        {m.internal && <span style={{ fontSize: 9, fontWeight: 800, color: '#B89000', background: C.yellow + '25', borderRadius: 5, padding: '1px 6px' }}>{i18n.t('x.sup.internal_note')}</span>}
+                        {m.internal && <span style={{ fontSize: 9, fontWeight: 800, color: C.amber, background: C.yellow + '25', borderRadius: 5, padding: '1px 6px' }}>{i18n.t('x.sup.internal_note')}</span>}
                       </div>
                       <div style={{ fontSize: 13, color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.content}</div>
                       <div style={{ fontSize: 10, color: C.textMuted, marginTop: 4, textAlign: 'right' }} title={fmtDate(m.createdAt)}>{relativeTime(m.createdAt)}</div>
@@ -4813,7 +4816,7 @@ function TicketDetailModal({ ticketId, team, onClose, onChanged, onViewUser }: {
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }}
                   style={{ ...inputStyle, width: '100%', resize: 'vertical', background: internal ? C.yellowLight : C.surface }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <button onClick={() => setInternal((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: internal ? '#B89000' : C.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                  <button onClick={() => setInternal((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: internal ? C.amber : C.textMuted, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                     <span style={{ position: 'relative', width: 34, height: 18, borderRadius: 9, background: internal ? C.yellow : C.border }}><span style={{ position: 'absolute', top: 2, left: internal ? 18 : 2, width: 14, height: 14, borderRadius: 7, background: '#fff', transition: 'left .15s' }} /></span>
                     {i18n.t('x.sup.internal_toggle')}
                   </button>
