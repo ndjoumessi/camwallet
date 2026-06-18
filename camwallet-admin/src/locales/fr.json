@@ -1274,6 +1274,14 @@
     "geo_legend_low": "Faible",
     "geo_legend_high": "Élevé",
     "geo_legend_none": "Aucune",
+    "geo_legend_title": "Transactions",
+    "geo_legend_size": "Taille = volume",
+    "geo_main_city": "Ville principale : {{city}}",
+    "geo_stat_volume": "Volume total",
+    "geo_stat_tx": "Transactions",
+    "geo_stat_regions": "Régions actives",
+    "geo_stat_top": "Région en tête",
+    "geo_stat_share": "{{pct}} % du volume",
     "geo_missing_key": "Clé Google Maps manquante — carte de secours affichée. Définir VITE_GOOGLE_MAPS_API_KEY (Vercel en prod)."
   }
 }

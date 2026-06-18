@@ -1274,6 +1274,14 @@
     "geo_legend_low": "Low",
     "geo_legend_high": "High",
     "geo_legend_none": "None",
+    "geo_legend_title": "Transactions",
+    "geo_legend_size": "Size = volume",
+    "geo_main_city": "Main city: {{city}}",
+    "geo_stat_volume": "Total volume",
+    "geo_stat_tx": "Transactions",
+    "geo_stat_regions": "Active regions",
+    "geo_stat_top": "Top region",
+    "geo_stat_share": "{{pct}}% of volume",
     "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod)."
   }
 }

@@ -86,7 +86,7 @@ function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRe
   const byName = new Map(regions.map((r) => [r.name, r]))
 
   if (loadError) return <SvgFallback regions={regions} />
-  if (!isLoaded) return <div style={{ height: 420, display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTED, fontSize: 13, background: BG, borderRadius: 12 }}>{i18n.t('common.loading')}</div>
+  if (!isLoaded) return <MapLoading />
 
   const g = (window as any).google
   // Échelle de couleur des cercles (#1a4a3a à 0 tx → #00C896 au max).
@@ -181,6 +181,52 @@ function MarkerLegend() {
           </span>
         ))}
       </div>
+      <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.07)', marginTop: 10, paddingTop: 8, display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, color: '#8b949e' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ width: 6, height: 6, borderRadius: 4, background: '#3f4754' }} />
+          <span style={{ width: 11, height: 11, borderRadius: 7, background: '#00C896' }} />
+        </span>
+        {i18n.t('analytics.geo_legend_size', { defaultValue: 'Taille = volume' })}
+      </div>
+    </div>
+  )
+}
+
+// État de chargement de marque (spinner émeraude) — remplace le texte brut.
+function MapLoading() {
+  return (
+    <div style={{ height: 'clamp(340px, 56vh, 520px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: MUTED, fontSize: 13, background: BG, borderRadius: 12, border: '1px solid rgba(0, 200, 150, 0.15)' }}>
+      <style>{`@keyframes cw-spin{to{transform:rotate(360deg)}}`}</style>
+      <span style={{ width: 34, height: 34, borderRadius: '50%', border: '3px solid #1E2D45', borderTopColor: GRAD_HI, animation: 'cw-spin .8s linear infinite' }} />
+      {i18n.t('common.loading')}
+    </div>
+  )
+}
+
+// Bandeau d'insight : surface immédiatement le « quoi » de la carte
+// (volume total, activité, régions couvertes, région dominante).
+function GeoStats({ regions }: { regions: GeoRegionDatum[] }) {
+  const active = regions.filter((r) => r.transactions > 0)
+  const totalVol = regions.reduce((s, r) => s + r.volume, 0)
+  const totalTx = regions.reduce((s, r) => s + r.transactions, 0)
+  const top = [...active].sort((a, b) => b.volume - a.volume)[0]
+  const share = top && totalVol > 0 ? Math.round((top.volume / totalVol) * 100) : 0
+
+  const tiles = [
+    { label: i18n.t('analytics.geo_stat_volume', { defaultValue: 'Volume total' }), value: fmtFcfa(totalVol), sub: '', accent: true },
+    { label: i18n.t('analytics.geo_stat_tx', { defaultValue: 'Transactions' }), value: totalTx.toLocaleString('fr-FR'), sub: '', accent: false },
+    { label: i18n.t('analytics.geo_stat_regions', { defaultValue: 'Régions actives' }), value: `${active.length}/${regions.length}`, sub: '', accent: false },
+    { label: i18n.t('analytics.geo_stat_top', { defaultValue: 'Région en tête' }), value: top?.name ?? '—', sub: top ? i18n.t('analytics.geo_stat_share', { pct: share, defaultValue: `${share}% du volume` }) : '', accent: false },
+  ]
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
+      {tiles.map((t) => (
+        <div key={t.label} style={{ background: 'linear-gradient(180deg, #131a2b, #0f1524)', border: '1px solid #1E2D45', borderRadius: 12, padding: '12px 14px' }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: MUTED, marginBottom: 6 }}>{t.label}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: t.accent ? GRAD_HI : TEXT, lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.value}</div>
+          {t.sub && <div style={{ fontSize: 11, color: MUTED, marginTop: 3 }}>{t.sub}</div>}
+        </div>
+      ))}
     </div>
   )
 }
@@ -309,7 +355,7 @@ function MissingKeyPanel({ regions }: { regions: GeoRegionDatum[] }) {
   )
 }
 
-export default function CameroonGeoMap({ regions }: { regions: GeoRegionDatum[] }) {
+function MapChooser({ regions }: { regions: GeoRegionDatum[] }) {
   // Sans clé Google Maps → message explicite + carte SVG d3-geo (jamais de fond vert).
   if (!GMAPS_KEY) {
     console.error('[CameroonMap] VITE_GOOGLE_MAPS_API_KEY manquante : la carte Google Maps ne peut pas se charger. Repli sur la carte SVG. Définir la variable dans .env.local (dev) et dans Vercel (prod).')
@@ -317,4 +363,14 @@ export default function CameroonGeoMap({ regions }: { regions: GeoRegionDatum[] 
   }
   // Avec clé → Google Maps ; si la lib plante, repli sur la carte SVG.
   return <FallbackBoundary fallback={<SvgFallback regions={regions} />}><GoogleCameroonMap apiKey={GMAPS_KEY} regions={regions} /></FallbackBoundary>
+}
+
+export default function CameroonGeoMap({ regions }: { regions: GeoRegionDatum[] }) {
+  // Couche d'insight (KPI) au-dessus de la carte, quelle que soit la variante rendue.
+  return (
+    <div>
+      <GeoStats regions={regions} />
+      <MapChooser regions={regions} />
+    </div>
+  )
 }
