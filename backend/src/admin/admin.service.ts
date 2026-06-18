@@ -725,6 +725,193 @@ export class AdminService {
     return { period, days, series };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Analytique avancée (page « Analytique » du dashboard admin)
+  // Tous les montants sont retournés en centimes (BigInt → Number par le
+  // sérialiseur global). Requêtes SQL brutes calquées sur getTimeseries().
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Rétention + volumes moyens.
+  async getAnalyticsRetention() {
+    const now = Date.now();
+    const d7 = new Date(now - 7 * 86400000);
+    const d30 = new Date(now - 30 * 86400000);
+
+    const [total, active7Rows, active30Rows, aggRows] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.$queryRaw<Array<{ c: number }>>`
+        SELECT COUNT(DISTINCT u)::int AS c FROM (
+          SELECT "senderId" AS u FROM "transactions" WHERE status='COMPLETED' AND "createdAt">=${d7} AND "senderId" IS NOT NULL
+          UNION
+          SELECT "receiverId" AS u FROM "transactions" WHERE status='COMPLETED' AND "createdAt">=${d7} AND "receiverId" IS NOT NULL
+        ) x`,
+      this.prisma.$queryRaw<Array<{ c: number }>>`
+        SELECT COUNT(DISTINCT u)::int AS c FROM (
+          SELECT "senderId" AS u FROM "transactions" WHERE status='COMPLETED' AND "createdAt">=${d30} AND "senderId" IS NOT NULL
+          UNION
+          SELECT "receiverId" AS u FROM "transactions" WHERE status='COMPLETED' AND "createdAt">=${d30} AND "receiverId" IS NOT NULL
+        ) x`,
+      this.prisma.$queryRaw<Array<{ avgtx: bigint; totalvol: bigint; vol30: bigint }>>`
+        SELECT
+          COALESCE(AVG(CASE WHEN status='COMPLETED' THEN amount END), 0)::bigint AS avgtx,
+          COALESCE(SUM(CASE WHEN status='COMPLETED' THEN amount ELSE 0 END), 0)::bigint AS totalvol,
+          COALESCE(SUM(CASE WHEN status='COMPLETED' AND "createdAt">=${d30} THEN amount ELSE 0 END), 0)::bigint AS vol30
+        FROM "transactions"`,
+    ]);
+
+    const active7d = active7Rows[0]?.c ?? 0;
+    const active30d = active30Rows[0]?.c ?? 0;
+    const totalVol = Number(aggRows[0]?.totalvol ?? 0n);
+    return {
+      total,
+      active7d,
+      active30d,
+      retention7d: total > 0 ? Math.round((active7d / total) * 100) : 0,
+      retention30d: total > 0 ? Math.round((active30d / total) * 100) : 0,
+      avgPerTransaction: Number(aggRows[0]?.avgtx ?? 0n),
+      avgPerUser: total > 0 ? Math.round(totalVol / total) : 0,
+      avgPerDay: Math.round(Number(aggRows[0]?.vol30 ?? 0n) / 30),
+    };
+  }
+
+  // Inscriptions par jour + cumul (le cumul inclut les inscriptions antérieures
+  // à la fenêtre, donc le premier point part du total existant).
+  async getAnalyticsAcquisition(period: string) {
+    const days = period === '90d' ? 90 : period === '30d' ? 30 : 7;
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const start = new Date(todayUtc - (days - 1) * 86400000);
+
+    const [rows, baseRow] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ day: Date; signups: number }>>`
+        SELECT date_trunc('day', "createdAt")::date AS day, COUNT(*)::int AS signups
+        FROM "users" WHERE "createdAt" >= ${start} GROUP BY day`,
+      this.prisma.$queryRaw<Array<{ c: number }>>`
+        SELECT COUNT(*)::int AS c FROM "users" WHERE "createdAt" < ${start}`,
+    ]);
+
+    const key = (d: Date) => d.toISOString().slice(0, 10);
+    const map = new Map(rows.map((r) => [key(new Date(r.day)), Number(r.signups)]));
+    let cumulative = baseRow[0]?.c ?? 0;
+    const series = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start.getTime() + i * 86400000);
+      const k = key(d);
+      const signups = map.get(k) ?? 0;
+      cumulative += signups;
+      series.push({ date: k, signups, cumulative });
+    }
+    return { period, days, series };
+  }
+
+  // Top marchands (par volume reçu, tout l'historique).
+  async getAnalyticsTopMerchants(limit = 10) {
+    const take = Math.min(50, Math.max(1, +limit || 10));
+    const rows = await this.prisma.$queryRaw<Array<{ userId: string; fullName: string | null; phone: string; volume: bigint; count: number }>>`
+      SELECT u.id AS "userId", u."fullName" AS "fullName", u.phone AS phone,
+             SUM(t.amount)::bigint AS volume, COUNT(*)::int AS count
+      FROM "transactions" t JOIN "users" u ON u.id = t."receiverId"
+      WHERE t.status='COMPLETED' AND t."receiverId" IS NOT NULL
+      GROUP BY u.id, u."fullName", u.phone
+      ORDER BY volume DESC LIMIT ${take}`;
+    return { merchants: rows.map((r) => ({ userId: r.userId, fullName: r.fullName, phone: r.phone, volume: r.volume, count: Number(r.count) })) };
+  }
+
+  // Top utilisateurs (par volume envoyé, tout l'historique).
+  async getAnalyticsTopUsers(limit = 10) {
+    const take = Math.min(50, Math.max(1, +limit || 10));
+    const rows = await this.prisma.$queryRaw<Array<{ userId: string; fullName: string | null; phone: string; volume: bigint; count: number }>>`
+      SELECT u.id AS "userId", u."fullName" AS "fullName", u.phone AS phone,
+             SUM(t.amount)::bigint AS volume, COUNT(*)::int AS count
+      FROM "transactions" t JOIN "users" u ON u.id = t."senderId"
+      WHERE t.status='COMPLETED' AND t."senderId" IS NOT NULL
+      GROUP BY u.id, u."fullName", u.phone
+      ORDER BY volume DESC LIMIT ${take}`;
+    return { users: rows.map((r) => ({ userId: r.userId, fullName: r.fullName, phone: r.phone, volume: r.volume, count: Number(r.count) })) };
+  }
+
+  // Heatmap activité : jour de semaine (0=dimanche) × heure, sur 30 jours.
+  async getAnalyticsHeatmap() {
+    const d30 = new Date(Date.now() - 30 * 86400000);
+    const rows = await this.prisma.$queryRaw<Array<{ dow: number; hour: number; count: number }>>`
+      SELECT EXTRACT(DOW FROM "createdAt")::int AS dow,
+             EXTRACT(HOUR FROM "createdAt")::int AS hour,
+             COUNT(*)::int AS count
+      FROM "transactions" WHERE "createdAt" >= ${d30}
+      GROUP BY dow, hour`;
+    return { cells: rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.count) })) };
+  }
+
+  // Entonnoir KYC : PENDING → SUBMITTED → APPROVED.
+  async getAnalyticsKycFunnel() {
+    const rows = await this.prisma.user.groupBy({ by: ['kycStatus'], _count: { _all: true } });
+    const cnt = (s: string) => rows.find((r) => r.kycStatus === s)?._count._all ?? 0;
+    const pending = cnt('PENDING');
+    const submitted = cnt('SUBMITTED');
+    const approved = cnt('APPROVED');
+    const rejected = cnt('REJECTED') + cnt('RESUBMIT_REQUIRED');
+    const total = rows.reduce((s, r) => s + r._count._all, 0);
+    const processed = submitted + approved + rejected;
+    return {
+      pending,
+      submitted,
+      approved,
+      rejected,
+      total,
+      submittedRate: total > 0 ? Math.round((processed / total) * 100) : 0,
+      approvedRate: processed > 0 ? Math.round((approved / processed) * 100) : 0,
+    };
+  }
+
+  // Répartition géographique (par ville de l'émetteur, 30 jours, top 12).
+  async getAnalyticsGeo() {
+    const d30 = new Date(Date.now() - 30 * 86400000);
+    const rows = await this.prisma.$queryRaw<Array<{ city: string; count: number; volume: bigint }>>`
+      SELECT COALESCE(NULLIF(TRIM(u.city), ''), 'Non renseigné') AS city,
+             COUNT(*)::int AS count, SUM(t.amount)::bigint AS volume
+      FROM "transactions" t JOIN "users" u ON u.id = t."senderId"
+      WHERE t.status='COMPLETED' AND t."createdAt" >= ${d30} AND t."senderId" IS NOT NULL
+      GROUP BY 1 ORDER BY volume DESC LIMIT 12`;
+    return { regions: rows.map((r) => ({ city: r.city, count: Number(r.count), volume: r.volume })) };
+  }
+
+  // Volume par jour ventilé par type (pour le BarChart groupé du dashboard).
+  async getVolumeByType(period: string) {
+    const days = period === '90d' ? 90 : period === '30d' ? 30 : 7;
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const start = new Date(todayUtc - (days - 1) * 86400000);
+
+    const rows = await this.prisma.$queryRaw<Array<{ day: Date; type: string; volume: bigint }>>`
+      SELECT date_trunc('day', "createdAt")::date AS day, type::text AS type,
+             COALESCE(SUM(amount), 0)::bigint AS volume
+      FROM "transactions"
+      WHERE status='COMPLETED' AND "createdAt" >= ${start}
+        AND type IN ('P2P','QR_PAYMENT','RECHARGE','WITHDRAWAL')
+      GROUP BY day, type`;
+
+    const key = (d: Date) => d.toISOString().slice(0, 10);
+    const map = new Map<string, Record<string, bigint>>();
+    for (const r of rows) {
+      const k = key(new Date(r.day));
+      if (!map.has(k)) map.set(k, {});
+      map.get(k)![r.type] = r.volume;
+    }
+    const series = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start.getTime() + i * 86400000);
+      const m = map.get(key(d)) ?? {};
+      series.push({
+        date: key(d),
+        P2P: m.P2P ?? 0n,
+        QR_PAYMENT: m.QR_PAYMENT ?? 0n,
+        RECHARGE: m.RECHARGE ?? 0n,
+        WITHDRAWAL: m.WITHDRAWAL ?? 0n,
+      });
+    }
+    return { period, days, series };
+  }
+
   // ─── Détail utilisateur (vue admin) ───────────────────────────────────────
   async getUserDetail(id: string) {
     const user = await this.prisma.user.findUnique({
@@ -1496,6 +1683,15 @@ export class AdminService {
     notify_kyc_submitted:    'on',
     notify_high_value:       'on',
     notify_failed_payment:   'off',
+    // Alertes email automatiques (surveillance cron — AlertEmailService).
+    // Clés non-anif_ → modifiables SUPER_ADMIN uniquement (cloisonnement existant).
+    email_alerts_enabled:     'off', // interrupteur maître
+    email_alert_high_value:   'off', // transaction > seuil ANIF
+    email_alert_failure_rate: 'off', // taux d'échec recharge/retrait > 10% sur 1h
+    email_alert_signups:      'off', // inscriptions > 50/h
+    email_alert_kyc_score:    'off', // score IA moyen < 60 sur 24h
+    email_alert_admin_failed: 'off', // > 5 connexions admin échouées en 15 min
+    alert_email:              '',    // destinataire des alertes (sinon env ALERT_EMAIL)
   };
 
   async getSettings(): Promise<Record<string, string>> {

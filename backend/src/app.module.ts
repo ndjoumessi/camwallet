@@ -19,6 +19,7 @@ import { DisputesModule } from './disputes/disputes.module';
 import { SseModule } from './sse/sse.module';
 import { CamPayModule } from './campay/campay.module';
 import { HealthModule } from './health/health.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 import { AdminOriginMiddleware } from './common/middleware/admin-origin.middleware';
 
@@ -56,6 +57,7 @@ import { AdminOriginMiddleware } from './common/middleware/admin-origin.middlewa
     SseModule,
     CamPayModule,
     HealthModule,
+    AlertsModule,
   ],
 })
 export class AppModule implements NestModule {

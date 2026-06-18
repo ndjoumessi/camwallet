@@ -25,6 +25,7 @@ import { AdminGuard } from './guards/admin.guard';
 import { PermissionsGuard } from './rbac/permissions.guard';
 import { RequirePermission } from './rbac/require-permission.decorator';
 import { AdminService } from './admin.service';
+import { AlertEmailService } from '../alerts/alert-email.service';
 import { TransactionStatus, TransactionType, UserStatus } from '@prisma/client';
 import { ReviewKycDto } from './dto/review-kyc.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
@@ -41,6 +42,7 @@ export class AdminController {
   constructor(
     private adminService: AdminService,
     private readonly sseService: SseService,
+    private readonly alertEmail: AlertEmailService,
   ) {}
 
   @Get('stats')
@@ -48,6 +50,70 @@ export class AdminController {
   @ApiOperation({ summary: 'Statistiques globales de la plateforme' })
   stats() {
     return this.adminService.getStats();
+  }
+
+  // ─── Analytique avancée ─────────────────────────────────────────────────────
+  @Get('stats/volume-by-type')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Volume par jour ventilé par type (7d | 30d | 90d)' })
+  volumeByType(@Query('period') period = '7d') {
+    return this.adminService.getVolumeByType(period);
+  }
+
+  @Get('analytics/retention')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Rétention (7j/30j) et volumes moyens' })
+  analyticsRetention() {
+    return this.adminService.getAnalyticsRetention();
+  }
+
+  @Get('analytics/acquisition')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Inscriptions par jour + cumul (7d | 30d | 90d)' })
+  analyticsAcquisition(@Query('period') period = '30d') {
+    return this.adminService.getAnalyticsAcquisition(period);
+  }
+
+  @Get('analytics/top-merchants')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Top marchands par volume reçu' })
+  analyticsTopMerchants(@Query('limit') limit = '10') {
+    return this.adminService.getAnalyticsTopMerchants(+limit);
+  }
+
+  @Get('analytics/top-users')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Top utilisateurs par volume envoyé' })
+  analyticsTopUsers(@Query('limit') limit = '10') {
+    return this.adminService.getAnalyticsTopUsers(+limit);
+  }
+
+  @Get('analytics/heatmap')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Heatmap activité (jour de semaine × heure, 30j)' })
+  analyticsHeatmap() {
+    return this.adminService.getAnalyticsHeatmap();
+  }
+
+  @Get('analytics/kyc-funnel')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Entonnoir KYC (PENDING → SUBMITTED → APPROVED)' })
+  analyticsKycFunnel() {
+    return this.adminService.getAnalyticsKycFunnel();
+  }
+
+  @Get('analytics/geo')
+  @RequirePermission('metrics:read')
+  @ApiOperation({ summary: 'Répartition géographique des transactions (30j)' })
+  analyticsGeo() {
+    return this.adminService.getAnalyticsGeo();
+  }
+
+  @Get('alerts/email-history')
+  @RequirePermission('settings:read')
+  @ApiOperation({ summary: 'Historique des 10 dernières alertes email envoyées' })
+  emailAlertHistory() {
+    return this.alertEmail.getEmailAlertHistory(10);
   }
 
   @Get('stats/timeseries')
