@@ -1223,6 +1223,7 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
   }
 
   const handleDeleteNote = async (noteId: string) => {
+    if (!window.confirm(i18n.t('x.ud.note_delete_confirm', { defaultValue: 'Supprimer cette note ?' }))) return
     try {
       await deleteAdminNote(noteId)
       refetchNotes()
@@ -1332,9 +1333,9 @@ function UserDetailModal({ userId, onClose, onChanged, zIndex = 50 }: { userId: 
               )}
               {['PENDING', 'SUBMITTED'].includes(u.kycStatus) && (
                 <>
-                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'APPROVED'), i18n.t('x.ud.kyc_approved'))}
+                  <button className="cw-btn" disabled={acting} onClick={() => { if (window.confirm(i18n.t('x.ud.kyc_confirm_approve', { defaultValue: 'Approuver ce dossier KYC ?' }))) run(() => reviewKyc(u.id, 'APPROVED'), i18n.t('x.ud.kyc_approved')) }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#fff', background: C.green, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><Check size={14} /> {i18n.t('x.ud.approve_kyc')}</button>
-                  <button className="cw-btn" disabled={acting} onClick={() => run(() => reviewKyc(u.id, 'REJECTED'), i18n.t('x.ud.kyc_rejected'))}
+                  <button className="cw-btn" disabled={acting} onClick={() => { if (window.confirm(i18n.t('x.ud.kyc_confirm_reject', { defaultValue: 'Rejeter ce dossier KYC ?' }))) run(() => reviewKyc(u.id, 'REJECTED'), i18n.t('x.ud.kyc_rejected')) }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: C.red, background: C.redLight, border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontWeight: 700 }}><X size={14} /> {i18n.t('x.ud.reject_kyc')}</button>
                 </>
               )}
@@ -1774,6 +1775,13 @@ function KYCDetailModal({ entry, onClose, onDecision, onRefresh }: { entry: Admi
       toast(i18n.t('x.kycd.comment_required'), 'error')
       return
     }
+    // Confirmation avant une décision KYC irréversible.
+    const confirmMsg = decision === 'APPROVED'
+      ? i18n.t('x.kycd.confirm_approve', { defaultValue: 'Approuver ce dossier KYC ?' })
+      : decision === 'REJECTED'
+        ? i18n.t('x.kycd.confirm_reject', { defaultValue: 'Rejeter ce dossier KYC ?' })
+        : i18n.t('x.kycd.confirm_resubmit', { defaultValue: 'Demander une nouvelle soumission ?' })
+    if (!window.confirm(confirmMsg)) return
     setActing(decision)
     try {
       await reviewKyc(entry.id, decision, finalComment || undefined)

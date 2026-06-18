@@ -589,7 +589,10 @@
       "kyc_id_back": "CNI verso",
       "kyc_selfie": "Selfie",
       "no_kyc_doc": "Aucun document KYC soumis",
-      "no_audit": "Aucune action enregistrée"
+      "no_audit": "Aucune action enregistrée",
+      "note_delete_confirm": "Supprimer cette note ?",
+      "kyc_confirm_approve": "Approuver ce dossier KYC ?",
+      "kyc_confirm_reject": "Rejeter ce dossier KYC ?"
     },
     "users": {
       "title": "Utilisateurs",
@@ -702,7 +705,10 @@
       "approve": "Approuver",
       "reject": "Rejeter",
       "resubmit": "Nouveau doc",
-      "doc_alt": "Document KYC"
+      "doc_alt": "Document KYC",
+      "confirm_approve": "Approuver ce dossier KYC ?",
+      "confirm_reject": "Rejeter ce dossier KYC ?",
+      "confirm_resubmit": "Demander une nouvelle soumission KYC ?"
     },
     "tx": {
       "title": "Transactions",

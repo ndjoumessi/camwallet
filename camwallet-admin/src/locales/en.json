@@ -589,7 +589,10 @@
       "kyc_id_back": "ID back",
       "kyc_selfie": "Selfie",
       "no_kyc_doc": "No KYC document submitted",
-      "no_audit": "No action recorded"
+      "no_audit": "No action recorded",
+      "note_delete_confirm": "Delete this note?",
+      "kyc_confirm_approve": "Approve this KYC submission?",
+      "kyc_confirm_reject": "Reject this KYC submission?"
     },
     "users": {
       "title": "Users",
@@ -702,7 +705,10 @@
       "approve": "Approve",
       "reject": "Reject",
       "resubmit": "New doc",
-      "doc_alt": "KYC document"
+      "doc_alt": "KYC document",
+      "confirm_approve": "Approve this KYC submission?",
+      "confirm_reject": "Reject this KYC submission?",
+      "confirm_resubmit": "Request a new KYC submission?"
     },
     "tx": {
       "title": "Transactions",
