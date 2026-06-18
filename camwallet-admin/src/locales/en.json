@@ -492,7 +492,8 @@
     "DEGRADED": "Degraded",
     "SIMULATED": "Simulated",
     "DOWN": "Offline",
-    "UNKNOWN": "Untested"
+    "UNKNOWN": "Untested",
+    "FALLBACK": "Memory fallback"
   },
   "alert_level": {
     "error": "Critical",

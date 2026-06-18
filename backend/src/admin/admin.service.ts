@@ -1543,12 +1543,13 @@ export class AdminService implements OnModuleInit {
 
     // Santé opérateur sur 7 jours (le sandbox a peu de trafic sur 24h → souvent « Non testé »).
     // Pings AfricasTalking + Anthropic en parallèle (no-op si clé non configurée).
-    const [om, mtn, smsPing, aiPing, cloudPing] = await Promise.all([
+    const [om, mtn, smsPing, aiPing, cloudPing, cacheHealth] = await Promise.all([
       this.operatorHealth('ORANGE_MONEY', d7d, gateway.reachable),
       this.operatorHealth('MTN_MOMO', d7d, gateway.reachable),
       this.sms.ping(),
       this.kycAi.ping(),
       this.cloudinary.ping(),
+      this.cache.health(),
     ]);
     const smsConfigured = this.sms.isConfigured();
     const aiConfigured = this.kycAi.isConfigured();
@@ -1636,6 +1637,22 @@ export class AdminService implements OnModuleInit {
               ? 'Cloudinary opérationnel (stockage documents KYC)'
               : 'Cloudinary injoignable / credentials invalides'
             : 'Stockage local base64 (Cloudinary non configuré)',
+        },
+        {
+          name: 'Cache (Redis)',
+          key: 'cache_redis',
+          // Redis configuré → UP si ping OK, sinon DOWN. Non configuré → FALLBACK
+          // (cache mémoire du process, fonctionnel mais non partagé entre instances).
+          status: cacheHealth.mode === 'memory' ? 'FALLBACK' : cacheHealth.reachable ? 'UP' : 'DOWN',
+          latency: cacheHealth.latency,
+          txCount7d: null,
+          lastSuccess: null,
+          uptime: null,
+          note: cacheHealth.mode === 'memory'
+            ? 'Cache mémoire du process (REDIS_URL non configuré)'
+            : cacheHealth.reachable
+              ? 'Redis opérationnel (cache partagé)'
+              : 'Redis injoignable (repli mémoire actif)',
         },
       ],
       stalePendingTx: stalePending,

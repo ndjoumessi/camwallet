@@ -49,6 +49,19 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
+  // Santé du cache pour GET /admin/health/integrations.
+  // mode 'memory' = REDIS_URL non configuré (repli local) ; 'redis' = client actif.
+  async health(): Promise<{ mode: 'redis' | 'memory'; reachable: boolean; latency: number | null }> {
+    if (!this.redis) return { mode: 'memory', reachable: true, latency: null };
+    const start = Date.now();
+    try {
+      await this.redis.ping();
+      return { mode: 'redis', reachable: true, latency: Date.now() - start };
+    } catch {
+      return { mode: 'redis', reachable: false, latency: null };
+    }
+  }
+
   async get(key: string): Promise<string | null> {
     if (this.redis) {
       try {

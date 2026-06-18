@@ -492,7 +492,8 @@
     "DEGRADED": "Dégradé",
     "SIMULATED": "Simulé",
     "DOWN": "Hors ligne",
-    "UNKNOWN": "Non testé"
+    "UNKNOWN": "Non testé",
+    "FALLBACK": "Repli mémoire"
   },
   "alert_level": {
     "error": "Critique",

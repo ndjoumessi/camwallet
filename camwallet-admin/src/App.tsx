@@ -967,7 +967,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
 
 // Couleur sémantique d'un statut d'intégration.
 const HEALTH_COLOR: Record<string, string> = {
-  UP: C.green, DEGRADED: C.orange, SIMULATED: C.orange, DOWN: C.red, UNKNOWN: C.textMuted,
+  UP: C.green, DEGRADED: C.orange, SIMULATED: C.orange, FALLBACK: C.orange, DOWN: C.red, UNKNOWN: C.textMuted,
 }
 // Couleur de la latence selon les seuils (<50ms vert, 50–200 orange, >200 rouge).
 const latencyColor = (ms: number) => (ms < 50 ? C.green : ms <= 200 ? C.orange : C.red)
