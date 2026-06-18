@@ -348,6 +348,41 @@ export interface OperatorRate { name: string; total: number; completed: number; 
 export interface OperatorRatesResponse { operators: OperatorRate[]; period: string }
 export const getOperatorRates = () => request<OperatorRatesResponse>('/admin/stats/operator-rates')
 
+// ── Analytique avancée (page « Analytique ») ────────────────
+export interface AnalyticsRetention {
+  total: number; active7d: number; active30d: number
+  retention7d: number; retention30d: number
+  avgPerTransaction: number; avgPerUser: number; avgPerDay: number // centimes
+}
+export const getAnalyticsRetention = () => request<AnalyticsRetention>('/admin/analytics/retention')
+
+export interface AcquisitionPoint { date: string; signups: number; cumulative: number }
+export interface AnalyticsAcquisition { period: string; days: number; series: AcquisitionPoint[] }
+export const getAnalyticsAcquisition = (period: '7d' | '30d' | '90d') =>
+  request<AnalyticsAcquisition>(`/admin/analytics/acquisition?period=${period}`)
+
+export interface TopEntry { userId: string; fullName: string | null; phone: string; volume: number; count: number }
+export const getTopMerchants = (limit = 10) => request<{ merchants: TopEntry[] }>(`/admin/analytics/top-merchants?limit=${limit}`)
+export const getTopUsers = (limit = 10) => request<{ users: TopEntry[] }>(`/admin/analytics/top-users?limit=${limit}`)
+
+export interface HeatmapCell { dow: number; hour: number; count: number }
+export const getAnalyticsHeatmap = () => request<{ cells: HeatmapCell[] }>('/admin/analytics/heatmap')
+
+export interface KycFunnel { pending: number; submitted: number; approved: number; rejected: number; total: number; submittedRate: number; approvedRate: number }
+export const getKycFunnel = () => request<KycFunnel>('/admin/analytics/kyc-funnel')
+
+export interface GeoRegion { city: string; count: number; volume: number }
+export const getAnalyticsGeo = () => request<{ regions: GeoRegion[] }>('/admin/analytics/geo')
+
+export interface VolByTypePoint { date: string; P2P: number; QR_PAYMENT: number; RECHARGE: number; WITHDRAWAL: number }
+export interface VolumeByType { period: string; days: number; series: VolByTypePoint[] }
+export const getVolumeByType = (period: '7d' | '30d' | '90d') =>
+  request<VolumeByType>(`/admin/stats/volume-by-type?period=${period}`)
+
+// ── Alertes email (historique) ──────────────────────────────
+export interface EmailAlertEntry { id: string; kind: string; detail: string; value: string; createdAt: string }
+export const getEmailAlertHistory = () => request<EmailAlertEntry[]>('/admin/alerts/email-history')
+
 export const analyzeKyc = (userId: string) =>
   request<KycAiResult>(`/admin/kyc/${userId}/analyze`, { method: 'POST' })
 

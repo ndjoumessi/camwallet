@@ -68,7 +68,8 @@
     "admin_system": "Admin Système",
     "api_operational": "API opérationnelle",
     "admin_panel": "Admin Panel",
-    "back_home": "Accueil"
+    "back_home": "Accueil",
+    "analytics": "Analytique"
   },
   "topbar": {
     "refresh_aria": "Actualiser les données",
@@ -101,7 +102,12 @@
     "chart_series_users": "Utilisateurs",
     "chart_series_tx": "Transactions",
     "evolution": "Évolution",
-    "chart_donut_total": "Transactions"
+    "chart_donut_total": "Transactions",
+    "chart_vol_by_type": "Volume par type",
+    "gauge_title": "Taux de succès",
+    "gauge_sub": "complétées",
+    "geo_title": "Répartition géographique",
+    "chart_series_trend": "Tendance"
   },
   "health": {
     "title": "Santé des intégrations",
@@ -665,7 +671,18 @@
       "no_queue": "Aucune demande KYC",
       "id_front": "CNI Recto",
       "id_back": "CNI Verso",
-      "selfie": "Selfie"
+      "selfie": "Selfie",
+      "pdf_title": "Rapport KYC CamWallet",
+      "pdf_count": "{{count}} dossier(s)",
+      "pdf_approval_rate": "Taux d’approbation",
+      "pdf_avg_time": "Temps moyen de traitement",
+      "pdf_hours": "{{h}} h",
+      "pdf_avg_score": "Score IA moyen",
+      "pdf_col_user": "Utilisateur",
+      "pdf_col_status": "Statut",
+      "pdf_col_score": "Score IA",
+      "pdf_col_submitted": "Soumis le",
+      "pdf_col_decided": "Décision le"
     },
     "kycd": {
       "comment_required": "Un commentaire est requis pour rejeter ou demander un nouveau document",
@@ -729,7 +746,11 @@
       "col_date": "Date",
       "select_aria": "Sélectionner",
       "resolved_aria": "Résolu",
-      "no_tx": "Aucune transaction"
+      "no_tx": "Aucune transaction",
+      "pdf_period": "Période : {{value}}",
+      "pdf_total_count": "Nombre de transactions",
+      "pdf_total_volume": "Volume total",
+      "pdf_total_fees": "Frais perçus"
     },
     "txd": {
       "title": "Détail transaction",
@@ -961,7 +982,16 @@
       "col_resource": "Ressource",
       "col_ip": "IP / Agent",
       "col_date": "Date",
-      "no_entries": "Aucune entrée d'audit"
+      "no_entries": "Aucune entrée d'audit",
+      "pdf_period": "Période",
+      "pdf_category": "Catégorie",
+      "pdf_actor": "Acteur",
+      "pdf_resource": "Ressource",
+      "pdf_title": "Journal d’audit CamWallet",
+      "pdf_count": "{{count}} entrée(s)",
+      "preset_today": "Aujourd’hui",
+      "preset_7d": "7 derniers jours",
+      "preset_30d": "30 derniers jours"
     },
     "set": {
       "title": "Paramètres système",
@@ -1017,7 +1047,24 @@
       "twofa_not_set": "La 2FA n'est pas encore activee. Configurez-la pour renforcer la securite du compte admin.",
       "twofa_setup": "Configurer la 2FA (TOTP)",
       "api_creds": "Credentials API",
-      "api_creds_body": "Les credentials API sont gérés via les variables d'environnement du serveur. Contactez l'administrateur système pour une rotation."
+      "api_creds_body": "Les credentials API sont gérés via les variables d'environnement du serveur. Contactez l'administrateur système pour une rotation.",
+      "email_alerts": "Alertes email",
+      "email_master": "Activer les alertes email",
+      "email_master_desc": "Interrupteur maître — surveillance automatique toutes les 5 minutes.",
+      "email_recipient": "Email destinataire",
+      "email_recipient_desc": "Adresse recevant les alertes (sinon variable d’environnement ALERT_EMAIL).",
+      "email_high": "Transaction à montant élevé",
+      "email_high_desc": "Alerter dès qu’une transaction dépasse le seuil ANIF.",
+      "email_failure": "Taux d’échec opérateur",
+      "email_failure_desc": "Alerter si le taux d’échec recharge/retrait dépasse 10 % sur 1 h.",
+      "email_signups": "Pic d’inscriptions",
+      "email_signups_desc": "Alerter au-delà de 50 inscriptions par heure.",
+      "email_kyc": "Score IA KYC faible",
+      "email_kyc_desc": "Alerter si le score IA moyen passe sous 60 sur 24 h.",
+      "email_admin": "Connexions admin échouées",
+      "email_admin_desc": "Alerter au-delà de 5 échecs de connexion admin en 15 min.",
+      "email_history": "Dernières alertes envoyées",
+      "email_history_empty": "Aucune alerte envoyée pour le moment."
     },
     "team": {
       "title": "Équipe Administration",
@@ -1195,5 +1242,34 @@
       "col_status": "Statut",
       "col_date": "Date"
     }
+  },
+  "analytics": {
+    "title": "Analytique",
+    "subtitle": "Rétention, acquisition, activité et classements",
+    "retention_7d": "Rétention 7 j",
+    "retention_30d": "Rétention 30 j",
+    "active_users": "{{n}} actifs",
+    "avg_tx": "Volume moyen / transaction",
+    "avg_tx_sub": "Transactions complétées",
+    "avg_user": "Volume moyen / utilisateur",
+    "avg_user_sub": "Sur l’ensemble des comptes",
+    "avg_day": "Volume moyen / jour",
+    "avg_day_sub": "30 derniers jours",
+    "acquisition_title": "Inscriptions cumulées",
+    "signups_cumulative": "Cumul",
+    "signups_daily": "Par jour",
+    "weekday_title": "Activité par jour de semaine",
+    "tx_label": "Transactions",
+    "funnel_title": "Entonnoir KYC",
+    "funnel_pending": "Comptes (total)",
+    "funnel_submitted": "Dossiers soumis",
+    "funnel_approved": "Approuvés",
+    "heatmap_title": "Activité par heure et jour",
+    "heatmap_hint": "Plus la case est verte, plus l’activité est forte (30 derniers jours).",
+    "top_users_title": "Top 10 utilisateurs (volume envoyé)",
+    "top_merchants_title": "Top 10 marchands (volume reçu)",
+    "geo_title": "Répartition géographique (30 j)",
+    "no_data": "Aucune donnée",
+    "tx_count": "{{n}} tx"
   }
 }

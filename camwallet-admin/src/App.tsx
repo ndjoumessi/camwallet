@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import LoginPage from './LoginPage'
+import { generatePdfReport } from './lib/pdf'
 import {
   hasSession, logout, toFcfa, SessionExpiredError, getAdminRole,
   getStats, getUsers, getUserStats, getTransactions, getTimeseries, AdminTransaction, AdminUser,
@@ -28,6 +29,8 @@ import {
   getOperations, retryOperation, WebhookEvent, AdminOperation,
   getHealthIntegrations,
   getOperatorRates, getSettings, updateSettings,
+  getAnalyticsRetention, getAnalyticsAcquisition, getTopMerchants, getTopUsers,
+  getAnalyticsHeatmap, getKycFunnel, getAnalyticsGeo, getVolumeByType, getEmailAlertHistory,
   downloadUsersCSV, downloadTransactionsCSV,
   AdminNote, getAdminNotes, addAdminNote, deleteAdminNote,
   setup2FA, verify2FA, disable2FA, get2FAStatus,
@@ -210,45 +213,19 @@ function CopyableRef({ value, truncate }: { value: string; truncate?: number }) 
   )
 }
 
-// Génère un rapport PDF imprimable : ouvre une fenêtre mise en page aux couleurs
-// CamWallet et déclenche l'impression navigateur (l'utilisateur enregistre en PDF).
-// Retourne false si le navigateur a bloqué la fenêtre (popup bloqué).
+// Génère un rapport PDF de marque (jsPDF + AutoTable, cf. lib/pdf.ts) et le
+// télécharge directement. Signature historique conservée (title, columns, rows)
+// pour les appelants existants (Finance, ANIF, détail transaction…). Les pages
+// Transactions / KYC / Audit appellent generatePdfReport() directement pour
+// bénéficier des filtres, statistiques et totaux.
 function exportPdfReport(title: string, columns: string[], rows: (string | number)[][]): boolean {
-  const esc = (s: any) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
-  const dateStr = new Date().toLocaleString('fr-FR')
-  const thead = columns.map((c) => `<th>${esc(c)}</th>`).join('')
-  const tbody = rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')
-  const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"/>
-<title>${esc(title)}</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; margin: 28px; color: #161D2F; }
-  .logo { font-size: 24px; font-weight: 900; color: #00C896; }
-  .logo span { color: #161D2F; }
-  .meta { margin: 12px 0 20px; color: #555; font-size: 12px; }
-  h1 { font-size: 16px; margin: 0 0 4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  th { background: #00C896; color: #fff; padding: 7px 9px; text-align: left; }
-  td { padding: 6px 9px; border-bottom: 1px solid #eee; }
-  tr:nth-child(even) td { background: #f7f9fc; }
-  .footer { margin-top: 28px; font-size: 10px; color: #aaa; text-align: center; }
-</style></head>
-<body onload="window.print()">
-  <div class="logo">Cam<span>Wallet</span> · Admin</div>
-  <div class="meta"><h1>${esc(title)}</h1>${rows.length} ligne(s) · Généré le ${esc(dateStr)}</div>
-  <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
-  <div class="footer">CamWallet · Rapport généré automatiquement · Confidentiel</div>
-</body></html>`
-  // Blob URL plutôt que document.write() (évite l'injection et les soucis de perf).
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-  const w = window.open(url, '_blank')
-  if (!w) {
-    URL.revokeObjectURL(url)
-    return false
-  }
-  w.focus()
-  // Libère l'URL après ouverture (laisse le temps au navigateur de charger).
-  setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  return true
+  const slug = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  return generatePdfReport({
+    title,
+    columns,
+    rows,
+    filename: `${slug || 'rapport'}-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+  })
 }
 
 // Export CSV généré côté client (séparateur « ; » pour Excel FR, BOM UTF-8).
@@ -518,6 +495,10 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
   // Séries temporelles réelles (volume, frais, tx, users) selon la période.
   const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('7d')
   const { data: ts } = useFetch(() => getTimeseries(period), [period])
+  // Volume groupé par type (sélecteur indépendant) + répartition géographique.
+  const [volPeriod, setVolPeriod] = useState<'7d' | '30d' | '90d'>('30d')
+  const { data: volType } = useFetch(() => getVolumeByType(volPeriod), [volPeriod])
+  const { data: dashGeo } = useFetch(() => getAnalyticsGeo(), [])
   // Série 7 j fixe pour les sparklines des KPI (indépendante du sélecteur).
   const { data: ts7 } = useFetch(() => getTimeseries('7d'), [])
   const spark7 = ts7?.series ?? []
@@ -567,6 +548,24 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
     volume: toFcfa(tp.volume),
     color: TX_TYPE_COLOR[tp.type] ?? C.textMuted,
   }))
+
+  // Volume groupé par type sur la période (BarChart groupé).
+  const volTypeData = (volType?.series ?? []).map((p) => ({
+    date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`,
+    P2P: toFcfa(p.P2P), QR: toFcfa(p.QR_PAYMENT), RECHARGE: toFcfa(p.RECHARGE), WITHDRAWAL: toFcfa(p.WITHDRAWAL),
+  }))
+  // Tendance des revenus : moyenne mobile (fenêtre 3) sur les frais.
+  const chartTrend = chart.map((c, i, arr) => {
+    const w = arr.slice(Math.max(0, i - 2), i + 1)
+    return { ...c, trend: Math.round(w.reduce((s, x) => s + x.fees, 0) / w.length) }
+  })
+  // Taux de succès (jauge) depuis byStatus.
+  const stByStatus = (s: string) => stats?.transactions.byStatus.find((x) => x.status === s)?.count ?? 0
+  const okCount = stByStatus('COMPLETED')
+  const koCount = stByStatus('FAILED') + stByStatus('CANCELLED')
+  const successRate = okCount + koCount > 0 ? Math.round((okCount / (okCount + koCount)) * 100) : null
+  const VOL_PERIODS: ('7d' | '30d' | '90d')[] = ['7d', '30d', '90d']
+  const GEO_MAX = Math.max(1, ...(dashGeo?.regions ?? []).map((r) => toFcfa(r.volume)))
 
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
@@ -657,6 +656,80 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         </div>
       </div>
 
+      {/* Volume groupé par type — BarChart groupé + sélecteur de période */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.chart_vol_by_type')}</h2>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {VOL_PERIODS.map((p) => (
+              <button key={p} onClick={() => setVolPeriod(p)} aria-pressed={volPeriod === p}
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, cursor: 'pointer', fontWeight: volPeriod === p ? 700 : 500, background: volPeriod === p ? C.green : C.surface, border: `1px solid ${volPeriod === p ? C.green : C.border}`, color: volPeriod === p ? '#fff' : C.textMuted }}>
+                {t('dashboard.period_' + p)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={volTypeData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={{ stroke: C.border }} />
+            <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={40}
+              tickFormatter={(v) => v >= 1_000_000 ? (v / 1_000_000).toFixed(1) + 'M' : (v / 1000).toFixed(0) + 'k'} />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: C.greenLight }} />
+            <Bar dataKey="P2P" name={TX_TYPE_LABEL['P2P']} fill={TX_TYPE_COLOR['P2P'] ?? C.blue} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="QR" name={TX_TYPE_LABEL['QR_PAYMENT']} fill={TX_TYPE_COLOR['QR_PAYMENT'] ?? C.green} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="RECHARGE" name={TX_TYPE_LABEL['RECHARGE']} fill={TX_TYPE_COLOR['RECHARGE'] ?? C.yellow} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="WITHDRAWAL" name={TX_TYPE_LABEL['WITHDRAWAL']} fill={TX_TYPE_COLOR['WITHDRAWAL'] ?? C.purple} radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+        {volTypeData.length === 0 && <div style={{ fontSize: 12, color: C.textMuted, marginTop: 8 }}>{t('dashboard.chart_no_tx')}</div>}
+      </div>
+
+      {/* Taux de succès (jauge) + Répartition géographique */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 12, alignSelf: 'flex-start' }}>{t('dashboard.gauge_title')}</h2>
+          {(() => {
+            const R = 52, CIRC = 2 * Math.PI * R, pct = successRate ?? 0
+            const col = successRate == null ? C.textMuted : successRate >= 95 ? C.green : successRate >= 80 ? C.yellow : C.red
+            return (
+              <div style={{ position: 'relative', width: 140, height: 140 }}>
+                <svg width={140} height={140}>
+                  <circle cx={70} cy={70} r={R} stroke={C.border} strokeWidth={12} fill="none" />
+                  <circle cx={70} cy={70} r={R} stroke={col} strokeWidth={12} fill="none" strokeLinecap="round"
+                    strokeDasharray={CIRC} strokeDashoffset={CIRC * (1 - pct / 100)} transform="rotate(-90 70 70)"
+                    style={{ transition: 'stroke-dashoffset .6s ease' }} />
+                </svg>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 28, fontWeight: 900, color: col, lineHeight: 1 }}>{successRate == null ? '—' : `${successRate}%`}</span>
+                  <span style={{ fontSize: 10, color: C.textMuted, marginTop: 3 }}>{t('dashboard.gauge_sub')}</span>
+                </div>
+              </div>
+            )
+          })()}
+          <div style={{ fontSize: 12, color: C.textMuted, marginTop: 10 }}>{okCount.toLocaleString('fr-FR')} ✓ · {koCount.toLocaleString('fr-FR')} ✕</div>
+        </div>
+
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
+          <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{t('dashboard.geo_title')}</h2>
+          {(dashGeo?.regions ?? []).length === 0 ? <div style={{ fontSize: 12, color: C.textMuted }}>{t('dashboard.chart_no_tx')}</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+              {(dashGeo?.regions ?? []).slice(0, 6).map((r) => (
+                <div key={r.city}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                    <span style={{ color: C.textSoft }}>{r.city} <span style={{ color: C.textMuted }}>· {t('analytics.tx_count', { n: r.count })}</span></span>
+                    <span style={{ color: C.green, fontWeight: 700 }}>{formatFCFA(r.volume)}</span>
+                  </div>
+                  <div style={{ height: 8, background: C.border, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((toFcfa(r.volume) / GEO_MAX) * 100)}%`, background: C.blue, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Évolution temporelle — sélecteur de période */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 4 }}>
         <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700 }}>{t('dashboard.evolution')}</h2>
@@ -684,7 +757,7 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <h2 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 16 }}>{t('dashboard.chart_revenue')}</h2>
           <ResponsiveContainer width="100%" height={170}>
-            <AreaChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <AreaChart data={chartTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={C.green} stopOpacity={0.28} />
@@ -698,6 +771,8 @@ function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) 
               <Tooltip content={<ChartTooltip />} />
               <Area type="monotone" dataKey="fees" name={t('dashboard.chart_series_fees')} stroke={C.green} strokeWidth={1.5}
                 fill="url(#gradRev)" dot={{ fill: C.green, r: 2.5, strokeWidth: 0 }} activeDot={{ r: 4 }} />
+              <Area type="monotone" dataKey="trend" name={t('dashboard.chart_series_trend')} stroke={C.yellow} strokeWidth={1.5}
+                fill="none" strokeDasharray="5 3" dot={false} activeDot={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1802,6 +1877,7 @@ function KYCPage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<AdminKycEntry | null>(null)
+  const toast = useToast()
 
   const filtered = queue.filter((k) => {
     if (filterStatus !== 'all' && k.kycStatus !== filterStatus) return false
@@ -1827,12 +1903,46 @@ function KYCPage() {
     { label: i18n.t('x.kyc.filter_resubmit'), value: 'RESUBMIT_REQUIRED' },
   ]
 
+  // Export PDF des dossiers KYC affichés (stats : taux d'approbation, temps
+  // moyen de traitement, score IA moyen).
+  const handleExportKycPdf = () => {
+    const withScore = filtered.filter((k) => typeof k.kycDocument?.aiScore === 'number')
+    const avgAi = withScore.length ? Math.round(withScore.reduce((s, k) => s + (k.kycDocument!.aiScore as number), 0) / withScore.length) : null
+    const reviewed = filtered.filter((k) => k.kycDocument?.submittedAt && k.kycDocument?.reviewedAt)
+    const avgHours = reviewed.length ? Math.round(reviewed.reduce((s, k) => s + (new Date(k.kycDocument!.reviewedAt as string).getTime() - new Date(k.kycDocument!.submittedAt).getTime()), 0) / reviewed.length / 3_600_000) : null
+    const ok = generatePdfReport({
+      title: i18n.t('x.kyc.pdf_title'),
+      subtitle: i18n.t('x.kyc.pdf_count', { count: filtered.length }),
+      stats: [
+        { label: i18n.t('x.kyc.pdf_approval_rate'), value: approvalRateLabel },
+        { label: i18n.t('x.kyc.pdf_avg_time'), value: avgHours == null ? '—' : i18n.t('x.kyc.pdf_hours', { h: avgHours }) },
+        { label: i18n.t('x.kyc.pdf_avg_score'), value: avgAi == null ? '—' : `${avgAi} / 100` },
+      ],
+      columns: [i18n.t('x.kyc.pdf_col_user'), i18n.t('x.kyc.pdf_col_status'), i18n.t('x.kyc.pdf_col_score'), i18n.t('x.kyc.pdf_col_submitted'), i18n.t('x.kyc.pdf_col_decided')],
+      rows: filtered.map((k) => [
+        `${k.fullName ?? '—'} (${k.phone})`,
+        i18n.t('kyc_status.' + k.kycStatus),
+        typeof k.kycDocument?.aiScore === 'number' ? `${k.kycDocument.aiScore}/100` : '—',
+        k.kycDocument?.submittedAt ? fmtDate(k.kycDocument.submittedAt) : '—',
+        k.kycDocument?.reviewedAt ? fmtDate(k.kycDocument.reviewedAt) : '—',
+      ]),
+      filename: `kyc-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
+    toast(ok ? i18n.t('common.pdf_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       {/* Header */}
-      <div style={{ marginBottom: 22 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('kyc.title')}</h1>
-        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.kyc.subtitle', { count: counts.pending })}</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('kyc.title')}</h1>
+          <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.kyc.subtitle', { count: counts.pending })}</p>
+        </div>
+        <button className="cw-btn" onClick={handleExportKycPdf} disabled={!filtered.length}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.blue, background: C.blueLight, border: `1px solid ${C.blue}40`, borderRadius: 8, padding: '8px 16px', cursor: filtered.length ? 'pointer' : 'not-allowed', fontWeight: 600 }}>
+          <FileText size={14} /> {i18n.t('common.export_pdf')}
+        </button>
       </div>
 
       {(loading || error) && <StateRow loading={loading} error={error} />}
@@ -2075,12 +2185,29 @@ function TransactionsPage() {
     }
   }
 
-  // Export PDF des transactions actuellement affichées (filtre appliqué).
+  // Libellé lisible de la période sélectionnée (pour le sous-titre du rapport).
+  const periodLabel = period === 'custom'
+    ? `${customFrom || '…'} → ${customTo || '…'}`
+    : period === '7d' ? i18n.t('dashboard.period_7d') : period === '30d' ? i18n.t('dashboard.period_30d') : i18n.t('dashboard.period_90d')
+
+  // Export PDF des transactions actuellement affichées (filtres + totaux).
   const handleExportTxPdf = () => {
-    const ok = exportPdfReport(
-      i18n.t('x.tx.pdf_title'),
-      [i18n.t('x.tx.pdf_ref'), i18n.t('x.tx.pdf_type'), i18n.t('x.tx.pdf_from'), i18n.t('x.tx.pdf_to'), i18n.t('x.tx.pdf_amount'), i18n.t('x.tx.pdf_fees'), i18n.t('x.tx.pdf_status'), i18n.t('x.tx.pdf_date')],
-      txs.map((tx) => [
+    const filters: { label: string; value: string }[] = []
+    if (txFilter !== 'all') filters.push({ label: i18n.t('x.tx.pdf_type'), value: TX_TYPE_LABEL[TX_TYPE_FILTER[txFilter]] ?? txFilter })
+    if (statusFilter) filters.push({ label: i18n.t('x.tx.pdf_status'), value: statusFilter })
+    if (search) filters.push({ label: i18n.t('common.search'), value: search })
+    if (amountMin || amountMax) filters.push({ label: i18n.t('x.tx.pdf_amount'), value: `${amountMin || '0'} – ${amountMax || '∞'} FCFA` })
+
+    const volume = txs.reduce((s, tx) => s + tx.amount, 0)
+    const fees = txs.reduce((s, tx) => s + tx.fee, 0)
+
+    const ok = generatePdfReport({
+      title: i18n.t('x.tx.pdf_title'),
+      subtitle: i18n.t('x.tx.pdf_period', { value: periodLabel }),
+      filters,
+      orientation: 'landscape',
+      columns: [i18n.t('x.tx.pdf_ref'), i18n.t('x.tx.pdf_type'), i18n.t('x.tx.pdf_from'), i18n.t('x.tx.pdf_to'), i18n.t('x.tx.pdf_amount'), i18n.t('x.tx.pdf_fees'), i18n.t('x.tx.pdf_status'), i18n.t('x.tx.pdf_date')],
+      rows: txs.map((tx) => [
         tx.reference,
         TX_TYPE_LABEL[tx.type] ?? tx.type,
         partyLabel(tx.sender, i18n.t('common.operator')),
@@ -2090,7 +2217,13 @@ function TransactionsPage() {
         tx.status,
         fmtDate(tx.createdAt),
       ]),
-    )
+      totals: [
+        { label: i18n.t('x.tx.pdf_total_count'), value: txs.length.toLocaleString('fr-FR') },
+        { label: i18n.t('x.tx.pdf_total_volume'), value: formatFCFA(volume) },
+        { label: i18n.t('x.tx.pdf_total_fees'), value: formatFCFA(fees) },
+      ],
+      filename: `transactions-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
     toast(ok ? i18n.t('common.pdf_opened') : i18n.t('common.popup_blocked'), ok ? 'success' : 'error')
   }
 
@@ -3338,6 +3471,31 @@ function AuditPage() {
     { label: i18n.t('x.audit.kpi_last'), value: stats.lastAction ? relativeTime(stats.lastAction.at) : '—', sub: stats.lastAction?.action ? auditActionLabel(stats.lastAction.action) : undefined, icon: Clock, color: C.purple },
   ] : []
 
+  // Filtres appliqués (affichés en haut du rapport PDF).
+  const presetLabel = preset === 'today' ? i18n.t('x.audit.preset_today') : preset === '7d' ? i18n.t('x.audit.preset_7d') : preset === '30d' ? i18n.t('x.audit.preset_30d') : `${range.from} → ${range.to}`
+  const handleExportAuditPdf = () => {
+    const filters: { label: string; value: string }[] = [{ label: i18n.t('x.audit.pdf_period'), value: presetLabel }]
+    if (category) filters.push({ label: i18n.t('x.audit.pdf_category'), value: auditCategory(category).label })
+    if (debActor) filters.push({ label: i18n.t('x.audit.pdf_actor'), value: actorSearch.trim() })
+    if (debResource) filters.push({ label: i18n.t('x.audit.pdf_resource'), value: resource.trim() })
+    generatePdfReport({
+      title: i18n.t('x.audit.pdf_title'),
+      subtitle: i18n.t('x.audit.pdf_count', { count: entries.length }),
+      filters,
+      orientation: 'landscape',
+      columns: [i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_date')],
+      rows: entries.map((e) => [
+        e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'),
+        auditActionLabel(e.action),
+        auditCategory(e.action).label,
+        e.resource ?? '—',
+        e.ipAddress ?? '—',
+        fmtDate(e.createdAt),
+      ]),
+      filename: `audit-camwallet-${new Date().toISOString().slice(0, 10)}.pdf`,
+    })
+  }
+
   return (
     <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
@@ -3345,12 +3503,18 @@ function AuditPage() {
           <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('x.audit.title')}</h1>
           <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('x.audit.subtitle', { count: entries.length })}</p>
         </div>
-        <button className="cw-btn" disabled={!entries.length}
-          onClick={() => downloadCsv('audit-camwallet.csv', [i18n.t('x.audit.csv_date'), i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_role'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_details')],
-            entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'), e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
-          <FileText size={14} /> {i18n.t('common.export_csv')}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="cw-btn" disabled={!entries.length}
+            onClick={() => downloadCsv('audit-camwallet.csv', [i18n.t('x.audit.csv_date'), i18n.t('x.audit.csv_actor'), i18n.t('x.audit.csv_role'), i18n.t('x.audit.csv_action'), i18n.t('x.audit.csv_cat'), i18n.t('x.audit.csv_resource'), i18n.t('x.audit.csv_ip'), i18n.t('x.audit.csv_details')],
+              entries.map((e) => [fmtDate(e.createdAt), e.user?.email ?? e.user?.fullName ?? i18n.t('x.audit.system'), e.user?.adminRole ?? e.user?.role ?? '', e.action, auditCategory(e.action).label, e.resource ?? '', e.ipAddress ?? '', e.metadata ? JSON.stringify(e.metadata) : '']))}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.green}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', background: C.greenLight, color: C.green }}>
+            <FileText size={14} /> {i18n.t('common.export_csv')}
+          </button>
+          <button className="cw-btn" disabled={!entries.length} onClick={handleExportAuditPdf}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${C.blue}40`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: entries.length ? 'pointer' : 'not-allowed', background: C.blueLight, color: C.blue }}>
+            <FileText size={14} /> {i18n.t('common.export_pdf')}
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -3501,6 +3665,7 @@ function SettingsPage() {
   const { data: health, refetch: refetchHealth, loading: healthLoading } = useFetch(getHealthIntegrations, [])
   const { data: anifImpact } = useFetch(getAnifStats, [])
   const { data: history, refetch: refetchHistory } = useFetch(() => getAudit({ action: 'SETTINGS_UPDATE', take: 10 }), [])
+  const { data: emailAlerts } = useFetch(() => getEmailAlertHistory(), [])
 
   // Initialise le formulaire dès que les données arrivent
   useEffect(() => {
@@ -3602,6 +3767,44 @@ function SettingsPage() {
             {ToggleRow({ k: "notify_kyc_submitted", label: i18n.t('x.set.notify_kyc'), desc: i18n.t('x.set.notify_kyc_desc') })}
             {ToggleRow({ k: "notify_high_value", label: i18n.t('x.set.notify_high'), desc: i18n.t('x.set.notify_high_desc') })}
             {ToggleRow({ k: "notify_failed_payment", label: i18n.t('x.set.notify_failed'), desc: i18n.t('x.set.notify_failed_desc') })}
+          </div>
+
+          {/* Alertes email automatiques */}
+          <div style={card}>
+            <h2 style={h2}>{i18n.t('x.set.email_alerts')}</h2>
+            {ToggleRow({ k: "email_alerts_enabled", label: i18n.t('x.set.email_master'), desc: i18n.t('x.set.email_master_desc') })}
+            <div style={{ padding: '12px 0', borderTop: `1px solid ${C.border}` }}>
+              <label style={{ display: 'block', fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 6 }}>{i18n.t('x.set.email_recipient')}</label>
+              <input type="email" value={form['alert_email'] ?? ''} disabled={isReadOnly()} placeholder="alertes@exemple.cm"
+                onChange={(e) => setVal('alert_email', e.target.value)}
+                style={{ width: '100%', maxWidth: 360, background: C.surface, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: '9px 12px', fontSize: 13 }} />
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>{i18n.t('x.set.email_recipient_desc')}</div>
+            </div>
+            {ToggleRow({ k: "email_alert_high_value", label: i18n.t('x.set.email_high'), desc: i18n.t('x.set.email_high_desc') })}
+            {ToggleRow({ k: "email_alert_failure_rate", label: i18n.t('x.set.email_failure'), desc: i18n.t('x.set.email_failure_desc') })}
+            {ToggleRow({ k: "email_alert_signups", label: i18n.t('x.set.email_signups'), desc: i18n.t('x.set.email_signups_desc') })}
+            {ToggleRow({ k: "email_alert_kyc_score", label: i18n.t('x.set.email_kyc'), desc: i18n.t('x.set.email_kyc_desc') })}
+            {ToggleRow({ k: "email_alert_admin_failed", label: i18n.t('x.set.email_admin'), desc: i18n.t('x.set.email_admin_desc') })}
+
+            {/* Historique des 10 dernières alertes envoyées */}
+            <div style={{ marginTop: 14, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 8 }}>{i18n.t('x.set.email_history')}</div>
+              {(emailAlerts ?? []).length === 0 ? (
+                <div style={{ fontSize: 12, color: C.textMuted }}>{i18n.t('x.set.email_history_empty')}</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {(emailAlerts ?? []).map((a) => (
+                    <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 10px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: C.text }}>
+                        <Siren size={13} color={C.yellow} />
+                        {a.detail || a.kind} {a.value ? <strong style={{ color: C.yellow }}>· {a.value}</strong> : null}
+                      </span>
+                      <span style={{ color: C.textMuted, whiteSpace: 'nowrap' }}>{relativeTime(a.createdAt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Intégrations — statut + test de connexion */}
@@ -4457,8 +4660,211 @@ function NewTicketModal({ team, onClose, onCreated, initial, zIndex = 70 }: { te
 // ── Sidebar nav items ─────────────────────────────────────
 // `id` sert aussi de clé i18n : le libellé est résolu via t(`nav.${id}`) et le
 // groupe via t(`nav.group_${group}`). Voir src/locales/*.json (section « nav »).
+// ── Page Analytique (tableau de bord analytique avancé) ───────────────────
+const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'] // dow 0 = dimanche
+
+function AnalyticsPage() {
+  const [period, setPeriod] = useState<'7d' | '30d' | '90d'>('30d')
+  const { data: ret } = useFetch(() => getAnalyticsRetention(), [])
+  const { data: acq } = useFetch(() => getAnalyticsAcquisition(period), [period])
+  const { data: heat } = useFetch(() => getAnalyticsHeatmap(), [])
+  const { data: funnel } = useFetch(() => getKycFunnel(), [])
+  const { data: topU } = useFetch(() => getTopUsers(10), [])
+  const { data: topM } = useFetch(() => getTopMerchants(10), [])
+  const { data: geo } = useFetch(() => getAnalyticsGeo(), [])
+
+  const card: CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }
+  const h2: CSSProperties = { fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 14 }
+
+  // KPI cards.
+  const kpis = [
+    { label: i18n.t('analytics.retention_7d'), value: ret ? `${ret.retention7d} %` : '—', sub: ret ? i18n.t('analytics.active_users', { n: ret.active7d }) : '', color: C.green },
+    { label: i18n.t('analytics.retention_30d'), value: ret ? `${ret.retention30d} %` : '—', sub: ret ? i18n.t('analytics.active_users', { n: ret.active30d }) : '', color: C.blue },
+    { label: i18n.t('analytics.avg_tx'), value: ret ? formatFCFA(ret.avgPerTransaction) : '—', sub: i18n.t('analytics.avg_tx_sub'), color: C.purple },
+    { label: i18n.t('analytics.avg_user'), value: ret ? formatFCFA(ret.avgPerUser) : '—', sub: i18n.t('analytics.avg_user_sub'), color: C.blue },
+    { label: i18n.t('analytics.avg_day'), value: ret ? formatFCFA(ret.avgPerDay) : '—', sub: i18n.t('analytics.avg_day_sub'), color: C.yellow },
+  ]
+
+  // Inscriptions cumulées (LineChart).
+  const acqData = (acq?.series ?? []).map((p) => ({ date: `${p.date.slice(8, 10)}/${p.date.slice(5, 7)}`, signups: p.signups, cumulative: p.cumulative }))
+
+  // Activité par jour de semaine (agrégée depuis la heatmap).
+  const byWeekday = WEEKDAYS.map((name, dow) => ({ name, count: (heat?.cells ?? []).filter((c) => c.dow === dow).reduce((s, c) => s + c.count, 0) }))
+
+  // Heatmap heure × jour : grille + intensité relative au max.
+  const cellMap = new Map((heat?.cells ?? []).map((c) => [`${c.dow}-${c.hour}`, c.count]))
+  const maxCell = Math.max(1, ...(heat?.cells ?? []).map((c) => c.count))
+
+  // Entonnoir KYC.
+  const funnelSteps = funnel ? [
+    { label: i18n.t('analytics.funnel_pending'), value: funnel.pending + funnel.submitted + funnel.approved + funnel.rejected, color: C.textMuted },
+    { label: i18n.t('analytics.funnel_submitted'), value: funnel.submitted + funnel.approved + funnel.rejected, color: C.yellow, rate: funnel.submittedRate },
+    { label: i18n.t('analytics.funnel_approved'), value: funnel.approved, color: C.green, rate: funnel.approvedRate },
+  ] : []
+  const funnelMax = Math.max(1, ...funnelSteps.map((s) => s.value))
+
+  const PERIODS: ('7d' | '30d' | '90d')[] = ['7d', '30d', '90d']
+  const TopTable = ({ title, rows }: { title: string; rows: { fullName: string | null; phone: string; volume: number; count: number }[] }) => (
+    <div style={card}>
+      <div style={h2}>{title}</div>
+      {rows.length === 0 ? <div style={{ color: C.textMuted, fontSize: 13, padding: '8px 0' }}>{i18n.t('analytics.no_data')}</div> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={r.phone + i} style={{ borderTop: i ? `1px solid ${C.border}` : 'none' }}>
+                <td style={{ padding: '8px 0', color: C.textMuted, width: 22 }}>{i + 1}</td>
+                <td style={{ padding: '8px 0' }}>
+                  <div style={{ color: C.text, fontWeight: 600 }}>{r.fullName ?? '—'}</div>
+                  <div style={{ color: C.textMuted, fontSize: 11 }}>{r.phone}</div>
+                </td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: C.textMuted, fontSize: 11 }}>{i18n.t('analytics.tx_count', { n: r.count })}</td>
+                <td style={{ padding: '8px 0', textAlign: 'right', color: C.green, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatFCFA(r.volume)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="cw-page" style={{ padding: 24, overflowY: 'auto', height: '100%' }}>
+      <div style={{ marginBottom: 22 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{i18n.t('analytics.title')}</h1>
+        <p style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('analytics.subtitle')}</p>
+      </div>
+
+      {/* KPI */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 20 }}>
+        {kpis.map((k) => (
+          <div key={k.label} style={card}>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>{k.label}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: k.color, letterSpacing: -0.5 }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Acquisition (inscriptions cumulées) */}
+      <div style={{ ...card, marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={h2}>{i18n.t('analytics.acquisition_title')}</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {PERIODS.map((p) => (
+              <button key={p} onClick={() => setPeriod(p)}
+                style={{ padding: '4px 12px', borderRadius: 8, border: `1px solid ${period === p ? C.green : C.border}`, background: period === p ? C.greenLight : 'transparent', color: period === p ? C.green : C.textSoft, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {i18n.t('dashboard.period_' + p)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ResponsiveContainer width="100%" height={210}>
+          <LineChart data={acqData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+            <XAxis dataKey="date" stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={{ stroke: C.border }} />
+            <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={40} />
+            <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: C.textSoft }} />
+            <Line type="monotone" dataKey="cumulative" name={i18n.t('analytics.signups_cumulative')} stroke={C.green} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="signups" name={i18n.t('analytics.signups_daily')} stroke={C.blue} strokeWidth={1.5} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Activité par jour de semaine + Funnel KYC */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div style={card}>
+          <div style={h2}>{i18n.t('analytics.weekday_title')}</div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={byWeekday} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+              <XAxis dataKey="name" stroke={C.textMuted} fontSize={11} tickLine={false} axisLine={{ stroke: C.border }} />
+              <YAxis stroke={C.textMuted} fontSize={10} tickLine={false} axisLine={false} width={32} />
+              <Tooltip contentStyle={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: C.textSoft }} cursor={{ fill: C.greenLight }} />
+              <Bar dataKey="count" name={i18n.t('analytics.tx_label')} radius={[4, 4, 0, 0]}>
+                {byWeekday.map((_, i) => <Cell key={i} fill={C.green} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={card}>
+          <div style={h2}>{i18n.t('analytics.funnel_title')}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+            {funnelSteps.map((s) => (
+              <div key={s.label}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: C.textSoft }}>{s.label}{typeof s.rate === 'number' ? <span style={{ color: C.textMuted }}> · {s.rate} %</span> : null}</span>
+                  <span style={{ color: C.text, fontWeight: 700 }}>{s.value.toLocaleString('fr-FR')}</span>
+                </div>
+                <div style={{ height: 12, background: C.border, borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.round((s.value / funnelMax) * 100)}%`, background: s.color, borderRadius: 6, transition: 'width .3s' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Heatmap heure × jour */}
+      <div style={{ ...card, marginBottom: 20 }}>
+        <div style={h2}>{i18n.t('analytics.heatmap_title')}</div>
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, minWidth: 640 }}>
+            <div style={{ display: 'flex', gap: 3, paddingLeft: 30 }}>
+              {Array.from({ length: 24 }, (_, h) => (
+                <div key={h} style={{ width: 22, textAlign: 'center', fontSize: 8, color: C.textMuted }}>{h % 3 === 0 ? h : ''}</div>
+              ))}
+            </div>
+            {WEEKDAYS.map((name, dow) => (
+              <div key={dow} style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                <div style={{ width: 27, fontSize: 10, color: C.textMuted }}>{name}</div>
+                {Array.from({ length: 24 }, (_, h) => {
+                  const v = cellMap.get(`${dow}-${h}`) ?? 0
+                  const intensity = v === 0 ? 0 : 0.15 + 0.85 * (v / maxCell)
+                  return <div key={h} title={`${name} ${h}h — ${v}`} style={{ width: 22, height: 16, borderRadius: 3, background: v === 0 ? C.border + '60' : `rgba(0,200,150,${intensity})` }} />
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 8 }}>{i18n.t('analytics.heatmap_hint')}</div>
+      </div>
+
+      {/* Top utilisateurs / marchands */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <TopTable title={i18n.t('analytics.top_users_title')} rows={topU?.users ?? []} />
+        <TopTable title={i18n.t('analytics.top_merchants_title')} rows={topM?.merchants ?? []} />
+      </div>
+
+      {/* Répartition géographique */}
+      <div style={card}>
+        <div style={h2}>{i18n.t('analytics.geo_title')}</div>
+        {(geo?.regions ?? []).length === 0 ? <div style={{ color: C.textMuted, fontSize: 13 }}>{i18n.t('analytics.no_data')}</div> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {(() => {
+              const max = Math.max(1, ...(geo?.regions ?? []).map((r) => r.volume))
+              return (geo?.regions ?? []).map((r) => (
+                <div key={r.city}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                    <span style={{ color: C.textSoft }}>{r.city} <span style={{ color: C.textMuted }}>· {i18n.t('analytics.tx_count', { n: r.count })}</span></span>
+                    <span style={{ color: C.green, fontWeight: 700 }}>{formatFCFA(r.volume)}</span>
+                  </div>
+                  <div style={{ height: 8, background: C.border, borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((r.volume / max) * 100)}%`, background: C.blue, borderRadius: 4 }} />
+                  </div>
+                </div>
+              ))
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const NAV: { id: string; icon: LucideIcon; group: string; badge?: string }[] = [
   { id: 'dashboard', icon: LayoutGrid, group: 'overview' },
+  { id: 'analytics', icon: Activity, group: 'overview' },
   { id: 'alerts', icon: AlertTriangle, group: 'overview' },
   { id: 'support', icon: LifeBuoy, group: 'overview' },
   { id: 'users', icon: UsersIcon, group: 'users' },
@@ -4479,10 +4885,10 @@ const GROUPS = ['overview', 'users', 'finances', 'compliance']
 // (le compte admin configuré est SUPER_ADMIN ; le backend garde l'autorité).
 const ROLE_PAGES: Record<string, string[] | '*'> = {
   SUPER_ADMIN: '*',
-  ADMIN: ['dashboard', 'alerts', 'support', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
+  ADMIN: ['dashboard', 'analytics', 'alerts', 'support', 'users', 'kyc', 'transactions', 'finance', 'operations', 'anif', 'audit'],
   COMPLIANCE_OFFICER: ['anif', 'audit'],
   SUPPORT_OPERATOR: ['support', 'users', 'transactions'],
-  FINANCE_OFFICER: ['finance', 'operations'],
+  FINANCE_OFFICER: ['analytics', 'finance', 'operations'],
   KYC_OFFICER: ['kyc'],
 }
 // Ordre d'affichage des rôles, du plus au moins privilégié (selects, modal, matrice).
@@ -4606,6 +5012,7 @@ export default function App() {
   const renderPage = () => {
     switch (effectivePage) {
       case 'dashboard': return <DashboardPage onNavigate={setActivePage} />
+      case 'analytics': return <AnalyticsPage />
       case 'alerts': return <AlertsPage />
       case 'support': return <SupportPage />
       case 'users': return <UsersPage />
