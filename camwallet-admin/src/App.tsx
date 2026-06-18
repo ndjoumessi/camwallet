@@ -3588,6 +3588,12 @@ function SettingsPage() {
             {ToggleRow({ k: "require_2fa", label: i18n.t('x.set.require_2fa'), desc: i18n.t('x.set.require_2fa_desc') })}
           </div>
 
+          {/* Vérification KYC (IA) */}
+          <div style={card}>
+            <h2 style={h2}>{i18n.t('x.set.kyc_section')}</h2>
+            {ToggleRow({ k: "kyc_auto_approve", label: i18n.t('x.set.kyc_auto_approve'), desc: i18n.t('x.set.kyc_auto_approve_desc') })}
+          </div>
+
           {/* Notifications */}
           <div style={card}>
             <h2 style={h2}>{i18n.t('x.set.notifications')}</h2>

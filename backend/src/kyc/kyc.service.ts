@@ -1,9 +1,13 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
-import { KycAiService } from './kyc-ai.service';
+import { KycAiService, KycAggregateResult } from './kyc-ai.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { KycStatus } from '@prisma/client';
+
+const DEFAULT_AUTO_APPROVE_THRESHOLD = 90;
 
 @Injectable()
 export class KycService {
@@ -13,6 +17,8 @@ export class KycService {
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
     private readonly aiService: KycAiService,
+    private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -87,6 +93,9 @@ export class KycService {
         });
         this.eventEmitter.emit('kyc.ai_analyzed', { userId, suggestion: res.suggestion });
         this.logger.log(`Analyse IA KYC : ${userId} → ${res.suggestion} (${res.score}/100)`);
+
+        // Auto-approbation si l'IA est très confiante (toggle admin + seuil).
+        await this.maybeAutoApprove(userId, res);
       })
       .catch((err) =>
         this.logger.error(
@@ -94,6 +103,54 @@ export class KycService {
           err instanceof Error ? err.stack : String(err),
         ),
       );
+  }
+
+  // Approuve automatiquement le dossier quand l'IA recommande APPROVE avec un
+  // score ≥ seuil — uniquement si l'admin a activé le toggle `kyc_auto_approve`.
+  // Sinon le dossier reste en file pour un agent KYC (comportement par défaut).
+  private async maybeAutoApprove(userId: string, res: KycAggregateResult): Promise<void> {
+    if (res.suggestion !== 'APPROVE') return;
+
+    const threshold =
+      Number(this.config.get<string>('KYC_AUTO_APPROVE_THRESHOLD')) || DEFAULT_AUTO_APPROVE_THRESHOLD;
+    if (res.score < threshold) return;
+
+    // Toggle admin (SystemSettings.kyc_auto_approve = 'on') — désactivé par défaut.
+    const setting = await this.prisma.systemSettings.findUnique({
+      where: { key: 'kyc_auto_approve' },
+    });
+    if (setting?.value !== 'on') return;
+
+    const message = `KYC auto-approuvé par IA (score: ${res.score}/100)`;
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { kycStatus: KycStatus.APPROVED } }),
+      this.prisma.kycDocument.update({
+        where: { userId },
+        data: {
+          status: KycStatus.APPROVED,
+          reviewedBy: 'AI',
+          reviewNote: message,
+          reviewedAt: new Date(),
+        },
+      }),
+      this.prisma.auditLog.create({
+        data: {
+          action: 'KYC_AUTO_APPROVED',
+          resource: `User:${userId}`,
+          metadata: { score: res.score, threshold, message },
+        },
+      }),
+    ]);
+
+    // Notification push (fire-and-forget — ne bloque pas le flux IA).
+    void this.notifications.sendToUser(
+      userId,
+      'KYC approuvé ✓',
+      'Votre identité a été vérifiée. Votre compte est maintenant complet.',
+      { type: 'KYC', status: KycStatus.APPROVED },
+    );
+    this.eventEmitter.emit('kyc.auto_approved', { userId, score: res.score });
+    this.logger.log(`KYC auto-approuvé par IA : ${userId} (score: ${res.score}/100)`);
   }
 
   // Statut KYC de l'utilisateur connecté (pour l'écran mobile).

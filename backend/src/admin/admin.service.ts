@@ -1489,6 +1489,8 @@ export class AdminService {
     anif_frequency_max:      '10',     // seuil fréquence tx/24h
     // Sécurité
     require_2fa:             'off',    // 2FA obligatoire pour les admins
+    // KYC — auto-approbation par IA (si score IA ≥ KYC_AUTO_APPROVE_THRESHOLD)
+    kyc_auto_approve:        'off',    // approuver sans agent quand l'IA recommande APPROVE
     // Notifications (événements déclenchant alertes email/SMS)
     notify_kyc_submitted:    'on',
     notify_high_value:       'on',
