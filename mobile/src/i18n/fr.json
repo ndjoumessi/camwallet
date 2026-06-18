@@ -585,6 +585,7 @@
     "infoBox": "Votre argent reste chez l'opérateur. CamWallet crédite votre solde QR instantanément après confirmation.",
     "amount": {
       "phonePlaceholder": "+237 6XX XXX XXX",
+      "phoneLabel": "Numéro {{op}}",
       "amountLabel": "Montant à recharger"
     },
     "sandbox": {

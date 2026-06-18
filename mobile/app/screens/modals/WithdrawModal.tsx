@@ -42,6 +42,8 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (errTimer.current) clearTimeout(errTimer.current); }, []);
 
   useEffect(() => {
     if (visible && user.phone) setPhone(user.phone);
@@ -88,6 +90,9 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? t('withdraw.errorFallback');
       setError(Array.isArray(msg) ? msg.join(', ') : msg);
+      // Auto-effacement de l'erreur après 4s (cohérence avec SendModal).
+      if (errTimer.current) clearTimeout(errTimer.current);
+      errTimer.current = setTimeout(() => setError(null), 4000);
     } finally {
       setLoading(false);
     }

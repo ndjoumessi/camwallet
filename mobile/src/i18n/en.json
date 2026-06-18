@@ -585,6 +585,7 @@
     "infoBox": "Your money stays with the operator. CamWallet credits your QR balance instantly after confirmation.",
     "amount": {
       "phonePlaceholder": "+237 6XX XXX XXX",
+      "phoneLabel": "{{op}} number",
       "amountLabel": "Amount to top up"
     },
     "sandbox": {

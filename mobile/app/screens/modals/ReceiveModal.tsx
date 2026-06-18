@@ -116,7 +116,7 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
               <QRCode
                 value={qrValue}
                 size={200}
-                color="#0A0F1E"
+                color={Colors.bg}
                 backgroundColor="white"
                 logo={undefined}
               />
