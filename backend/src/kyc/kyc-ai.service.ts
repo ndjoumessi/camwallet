@@ -19,6 +19,11 @@ export interface KycAggregateResult {
   suggestion: KycSuggestion;
 }
 
+export interface KycAiPingResult {
+  reachable: boolean;
+  latency: number | null;
+}
+
 // Seuils de décision (cf. cahier des charges).
 const APPROVE_THRESHOLD = 85;
 const REJECT_THRESHOLD = 40;
@@ -89,6 +94,23 @@ export class KycAiService {
       this.client = new Anthropic({ apiKey: this.config.get<string>('ANTHROPIC_API_KEY') });
     }
     return this.client;
+  }
+
+  /**
+   * Ping l'API Anthropic via l'endpoint Models (lecture seule, sans coût
+   * d'inférence) : valide la clé et la disponibilité. Sert au tableau de bord
+   * « Santé des intégrations ».
+   */
+  async ping(): Promise<KycAiPingResult> {
+    if (!this.isConfigured()) return { reachable: false, latency: null };
+    const start = Date.now();
+    try {
+      await this.getClient().models.retrieve(MODEL);
+      return { reachable: true, latency: Date.now() - start };
+    } catch (err) {
+      this.logger.error('Ping Anthropic échoué', err instanceof Error ? err.stack : String(err));
+      return { reachable: false, latency: null };
+    }
   }
 
   // Détecte le type MIME d'après les octets de signature (base64 décodé).

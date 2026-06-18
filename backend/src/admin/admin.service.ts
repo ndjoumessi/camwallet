@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OtpService } from '../auth/otp.service';
 import { SmsService } from '../sms/sms.service';
+import { KycAiService } from '../kyc/kyc-ai.service';
 import {
   TransactionStatus,
   TransactionType,
@@ -26,6 +27,7 @@ export class AdminService {
     private notifications: NotificationsService,
     private otpService: OtpService,
     private sms: SmsService,
+    private kycAi: KycAiService,
     private config: ConfigService,
   ) {}
 
@@ -1181,13 +1183,15 @@ export class AdminService {
     ]);
 
     // Santé opérateur sur 7 jours (le sandbox a peu de trafic sur 24h → souvent « Non testé »).
-    // Ping AfricasTalking en parallèle (no-op si la clé API n'est pas configurée).
-    const [om, mtn, smsPing] = await Promise.all([
+    // Pings AfricasTalking + Anthropic en parallèle (no-op si clé non configurée).
+    const [om, mtn, smsPing, aiPing] = await Promise.all([
       this.operatorHealth('ORANGE_MONEY', d7d, gateway.reachable),
       this.operatorHealth('MTN_MOMO', d7d, gateway.reachable),
       this.sms.ping(),
+      this.kycAi.ping(),
     ]);
     const smsConfigured = this.sms.isConfigured();
+    const aiConfigured = this.kycAi.isConfigured();
 
     return {
       integrations: [
@@ -1239,6 +1243,22 @@ export class AdminService {
           lastSuccess: null,
           uptime: null,
           note: 'Expo Push API',
+        },
+        {
+          name: 'IA KYC (Claude Vision)',
+          key: 'anthropic_kyc',
+          // Configuré (ANTHROPIC_API_KEY présent) → « UP » si le ping répond,
+          // sinon « DOWN ». Non configuré → « SIMULATED » (analyse désactivée).
+          status: aiConfigured ? (aiPing.reachable ? 'UP' : 'DOWN') : 'SIMULATED',
+          latency: aiPing.latency,
+          txCount7d: null,
+          lastSuccess: null,
+          uptime: null,
+          note: aiConfigured
+            ? aiPing.reachable
+              ? 'Anthropic opérationnel (pré-validation KYC)'
+              : 'Anthropic injoignable / clé invalide'
+            : 'Pré-validation IA désactivée (clé non configurée)',
         },
       ],
       stalePendingTx: stalePending,

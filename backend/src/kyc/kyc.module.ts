@@ -6,5 +6,6 @@ import { KycAiService } from './kyc-ai.service';
 @Module({
   controllers: [KycController],
   providers: [KycService, KycAiService],
+  exports: [KycAiService],
 })
 export class KycModule {}
