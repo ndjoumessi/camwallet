@@ -90,17 +90,24 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      # Optimise le build Gradle : prebuild régénère android/gradle.properties, on y
-      # ajoute parallélisme + cache + mémoire JVM (sans démon, runner éphémère).
-      - name: Optimiser gradle.properties
+      # Configure gradle.properties : prebuild régénère android/gradle.properties, on
+      # y ajoute (en dernier → priorité) la config mémoire/CI. Metaspace 2g car c'est
+      # LUI qui débordait sur kspReleaseKotlin (expo-updates), pas le heap. Parallel
+      # off + incremental off = empreinte mémoire réduite (runner éphémère).
+      - name: Configure gradle.properties
         run: |
           cat >> mobile/android/gradle.properties <<'EOF'
 
           # --- Optimisations CI (ajoutées par le workflow) ---
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=2048m -XX:+HeapDumpOnOutOfMemoryError
           org.gradle.daemon=false
-          org.gradle.parallel=true
+          org.gradle.parallel=false
           org.gradle.caching=true
-          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+          android.useAndroidX=true
+          android.enableJetifier=true
+          kotlin.incremental=false
+          ksp.incremental=false
+          android.ndkVersion=27.1.12297006
           EOF
 
       # Le keystore est décodé APRÈS prebuild (qui régénère/efface android/).
@@ -151,14 +158,21 @@ jobs:
           file mobile/android/app/release.keystore
 
       - name: Build APK Release
+        # -Pandroid.injected.build.abi.filter=arm64-v8a : ne compile QUE l'ABI 64 bits
+        #   (exclut armeabi-v7a) → moins de travail natif. ⚠️ l'APK n'installe PAS sur
+        #   les vieux téléphones 32 bits (cf. note au build vert).
+        # -Dorg.gradle.jvmargs : aligné sur gradle.properties (2g metaspace) — l'override
+        #   CLI gagne, donc on le garde cohérent pour ne pas retomber à 512m.
+        # --parallel retiré : plusieurs JVM Gradle simultanées aggravaient l'OOM.
         run: |
           cd mobile/android
           chmod +x ./gradlew
           ./gradlew assembleRelease \
+            -Pandroid.injected.build.abi.filter=arm64-v8a \
             --no-daemon \
-            --parallel \
             --build-cache \
-            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m"
+            --stacktrace \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=2g"
         env:
           ANDROID_KEYSTORE_PATH: release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
