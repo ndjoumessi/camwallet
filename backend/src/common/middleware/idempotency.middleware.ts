@@ -13,6 +13,16 @@ const KEY_RE = /^[A-Za-z0-9_-]{8,100}$/;
 const TTL_DONE_S = 24 * 3600; // réponse mémorisée 24h
 const TTL_PENDING_S = 90; // verrou court (anti-blocage si le process meurt en plein traitement)
 
+// Suffixes des routes financières protégées (filtrage interne — le middleware est
+// monté sur les contrôleurs entiers pour éviter les pièges de matching de chemin
+// avec le préfixe global `api/v1`).
+const FINANCIAL_SUFFIXES = [
+  '/transactions/p2p',
+  '/transactions/pay-qr',
+  '/wallets/recharge',
+  '/wallets/withdraw',
+];
+
 interface IdemRecord {
   status: 'pending' | 'done';
   httpStatus?: number;
@@ -25,6 +35,10 @@ export class IdempotencyMiddleware implements NestMiddleware {
   constructor(private readonly cache: CacheService) {}
 
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Filtre interne : seules les écritures financières POST sont concernées.
+    const path = (req.originalUrl || req.url || '').split('?')[0];
+    if (req.method !== 'POST' || !FINANCIAL_SUFFIXES.some((s) => path.endsWith(s))) return next();
+
     const key = req.header('Idempotency-Key');
     if (!key) return next(); // rétrocompat : aucune clé → exécution normale
     if (!KEY_RE.test(key)) throw new BadRequestException('Idempotency-Key invalide');

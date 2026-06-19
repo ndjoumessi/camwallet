@@ -19,7 +19,12 @@ const makeRes = () => {
   res.setHeader = jest.fn();
   return res;
 };
-const makeReq = (key?: string) => ({ header: (h: string) => (h === 'Idempotency-Key' ? key : undefined) }) as any;
+const makeReq = (key?: string, opts: { method?: string; url?: string } = {}) => ({
+  method: opts.method ?? 'POST',
+  originalUrl: opts.url ?? '/api/v1/transactions/p2p',
+  url: opts.url ?? '/api/v1/transactions/p2p',
+  header: (h: string) => (h === 'Idempotency-Key' ? key : undefined),
+}) as any;
 
 const KEY = 'a1b2c3d4-0000-4000-8000-abcdefabcdef';
 
@@ -95,5 +100,16 @@ describe('IdempotencyMiddleware', () => {
     await mw.use(makeReq(undefined), makeRes(), next);
     expect(next).toHaveBeenCalledTimes(1);
     await expect(mw.use(makeReq('short'), makeRes(), jest.fn())).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('ignore les routes non financières même avec une clé (filtre interne)', async () => {
+    const cache = makeCache();
+    const mw = new IdempotencyMiddleware(cache as any);
+    const next = jest.fn();
+    // GET, ou POST hors liste financière → passe tout droit, aucun accès cache.
+    await mw.use(makeReq(KEY, { method: 'GET', url: '/api/v1/wallets/balance' }), makeRes(), next);
+    await mw.use(makeReq(KEY, { method: 'POST', url: '/api/v1/users/avatar' }), makeRes(), next);
+    expect(next).toHaveBeenCalledTimes(2);
+    expect(cache.get).not.toHaveBeenCalled();
   });
 });
