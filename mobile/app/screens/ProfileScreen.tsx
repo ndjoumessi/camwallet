@@ -31,6 +31,16 @@ import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { setLanguage } from '../../src/i18n';
 import * as Haptics from 'expo-haptics';
+import { formatDistanceToNow } from 'date-fns';
+import { fr, enUS } from 'date-fns/locale';
+
+// Icône Ionicons selon la raison du gain de fidélité.
+function loyaltyGainIcon(reason: string): keyof typeof Ionicons.glyphMap {
+  const r = reason.toLowerCase();
+  if (r.includes('kyc')) return 'shield-checkmark-outline';
+  if (r.includes('recharg') || r.includes('top up')) return 'add-circle-outline';
+  return 'arrow-up-circle-outline'; // envoi P2P par défaut
+}
 
 const BIO_KEY = 'cw_biometric_enabled';
 const PUSH_KEY = 'cw_push_enabled';
@@ -75,6 +85,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const [error, setError] = useState<string | null>(null);
   const [loyalty, setLoyalty] = useState<LoyaltyBalance | null>(null);
   const [loyaltyHistory, setLoyaltyHistory] = useState<LoyaltyEvent[]>([]);
+  const [loyaltyModalOpen, setLoyaltyModalOpen] = useState(false);
 
   // Édition
   const [editing, setEditing] = useState(false);
@@ -311,8 +322,13 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
   const phone = me?.phone ?? '';
   const kyc = KYC_BADGE[me?.kycStatus ?? 'PENDING'] ?? KYC_BADGE.PENDING;
   const memberSince = me?.createdAt
-    ? new Date(me.createdAt).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+    ? new Date(me.createdAt).toLocaleDateString(currentLang === 'fr' ? 'fr-FR' : 'en-US', { month: 'long', year: 'numeric' })
     : '—';
+  const relLocale = currentLang === 'fr' ? fr : enUS;
+  const relTime = (iso: string) => {
+    try { return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: relLocale }); }
+    catch { return ''; }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
@@ -341,12 +357,17 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           </View>
         </TouchableOpacity>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{name}</Text>
+          <View style={styles.profileNameRow}>
+            <Text style={styles.profileName}>{name}</Text>
+            {me?.kycStatus === 'APPROVED' && (
+              <Ionicons name="checkmark-circle" size={18} color={Colors.primary} accessibilityLabel={t('profile.kycBadge.approved')} />
+            )}
+          </View>
           <Text style={styles.profilePhone}>{phone}</Text>
           {me?.email ? <Text style={styles.profilePhone}>{me.email}</Text> : null}
           {me?.city ? (
             <View style={styles.profileLocation}>
-              <Ionicons name="location-outline" size={13} color={Colors.textMuted} />
+              <Text style={{ fontSize: 13 }}>🇨🇲</Text>
               <Text style={styles.profilePhone}>{me.city}</Text>
             </View>
           ) : null}
@@ -420,11 +441,14 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 <Ionicons name="ribbon-outline" size={22} color={Colors.primary} />
               </View>
 
-              {/* Barre de progression vers le niveau suivant */}
+              {/* Barre de progression vers le niveau suivant (avec %) */}
               {loyalty.nextLevel ? (
                 <>
-                  <View style={styles.loyaltyBarTrack}>
-                    <View style={[styles.loyaltyBarFill, { width: `${loyalty.progress}%` }]} />
+                  <View style={styles.loyaltyBarRow}>
+                    <View style={styles.loyaltyBarTrack}>
+                      <View style={[styles.loyaltyBarFill, { width: `${loyalty.progress}%` }]} />
+                    </View>
+                    <Text style={styles.loyaltyBarPct}>{loyalty.progress}%</Text>
                   </View>
                   <Text style={styles.loyaltyNextText}>
                     {t('loyalty.toNext', { points: loyalty.pointsToNext, level: loyalty.nextLevel.label })}
@@ -434,16 +458,33 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                 <Text style={styles.loyaltyNextText}>{t('loyalty.maxLevel')}</Text>
               )}
 
-              {/* Historique récent des gains */}
+              {/* Gains récents : icône + raison + date relative + points */}
               {loyaltyHistory.length > 0 && (
                 <View style={styles.loyaltyHistory}>
                   <Text style={styles.loyaltyHistoryTitle}>{t('loyalty.historyTitle')}</Text>
                   {loyaltyHistory.slice(0, 3).map((ev) => (
-                    <View key={ev.id} style={styles.loyaltyHistoryRow}>
-                      <Text style={styles.loyaltyHistoryReason} numberOfLines={1}>{ev.reason}</Text>
-                      <Text style={styles.loyaltyHistoryPoints}>+{ev.points}</Text>
+                    <View key={ev.id} style={styles.loyaltyGainRow}>
+                      <View style={styles.loyaltyGainIcon}>
+                        <Ionicons name={loyaltyGainIcon(ev.reason)} size={16} color={Colors.primary} />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.loyaltyGainReason} numberOfLines={1}>{ev.reason}</Text>
+                        <Text style={styles.loyaltyGainDate}>{relTime(ev.createdAt)}</Text>
+                      </View>
+                      <Text style={styles.loyaltyHistoryPoints}>+{ev.points} pts</Text>
                     </View>
                   ))}
+                  {loyaltyHistory.length > 3 && (
+                    <Pressable
+                      onPress={() => setLoyaltyModalOpen(true)}
+                      style={styles.loyaltySeeAll}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('loyalty.seeAll', { defaultValue: 'Voir tout l’historique' })}
+                    >
+                      <Text style={styles.loyaltySeeAllText}>{t('loyalty.seeAll', { defaultValue: 'Voir tout l’historique' })}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
+                    </Pressable>
+                  )}
                 </View>
               )}
             </View>
@@ -548,7 +589,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
           {/* Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{me?.wallet ? fcfa(me.wallet.balance) : '—'}</Text>
+              <Text style={[styles.statValue, styles.statValueAccent]}>{me?.wallet ? fcfa(me.wallet.balance) : '—'}</Text>
               <Text style={styles.statLabel}>{t('profile.stats.balance')}</Text>
             </View>
             <View style={styles.statDivider} />
@@ -901,6 +942,32 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
       </View>
       </KeyboardAvoidingView>
     </Modal>
+
+    {/* Historique complet des gains de fidélité */}
+    <Modal visible={loyaltyModalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setLoyaltyModalOpen(false)}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }} edges={['top']}>
+        <View style={styles.loyaltyModalHeader}>
+          <Text style={styles.loyaltyModalTitle}>{t('loyalty.historyTitle')}</Text>
+          <Pressable onPress={() => setLoyaltyModalOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('common.close')}>
+            <Ionicons name="close" size={24} color={Colors.text} />
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
+          {loyaltyHistory.map((ev) => (
+            <View key={ev.id} style={styles.loyaltyGainRow}>
+              <View style={styles.loyaltyGainIcon}>
+                <Ionicons name={loyaltyGainIcon(ev.reason)} size={16} color={Colors.primary} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.loyaltyGainReason} numberOfLines={1}>{ev.reason}</Text>
+                <Text style={styles.loyaltyGainDate}>{relTime(ev.createdAt)}</Text>
+              </View>
+              <Text style={styles.loyaltyHistoryPoints}>+{ev.points} pts</Text>
+            </View>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
     </View>
   );
 }
@@ -925,6 +992,7 @@ const styles = StyleSheet.create({
   },
   profileAvatarText: { color: Colors.primary, fontWeight: Typography.black, fontSize: Typography.xl },
   profileInfo: { flex: 1, gap: 2 },
+  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   profileName: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.black },
   profilePhone: { color: Colors.textMuted, fontSize: Typography.sm },
   profileLocation: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -957,14 +1025,22 @@ const styles = StyleSheet.create({
   loyaltyEmoji: { fontSize: 30 },
   loyaltyLevelLabel: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
   loyaltyPointsSub: { color: Colors.textMuted, fontSize: Typography.sm },
-  loyaltyBarTrack: { height: 8, borderRadius: 4, backgroundColor: Colors.border, overflow: 'hidden' },
+  loyaltyBarRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  loyaltyBarTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: Colors.border, overflow: 'hidden' },
   loyaltyBarFill: { height: 8, borderRadius: 4, backgroundColor: Colors.primary },
+  loyaltyBarPct: { color: Colors.primary, fontSize: Typography.xs, fontWeight: Typography.bold, minWidth: 34, textAlign: 'right' },
   loyaltyNextText: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 6 },
   loyaltyHistory: { marginTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.sm },
   loyaltyHistoryTitle: { color: Colors.textMuted, fontSize: Typography.xs, fontWeight: Typography.bold, textTransform: 'uppercase', marginBottom: 6 },
-  loyaltyHistoryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
-  loyaltyHistoryReason: { color: Colors.text, fontSize: Typography.sm, flex: 1, marginRight: Spacing.sm },
   loyaltyHistoryPoints: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.bold },
+  loyaltyGainRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: 6 },
+  loyaltyGainIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.primary + '18', alignItems: 'center', justifyContent: 'center' },
+  loyaltyGainReason: { color: Colors.text, fontSize: Typography.sm, fontWeight: Typography.semibold },
+  loyaltyGainDate: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 1 },
+  loyaltySeeAll: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: Spacing.sm, paddingVertical: 6 },
+  loyaltySeeAllText: { color: Colors.primary, fontSize: Typography.sm, fontWeight: Typography.semibold },
+  loyaltyModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.xl, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  loyaltyModalTitle: { color: Colors.text, fontSize: Typography.lg, fontWeight: Typography.bold },
   editCard: {
     marginHorizontal: Spacing.lg, marginBottom: Spacing.xl,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
@@ -987,10 +1063,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.lg,
     marginHorizontal: Spacing.lg, marginBottom: Spacing.xl, padding: Spacing.lg,
   },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.black },
-  statLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 4 },
+  statItem: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  statValue: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.black, textAlign: 'center' },
+  statValueAccent: { color: Colors.primary },
+  statLabel: { color: Colors.textMuted, fontSize: Typography.xs, marginTop: 2, textAlign: 'center' },
+  statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: Colors.borderLight, marginHorizontal: Spacing.sm },
   menuGroup: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.xl },
   groupLabel: {
     color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
@@ -999,7 +1076,7 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: BorderRadius.lg, padding: Spacing.md, marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.lg, padding: Spacing.lg, marginBottom: Spacing.md,
   },
   menuItemIcon: {
     width: 40, height: 40, borderRadius: BorderRadius.sm,

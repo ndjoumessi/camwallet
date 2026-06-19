@@ -51,6 +51,8 @@ export interface RecentContact {
   name: string;
   initials: string;
   color: string;
+  lastAmountFcfa: number; // montant du dernier P2P avec ce contact (FCFA)
+  count: number; // nombre de P2P avec ce contact (fréquence)
 }
 
 export interface User {
@@ -376,25 +378,26 @@ export const useStore = create<AppState>((set, get) => ({
     const myPhone = get().user.phone;
     const res = await transactionsApi.getHistory(1, 50);
 
-    // Dériver les contacts récents depuis les P2P (pas d'API contacts dédiée)
-    const seen = new Set<string>();
-    const recentContacts: RecentContact[] = [];
+    // Dériver les contacts récents depuis les P2P (pas d'API contacts dédiée).
+    // `res.data` est trié desc → la 1ère occurrence d'un contact = son dernier échange.
+    const partyMap = new Map<string, { name: string; count: number; lastAmountFcfa: number }>();
     for (const t of res.data) {
       if (t.type !== 'P2P') continue;
       const isIncoming = t.receiverId === meId;
       const party = isIncoming ? t.sender : t.receiver;
       if (!party?.phone || party.phone === myPhone) continue;
-      if (seen.has(party.phone)) continue;
-      seen.add(party.phone);
-      const name = party.fullName || party.phone;
-      recentContacts.push({
-        phone: party.phone,
-        name,
-        initials: initials(name),
-        color: CONTACT_COLORS[recentContacts.length % CONTACT_COLORS.length],
-      });
-      if (recentContacts.length >= 5) break;
+      const existing = partyMap.get(party.phone);
+      if (existing) existing.count += 1;
+      else partyMap.set(party.phone, { name: party.fullName || party.phone, count: 1, lastAmountFcfa: toFcfa(t.amount) });
     }
+    const recentContacts: RecentContact[] = [...partyMap.entries()].slice(0, 5).map(([phone, info], i) => ({
+      phone,
+      name: info.name,
+      initials: initials(info.name),
+      color: CONTACT_COLORS[i % CONTACT_COLORS.length],
+      lastAmountFcfa: info.lastAmountFcfa,
+      count: info.count,
+    }));
 
     set({ transactions: res.data.map((t) => mapTransaction(t, meId)), recentContacts });
     void get().fetchMyDisputes();

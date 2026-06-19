@@ -47,12 +47,23 @@ const fmtPhone = (phone: string): string => {
   return `+237 ${digits}`;
 };
 
+// Groupe les chiffres locaux par 3 : "677000001" → "677 000 001".
+const groupLocal = (digits: string): string => digits.replace(/(\d{3})(?=\d)/g, '$1 ');
+// Numéro local (9 chiffres, sans +237) extrait d'un numéro complet.
+const localDigits = (phone: string): string => {
+  const d = phone.replace(/\D/g, '');
+  return d.startsWith('237') ? d.slice(3) : d;
+};
+// Normalisation pour recherche : minuscule + sans accents.
+const searchNorm = (s: string): string => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
 export default function SendModal({ visible, onClose, onSuccess, initialContact, initialRecipient }: SendModalProps) {
   const { user, balance, recentContacts, sendMoney } = useStore();
   const { t } = useTranslation();
   const [step, setStep] = useState<'contact' | 'amount' | 'pin' | 'done'>('contact');
   const [selectedContact, setSelectedContact] = useState<{ id: number; name: string; phone: string; avatar: string; color: string } | null>(null);
-  const [manualPhone, setManualPhone] = useState('');
+  const [manualPhone, setManualPhone] = useState(''); // chiffres locaux uniquement (sans +237)
+  const [search, setSearch] = useState('');
   const [amount, setAmount] = useState('');
   const [motif, setMotif] = useState('');
   const [pin, setPin] = useState('');
@@ -197,21 +208,32 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   const renderStep = () => {
     switch (step) {
       case 'contact': {
-        const canUseManual = manualPhone.replace(/\D/g, '').length >= 9;
+        const canUseManual = manualPhone.length === 9;
+        const q = searchNorm(search.trim());
+        const qDigits = search.replace(/\D/g, '');
+        const filteredContacts = q
+          ? recentContacts.filter(
+              (c) => searchNorm(c.name).includes(q) || (qDigits.length > 0 && c.phone.replace(/\D/g, '').includes(qDigits)),
+            )
+          : recentContacts;
         return (
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-            {/* Saisie manuelle d'un numéro */}
+            {/* Saisie manuelle d'un numéro — préfixe +237 fixe + formatage temps réel */}
             <Text style={styles.sectionLabel}>{t('send.contact.sectionLabel')}</Text>
             <View style={styles.phoneInputRow}>
-              <TextInput
-                style={styles.phoneInput}
-                value={manualPhone}
-                onChangeText={(v) => setManualPhone(v.replace(/[^\d\s+]/g, ''))}
-                placeholder={t('send.contact.phonePlaceholder')}
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="phone-pad"
-                accessibilityLabel={t('send.contact.phoneA11y')}
-              />
+              <View style={styles.phoneField}>
+                <Text style={styles.phonePrefix}>+237</Text>
+                <View style={styles.phoneSeparator} />
+                <TextInput
+                  style={styles.phoneLocalInput}
+                  value={groupLocal(manualPhone)}
+                  onChangeText={(v) => setManualPhone(v.replace(/\D/g, '').slice(0, 9))}
+                  placeholder={t('send.contact.phonePlaceholder')}
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="phone-pad"
+                  accessibilityLabel={t('send.contact.phoneA11y')}
+                />
+              </View>
               <TouchableOpacity
                 style={[styles.phoneInputBtn, !canUseManual && styles.phoneInputBtnDisabled]}
                 disabled={!canUseManual}
@@ -228,30 +250,61 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
               </TouchableOpacity>
             </View>
 
-            {/* Contacts récents (dérivés de l'historique) */}
+            {/* Contacts récents (dérivés de l'historique) + recherche */}
             {recentContacts.length > 0 && (
               <>
                 <Text style={[styles.sectionLabel, { marginTop: Spacing.xl }]}>{t('send.contact.recentSection')}</Text>
-                {recentContacts.map((c) => (
-                  <TouchableOpacity
-                    key={c.phone}
-                    style={styles.contactRow}
-                    onPress={() => {
-                      setSelectedContact({ id: -1, name: c.name, phone: c.phone, avatar: c.initials, color: c.color });
-                      setStep('amount');
-                    }}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${c.name}, ${c.phone}`}
-                  >
-                    <Avatar initials={c.initials} size={44} color={c.color} bg={c.color + '20'} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.contactName}>{c.name}</Text>
-                      <Text style={styles.contactPhone}>{c.phone}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
-                  </TouchableOpacity>
-                ))}
+                <View style={styles.searchRow}>
+                  <Ionicons name="search" size={16} color={Colors.textMuted} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={t('send.contact.searchPlaceholder', { defaultValue: 'Rechercher un nom ou numéro…' })}
+                    placeholderTextColor={Colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    accessibilityLabel={t('send.contact.searchPlaceholder', { defaultValue: 'Rechercher un nom ou numéro…' })}
+                  />
+                  {search.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearch('')} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('common.cancel')}>
+                      <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {filteredContacts.length === 0 ? (
+                  <Text style={styles.noContactText}>{t('send.contact.noResults', { defaultValue: 'Aucun contact trouvé' })}</Text>
+                ) : (
+                  filteredContacts.map((c) => {
+                    const frequent = c.count >= 3;
+                    return (
+                      <TouchableOpacity
+                        key={c.phone}
+                        style={styles.contactRow}
+                        onPress={() => {
+                          setSelectedContact({ id: -1, name: c.name, phone: c.phone, avatar: c.initials, color: c.color });
+                          setStep('amount');
+                        }}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${c.name}, ${c.phone}`}
+                      >
+                        <View>
+                          <Avatar initials={c.initials} size={44} color={c.color} bg={c.color + '20'} />
+                          <View style={[styles.freqDot, { backgroundColor: frequent ? Colors.primary : Colors.textMuted }]} />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={styles.contactName} numberOfLines={1}>{c.name}</Text>
+                          <Text style={styles.contactPhone} numberOfLines={1}>
+                            {fmtPhone(c.phone)} · {t('send.contact.lastSent', { amount: c.lastAmountFcfa.toLocaleString('fr-FR'), defaultValue: `Dernier envoi : ${c.lastAmountFcfa.toLocaleString('fr-FR')} FCFA` })}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
               </>
             )}
           </ScrollView>
@@ -512,6 +565,25 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
     borderRadius: BorderRadius.md, padding: Spacing.md,
     color: Colors.text, fontSize: Typography.base,
+  },
+  phoneField: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, paddingHorizontal: Spacing.md, minHeight: 48,
+  },
+  phonePrefix: { color: Colors.text, fontSize: Typography.base, fontWeight: Typography.bold },
+  phoneSeparator: { width: 1, height: 22, backgroundColor: Colors.border, marginHorizontal: Spacing.sm },
+  phoneLocalInput: { flex: 1, color: Colors.text, fontSize: Typography.base, paddingVertical: Spacing.md, letterSpacing: 1 },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: BorderRadius.md, paddingHorizontal: Spacing.md, minHeight: 44, marginBottom: Spacing.md,
+  },
+  searchInput: { flex: 1, color: Colors.text, fontSize: Typography.base, paddingVertical: Spacing.sm },
+  noContactText: { color: Colors.textMuted, fontSize: Typography.sm, textAlign: 'center', paddingVertical: Spacing.lg },
+  freqDot: {
+    position: 'absolute', right: -1, bottom: -1, width: 13, height: 13, borderRadius: 7,
+    borderWidth: 2, borderColor: Colors.surface,
   },
   phoneInputBtn: {
     width: 44, height: 44, borderRadius: BorderRadius.md,

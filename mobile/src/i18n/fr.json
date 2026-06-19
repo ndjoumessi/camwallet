@@ -509,11 +509,14 @@
     "backA11y": "Retour",
     "contact": {
       "sectionLabel": "Entrer un numéro",
-      "phonePlaceholder": "+237 6XX XXX XXX",
+      "phonePlaceholder": "6XX XXX XXX",
       "phoneA11y": "Numéro du destinataire",
       "continueBtnA11y": "Continuer",
       "recentSection": "Contacts récents",
-      "contactA11y": "{{name}}, {{phone}}"
+      "contactA11y": "{{name}}, {{phone}}",
+      "searchPlaceholder": "Rechercher un nom ou numéro…",
+      "noResults": "Aucun contact trouvé",
+      "lastSent": "Dernier envoi : {{amount}} FCFA"
     },
     "amount": {
       "amountLabel": "Montant",
@@ -667,7 +670,8 @@
     "points_other": "{{count}} points",
     "toNext": "Plus que {{points}} pts pour {{level}}",
     "maxLevel": "Niveau maximum atteint 🎉",
-    "historyTitle": "Gains récents"
+    "historyTitle": "Gains récents",
+    "seeAll": "Voir tout l'historique"
   },
   "kyc": {
     "headerTitle": "Vérification d'identité",
