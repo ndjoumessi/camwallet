@@ -21,6 +21,7 @@ permissions:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 30 # garde-fou contre un run infini (téléchargements bloqués, etc.)
     env:
       # Évite les warnings de dépréciation Node.js 20 sur les actions JS.
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -50,6 +51,29 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      # Cache des dépendances Gradle (caches + wrapper) — évite de re-télécharger
+      # tout le graphe à chaque run. android/ étant en CNG (généré au prebuild), la
+      # clé retombe sur le préfixe `gradle-` tant que les *.gradle n'existent pas
+      # encore ; restore-keys assure la restauration par préfixe.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            mobile/android/.gradle
+          key: gradle-${{ hashFiles('mobile/android/**/*.gradle*', 'mobile/android/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      - name: Cache Android SDK packages
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk
+          key: android-sdk-${{ hashFiles('mobile/android/build.gradle') }}
+          restore-keys: |
+            android-sdk-
 
       - name: Expo prebuild (génère android/ + applique le plugin de signature)
         run: cd mobile && npx expo prebuild --platform android --clean
@@ -101,7 +125,11 @@ jobs:
         run: |
           cd mobile/android
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --parallel \
+            --build-cache \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m"
         env:
           ANDROID_KEYSTORE_PATH: release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
