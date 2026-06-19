@@ -51,12 +51,18 @@ coverage/
 # Expo
 .expo/
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
 *.orig.*
 web-build/
+
+# APK téléchargés localement (vérif release) — ne jamais committer (binaires lourds)
+/apk/
+/apk-verified/
+*.apk
 
 # TypeScript
 *.tsbuildinfo

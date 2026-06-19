@@ -138,42 +138,12 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit || true
 
-  # ─── 6. RELEASE (tag seulement) ───────────────────────────────────────────
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    needs: [integration-tests, build-admin, typecheck-mobile]
-    if: startsWith(github.ref, 'refs/tags/v')
-    # Le GITHUB_TOKEN est en lecture seule par défaut ; la création d'une
-    # release GitHub exige contents: write (sinon 403 « Resource not accessible »).
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download coverage
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
-      - name: Archiver le coverage en un seul asset
-        # Les assets de release GitHub sont plats : uploader coverage/**/* fait
-        # entrer en collision les nombreux index.html. On zippe en un seul fichier.
-        run: zip -r coverage.zip coverage/
-      - name: Créer la release GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          body: |
-            ## CamWallet ${{ github.ref_name }}
+  # NB : la création de release + l'attachement d'assets sont gérés ailleurs —
+  # release GitHub créée manuellement (notes curées) et APK attaché par
+  # build-android.yml sur tag. L'ancien job « release » qui attachait coverage.zip
+  # a été retiré (asset indésirable sur les releases).
 
-            ### Tests
-            - ✅ Lint
-            - ✅ Tests unitaires (Jest — 40+ cas)
-            - ✅ Tests intégration (Supertest + PostgreSQL)
-            - ✅ Build admin (Vite)
-            - ✅ TypeCheck mobile
-          files: coverage.zip
-
-  # ─── 7. DEPLOY ADMIN (Vercel) ─────────────────────────────────────────────
+  # ─── 6. DEPLOY ADMIN (Vercel) ─────────────────────────────────────────────
   # Le backend est déployé automatiquement par l'intégration GitHub de Railway
   # (service « camwallet » connecté au dépôt) sur push vers main — pas de job CI
   # dédié pour éviter un double déploiement.

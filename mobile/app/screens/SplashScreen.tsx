@@ -3,7 +3,10 @@ import { View, Text, StyleSheet, Animated, Easing, AccessibilityInfo } from 'rea
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BALANCE_GRADIENT } from '../constants/theme';
-import { version as APP_VERSION } from '../../package.json'; // source unique de version (release-tracked)
+import Constants from 'expo-constants';
+
+// Version native réelle du paquet (app.json → expo.version), embarquée par Expo.
+const APP_VERSION = Constants.expoConfig?.version ?? '3.6.2';
 
 interface SplashScreenProps {
   onFinish: () => void;

@@ -33,7 +33,10 @@ import { setLanguage } from '../../src/i18n';
 import * as Haptics from 'expo-haptics';
 import { formatDistanceToNow } from 'date-fns';
 import { fr, enUS } from 'date-fns/locale';
-import { version as APP_VERSION } from '../../package.json'; // source unique de version (release-tracked)
+import Constants from 'expo-constants';
+
+// Version native réelle du paquet (app.json → expo.version), embarquée par Expo.
+const APP_VERSION = Constants.expoConfig?.version ?? '3.6.2';
 
 // Icône Ionicons selon la raison du gain de fidélité.
 function loyaltyGainIcon(reason: string): keyof typeof Ionicons.glyphMap {
