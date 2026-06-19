@@ -25,6 +25,12 @@ jobs:
     env:
       # Évite les warnings de dépréciation Node.js 20 sur les actions JS.
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # mobile/.env est gitignoré → absent en CI. Sans ces variables, api.ts retombe
+      # sur http://localhost:3000 (APK inutilisable). Les vars EXPO_PUBLIC_* sont
+      # inlinées par Metro au moment du BUNDLE JS (tâche bundleRelease… DANS
+      # assembleRelease), pas au prebuild — d'où le niveau JOB pour couvrir les deux.
+      EXPO_PUBLIC_API_URL: https://camwallet-production.up.railway.app
+      EXPO_PUBLIC_ENV: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
