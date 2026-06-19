@@ -24,6 +24,7 @@ import { AppCacheModule } from './cache/cache.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { IpWhitelistMiddleware } from './common/middleware/ip-whitelist.middleware';
 import { AdminOriginMiddleware } from './common/middleware/admin-origin.middleware';
+import { IdempotencyMiddleware } from './common/middleware/idempotency.middleware';
 
 @Module({
   imports: [
@@ -73,5 +74,15 @@ export class AppModule implements NestModule {
     consumer
       .apply(IpWhitelistMiddleware, AdminOriginMiddleware)
       .forRoutes({ path: 'api/v1/admin/*path', method: RequestMethod.ALL });
+
+    // Idempotence sur les écritures financières (anti double-transaction sur retry).
+    consumer
+      .apply(IdempotencyMiddleware)
+      .forRoutes(
+        { path: 'api/v1/transactions/p2p', method: RequestMethod.POST },
+        { path: 'api/v1/transactions/pay-qr', method: RequestMethod.POST },
+        { path: 'api/v1/wallets/recharge', method: RequestMethod.POST },
+        { path: 'api/v1/wallets/withdraw', method: RequestMethod.POST },
+      );
   }
 }

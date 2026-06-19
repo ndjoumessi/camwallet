@@ -14,6 +14,19 @@ const BASE_URL = `${API_ORIGIN}/api/v1`;
 const ACCESS_KEY = 'cw_access_token';
 const REFRESH_KEY = 'cw_refresh_token';
 
+// UUID v4 pour les clés d'idempotence. Math.random suffit ici : on a besoin
+// d'unicité (pas d'imprévisibilité cryptographique). Une nouvelle clé est générée
+// à chaque transaction initiée ; le retry réseau réutilise la même (config axios
+// conservée), donc le serveur dédoublonne (cf. backend IdempotencyMiddleware).
+export function uuidv4(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+// Header d'idempotence prêt à l'emploi pour un POST financier.
+const idemHeaders = () => ({ headers: { 'Idempotency-Key': uuidv4() } });
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stockage des tokens — expo-secure-store, avec repli mémoire (ex: web/SSR)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,10 +407,10 @@ export const walletApi = {
   getBalance: () => api.get<BalanceResponse>('/wallets/balance').then((r) => r.data),
 
   recharge: (amount: number, operator: MobileOperator, phone?: string) =>
-    api.post('/wallets/recharge', { amount, operator, phone }).then((r) => r.data),
+    api.post('/wallets/recharge', { amount, operator, phone }, idemHeaders()).then((r) => r.data),
 
   withdraw: (amount: number, operator: MobileOperator, phone?: string) =>
-    api.post('/wallets/withdraw', { amount, operator, phone }).then((r) => r.data),
+    api.post('/wallets/withdraw', { amount, operator, phone }, idemHeaders()).then((r) => r.data),
 };
 
 export const transactionsApi = {
@@ -408,7 +421,7 @@ export const transactionsApi = {
 
   p2p: (phone: string, amount: number, description?: string) =>
     api
-      .post<ApiTransaction>('/transactions/p2p', { phone, amount, description })
+      .post<ApiTransaction>('/transactions/p2p', { phone, amount, description }, idemHeaders())
       .then((r) => r.data),
 };
 
