@@ -33,6 +33,7 @@ import { setLanguage } from '../../src/i18n';
 import * as Haptics from 'expo-haptics';
 import { formatDistanceToNow } from 'date-fns';
 import { fr, enUS } from 'date-fns/locale';
+import { version as APP_VERSION } from '../../package.json'; // source unique de version (release-tracked)
 
 // Icône Ionicons selon la raison du gain de fidélité.
 function loyaltyGainIcon(reason: string): keyof typeof Ionicons.glyphMap {
@@ -769,7 +770,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>{t('profile.btnDeleteAccount')}</Text>
       </Pressable>
 
-      <Text style={styles.version}>{t('profile.versionText')}</Text>
+      <Text style={styles.version}>{t('profile.versionText', { version: APP_VERSION })}</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />

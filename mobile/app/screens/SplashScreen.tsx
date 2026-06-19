@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Animated, Easing, AccessibilityInfo } from 'rea
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { Colors, Typography, Spacing, BALANCE_GRADIENT } from '../constants/theme';
+import { version as APP_VERSION } from '../../package.json'; // source unique de version (release-tracked)
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -128,7 +129,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
       />
 
       {/* Version */}
-      <Text style={styles.version}>v2.7.3</Text>
+      <Text style={styles.version}>v{APP_VERSION}</Text>
     </LinearGradient>
   );
 }

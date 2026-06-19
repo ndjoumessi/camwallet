@@ -313,7 +313,7 @@
     "btnLogoutA11y": "Sign out",
     "btnDeleteAccount": "Delete my account",
     "btnDeleteA11y": "Delete account",
-    "versionText": "CamWallet · Cameroon Market",
+    "versionText": "CamWallet v{{version}} · Cameroon Market",
     "alertLogoutTitle": "Sign out",
     "alertLogoutMsg": "Are you sure you want to sign out?",
     "alertLogoutCancel": "Cancel",
