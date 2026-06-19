@@ -107,14 +107,19 @@ export class CacheService implements OnModuleDestroy {
   // le renvoie. Une valeur corrompue est ignorée (recalcul). Un échec du cache ne
   // doit jamais empêcher le calcul de la valeur fraîche.
   async wrap<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {
+    const mode = this.redis ? 'redis' : 'memory';
     const cached = await this.get(key).catch(() => null);
     if (cached !== null) {
       try {
-        return JSON.parse(cached) as T;
+        const value = JSON.parse(cached) as T;
+        // Log de monitoring (niveau debug → activer LOG_LEVEL=debug pour l'observer).
+        this.logger.debug(`Cache HIT [${mode}] ${key}`);
+        return value;
       } catch {
         /* valeur corrompue → recalcul */
       }
     }
+    this.logger.debug(`Cache MISS [${mode}] ${key}`);
     const fresh = await fn();
     await this.set(key, JSON.stringify(fresh), ttlSeconds).catch(() => undefined);
     return fresh;
