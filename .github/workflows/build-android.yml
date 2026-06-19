@@ -81,6 +81,16 @@ jobs:
           restore-keys: |
             android-sdk-
 
+      # (Re)génère mobile/.env.production avant le prebuild : Expo le charge en mode
+      # production (export:embed) au moment du bundle. Redondant avec l'env JOB
+      # (qui suffit déjà, cf. URL prouvée dans le bundle) mais sert de filet :
+      # le bundle obtient la bonne URL même si l'env JOB venait à sauter.
+      - name: Créer mobile/.env.production
+        run: |
+          echo "EXPO_PUBLIC_API_URL=https://camwallet-production.up.railway.app" > mobile/.env.production
+          echo "EXPO_PUBLIC_ENV=production" >> mobile/.env.production
+          cat mobile/.env.production
+
       # Pré-installe explicitement les packages SDK requis (platform/build-tools/NDK)
       # pour éviter un téléchargement implicite et lent au premier appel Gradle.
       - name: Pré-installer les packages Android SDK
