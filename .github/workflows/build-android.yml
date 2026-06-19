@@ -1,0 +1,101 @@
+name: Build Android APK
+
+# Build d'un APK release signé SANS EAS (prebuild local + Gradle).
+# La signature release est injectée dans build.gradle par le config plugin
+# mobile/plugins/withReleaseSigning.js lors du `expo prebuild` (android/ est en CNG,
+# régénéré à chaque build — d'où le plugin plutôt qu'un build.gradle commité).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Étiquette de version pour nommer l'APK (ex. v3.5.7). Défaut : nom de la ref."
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # nécessaire pour attacher l'APK à la Release (softprops)
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache mobile/node_modules
+        uses: actions/cache@v4
+        with:
+          path: mobile/node_modules
+          key: mobile-${{ hashFiles('mobile/package-lock.json') }}
+
+      - name: Install dependencies
+        run: cd mobile && npm ci
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Expo prebuild (génère android/ + applique le plugin de signature)
+        run: cd mobile && npx expo prebuild --platform android --clean
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Le keystore est décodé APRÈS prebuild (qui régénère/efface android/).
+      # build.gradle attend file("release.keystore") relatif au module app/.
+      - name: Décoder le keystore release
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 -d > mobile/android/app/release.keystore
+          test -s mobile/android/app/release.keystore || { echo "::error::Keystore vide — vérifier le secret ANDROID_KEYSTORE_BASE64"; exit 1; }
+
+      - name: Build APK Release
+        run: |
+          cd mobile/android
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon
+        env:
+          ANDROID_KEYSTORE_PATH: release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Renommer l'APK
+        id: rename
+        env:
+          # Input utilisateur (workflow_dispatch) → variable d'env + assainissement
+          # (jamais interpolé directement dans le shell : risque d'injection).
+          RAW_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          VER=$(printf '%s' "$RAW_VERSION" | tr -cd 'A-Za-z0-9._-')
+          [ -z "$VER" ] && VER="build"
+          NAME="camwallet-${VER}-android.apk"
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$NAME"
+          echo "apk=$NAME" >> "$GITHUB_OUTPUT"
+          echo "APK : $NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: camwallet-android-apk
+          path: camwallet-*.apk
+          retention-days: 30
+
+      - name: Attacher à la Release GitHub (si tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: camwallet-*.apk

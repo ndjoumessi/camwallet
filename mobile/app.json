@@ -60,7 +60,8 @@
       "expo-asset",
       "expo-notifications",
       "expo-localization",
-      "expo-font"
+      "expo-font",
+      "./plugins/withReleaseSigning"
     ],
     "scheme": "camwallet",
     "experiments": {
