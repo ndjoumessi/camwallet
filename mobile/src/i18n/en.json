@@ -146,6 +146,14 @@
   },
   "home": {
     "notificationsA11y": "Notifications",
+    "slowConnection": "Slow connection — retrying…",
+    "offline": "Offline — check your connection",
+    "signal": {
+      "offline": "Network: offline",
+      "slow": "Network: slow",
+      "medium": "Network: medium",
+      "good": "Network: good"
+    },
     "greeting": "Hello 👋",
     "availableBalance": "Available balance",
     "recentTransactions": "Recent transactions",

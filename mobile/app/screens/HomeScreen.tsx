@@ -15,7 +15,7 @@ import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../
 import { txMeta } from '../constants/txMeta';
 import { Avatar, Badge, SectionTitle, IconButton, Toast } from '../components/ui';
 import { useStore } from '../store/useStore';
-import { loyaltyApi, LoyaltyBalance } from '../../src/lib/api';
+import { loyaltyApi, LoyaltyBalance, subscribeNetwork, getNetworkState, NetworkState, NetQuality } from '../../src/lib/api';
 import SendModal from './modals/SendModal';
 import { useTranslation } from 'react-i18next';
 import ReceiveModal from './modals/ReceiveModal';
@@ -25,12 +25,44 @@ import ScanModal, { ScannedRecipient } from './modals/ScanModal';
 
 type ModalType = 'send' | 'receive' | 'recharge' | 'withdraw' | 'scan' | null;
 
+// Barre de signal réseau (4 barres) — qualité déduite de la latence API.
+const SIGNAL_LEVEL: Record<NetQuality, number> = { offline: 0, slow: 1, medium: 2, good: 4 };
+const SIGNAL_COLOR: Record<NetQuality, string> = {
+  offline: Colors.red, slow: Colors.orange, medium: Colors.yellow, good: Colors.primary,
+};
+function SignalBars({ quality }: { quality: NetQuality }) {
+  const { t } = useTranslation();
+  const active = SIGNAL_LEVEL[quality];
+  const color = SIGNAL_COLOR[quality];
+  return (
+    <View
+      style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 16 }}
+      accessibilityRole="image"
+      accessibilityLabel={t('home.signal.' + quality, { defaultValue: 'Réseau' })}
+    >
+      {[1, 2, 3, 4].map((b) => (
+        <View
+          key={b}
+          style={{
+            width: 3.5,
+            height: 4 + b * 3,
+            borderRadius: 1,
+            backgroundColor: b <= active ? color : Colors.border,
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const { user, balance, showBalance, toggleShowBalance, recentContacts, transactions, fetchBalance, fetchHistory, openTransaction } = useStore();
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [scannedRecipient, setScannedRecipient] = useState<ScannedRecipient | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [loyalty, setLoyalty] = useState<LoyaltyBalance | null>(null);
+  const [net, setNet] = useState<NetworkState>(getNetworkState());
+  useEffect(() => subscribeNetwork(setNet), []);
 
   // Animation d'entrée — balance card + stagger des boutons d'action
   const cardEnter = useRef(new Animated.Value(0)).current;
@@ -111,10 +143,23 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>{t('home.greeting')}</Text>
             <Text style={styles.userName}>{user.name.split(' ')[0]}</Text>
           </View>
-          <View style={styles.avatarGradient} accessibilityElementsHidden>
-            <Text style={styles.avatarText}>{user.avatar}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.md }}>
+            <SignalBars quality={net.quality} />
+            <View style={styles.avatarGradient} accessibilityElementsHidden>
+              <Text style={styles.avatarText}>{user.avatar}</Text>
+            </View>
           </View>
         </View>
+
+        {/* Bannière connexion lente / tentative en cours */}
+        {(net.retrying || net.quality === 'offline') && (
+          <View style={styles.slowBanner} accessibilityLiveRegion="polite">
+            <Ionicons name={net.quality === 'offline' ? 'cloud-offline-outline' : 'cellular-outline'} size={15} color={Colors.yellow} />
+            <Text style={styles.slowBannerText}>
+              {net.quality === 'offline' ? t('home.offline') : t('home.slowConnection')}
+            </Text>
+          </View>
+        )}
 
         {/* Balance Card */}
         <Animated.View style={{
@@ -431,6 +476,24 @@ const styles = StyleSheet.create({
   },
   loyaltyText: {
     color: Colors.primary,
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold,
+  },
+  slowBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.yellow + '18',
+    borderWidth: 1,
+    borderColor: Colors.yellow + '40',
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  slowBannerText: {
+    flex: 1,
+    color: Colors.yellow,
     fontSize: Typography.sm,
     fontWeight: Typography.semibold,
   },

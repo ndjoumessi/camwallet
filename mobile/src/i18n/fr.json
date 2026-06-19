@@ -146,6 +146,14 @@
   },
   "home": {
     "notificationsA11y": "Notifications",
+    "slowConnection": "Connexion lente — tentative en cours…",
+    "offline": "Hors ligne — vérifiez votre connexion",
+    "signal": {
+      "offline": "Réseau : hors ligne",
+      "slow": "Réseau : lent",
+      "medium": "Réseau : moyen",
+      "good": "Réseau : bon"
+    },
     "greeting": "Bonjour 👋",
     "availableBalance": "Solde disponible",
     "recentTransactions": "Transactions récentes",

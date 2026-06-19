@@ -96,17 +96,48 @@ async function withRetry<T>(fn: () => Promise<T>, isAuthRoute: boolean): Promise
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Moniteur de qualité réseau (basé sur la latence mesurée + état de retry).
+// Pensé pour les connexions lentes (2G/3G) : pas de module natif, on déduit la
+// qualité du temps de réponse réel — plus pertinent que le type de radio.
+// ─────────────────────────────────────────────────────────────────────────────
+export type NetQuality = 'offline' | 'slow' | 'medium' | 'good';
+export interface NetworkState { quality: NetQuality; latencyMs: number | null; retrying: boolean }
+
+let netState: NetworkState = { quality: 'good', latencyMs: null, retrying: false };
+const netListeners = new Set<(s: NetworkState) => void>();
+
+function emitNet(patch: Partial<NetworkState>): void {
+  netState = { ...netState, ...patch };
+  netListeners.forEach((l) => l(netState));
+}
+// Seuils de latence (ms) : < 600 bon, < 1500 moyen, sinon lent.
+function qualityForLatency(ms: number): NetQuality {
+  return ms < 600 ? 'good' : ms < 1500 ? 'medium' : 'slow';
+}
+export function getNetworkState(): NetworkState {
+  return netState;
+}
+export function subscribeNetwork(fn: (s: NetworkState) => void): () => void {
+  netListeners.add(fn);
+  fn(netState);
+  return () => { netListeners.delete(fn); };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Instance axios + intercepteurs (Bearer + refresh automatique sur 401)
 // ─────────────────────────────────────────────────────────────────────────────
 const api: AxiosInstance = axios.create({
   baseURL: BASE_URL,
   timeout: 15000,
-  headers: { 'Content-Type': 'application/json' },
+  // gzip : on accepte les réponses compressées (le backend a le middleware
+  // `compression`). Réduit fortement le volume sur 2G/3G.
+  headers: { 'Content-Type': 'application/json', 'Accept-Encoding': 'gzip, deflate' },
 });
 
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   const token = await getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  (config as any).metadata = { start: Date.now() };
   return config;
 });
 
@@ -130,7 +161,12 @@ async function refreshSession(): Promise<string | null> {
 }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Mesure de latence → qualité réseau (réinitialise l'état de retry).
+    const start = (response.config as any)?.metadata?.start as number | undefined;
+    if (start) emitNet({ quality: qualityForLatency(Date.now() - start), latencyMs: Date.now() - start, retrying: false });
+    return response;
+  },
   async (error: AxiosError) => {
     const original = error.config as
       | (InternalAxiosRequestConfig & { _retry?: boolean; _retryCount?: number })
@@ -145,9 +181,13 @@ api.interceptors.response.use(
       const retryCount = original._retryCount ?? 0;
       if (isRetryable && retryCount < RETRY_DELAYS_MS.length) {
         original._retryCount = retryCount + 1;
+        // Signale à l'UI une connexion lente + tentative en cours.
+        emitNet({ quality: 'slow', retrying: true });
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[retryCount]));
         return api(original);
       }
+      // Échec réseau définitif (pas de réponse) → hors ligne.
+      if (status === undefined) emitNet({ quality: 'offline', retrying: false });
     }
 
     // ── Refresh sur 401 ───────────────────────────────────────────────────
