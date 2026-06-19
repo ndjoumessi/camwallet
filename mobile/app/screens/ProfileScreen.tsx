@@ -468,7 +468,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
                         <Ionicons name={loyaltyGainIcon(ev.reason)} size={16} color={Colors.primary} />
                       </View>
                       <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.loyaltyGainReason} numberOfLines={1}>{ev.reason}</Text>
+                        <Text style={styles.loyaltyGainReason} numberOfLines={1}>{ev.reason}{ev.amountCentimes != null ? ` · ${fcfa(ev.amountCentimes)} FCFA` : ''}</Text>
                         <Text style={styles.loyaltyGainDate}>{relTime(ev.createdAt)}</Text>
                       </View>
                       <Text style={styles.loyaltyHistoryPoints}>+{ev.points} pts</Text>

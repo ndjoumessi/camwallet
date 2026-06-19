@@ -35,7 +35,7 @@ describe('WebhooksService — fidélité à la confirmation', () => {
     await confirm(svc, {
       id: 'tx1', type: TransactionType.RECHARGE, receiverId: 'u1', amount: 100000n, fee: 0n, operatorRef: 'r1',
     });
-    expect(loyalty.awardRecharge).toHaveBeenCalledWith('u1');
+    expect(loyalty.awardRecharge).toHaveBeenCalledWith('u1', 100000n);
     expect(cache.del).toHaveBeenCalled(); // invalidation du solde
   });
 

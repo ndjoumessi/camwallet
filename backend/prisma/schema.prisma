@@ -372,12 +372,13 @@ model LoyaltyPoints {
 // Journal des gains de points (programme de fidélité). LoyaltyPoints garde le solde
 // courant ; LoyaltyEvent garde l'historique (1 ligne par attribution).
 model LoyaltyEvent {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  points    Int
-  reason    String
-  createdAt DateTime @default(now())
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  points         Int
+  reason         String
+  amountCentimes BigInt?  // montant de la transaction source (centimes), null si non applicable (ex. KYC)
+  createdAt      DateTime @default(now())
 
   @@index([userId, createdAt])
   @@map("loyalty_events")

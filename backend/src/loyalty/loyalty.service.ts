@@ -83,7 +83,7 @@ export class LoyaltyService {
 
   // Attribue des points (atomique : solde + ligne d'historique). Appelé en
   // fire-and-forget après un mouvement déjà persisté.
-  async award(userId: string, points: number, reason: string): Promise<void> {
+  async award(userId: string, points: number, reason: string, amountCentimes?: bigint): Promise<void> {
     if (!userId || points <= 0) return;
     try {
       await this.prisma.$transaction([
@@ -92,7 +92,7 @@ export class LoyaltyService {
           create: { userId, points },
           update: { points: { increment: points } },
         }),
-        this.prisma.loyaltyEvent.create({ data: { userId, points, reason } }),
+        this.prisma.loyaltyEvent.create({ data: { userId, points, reason, amountCentimes: amountCentimes ?? null } }),
       ]);
     } catch (err) {
       this.logger.error(
@@ -109,15 +109,15 @@ export class LoyaltyService {
   // Attributions de haut niveau (lisent la config) — utilisées par les flux métier.
   async awardP2p(userId: string, amountCentimes: bigint): Promise<void> {
     const cfg = await this.getConfig();
-    await this.award(userId, this.pointsForP2p(amountCentimes, cfg.perThousand), LoyaltyReason.P2P_SEND);
+    await this.award(userId, this.pointsForP2p(amountCentimes, cfg.perThousand), LoyaltyReason.P2P_SEND, amountCentimes);
   }
-  async awardRecharge(userId: string): Promise<void> {
+  async awardRecharge(userId: string, amountCentimes?: bigint): Promise<void> {
     const cfg = await this.getConfig();
-    await this.award(userId, cfg.recharge, LoyaltyReason.RECHARGE);
+    await this.award(userId, cfg.recharge, LoyaltyReason.RECHARGE, amountCentimes);
   }
   async awardKyc(userId: string): Promise<void> {
     const cfg = await this.getConfig();
-    await this.award(userId, cfg.kyc, LoyaltyReason.KYC_APPROVED);
+    await this.award(userId, cfg.kyc, LoyaltyReason.KYC_APPROVED); // pas de montant
   }
 
   private levelFor(points: number, levels: ReturnType<LoyaltyService['buildLevels']>) {
@@ -155,7 +155,7 @@ export class LoyaltyService {
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take,
-      select: { id: true, points: true, reason: true, createdAt: true },
+      select: { id: true, points: true, reason: true, amountCentimes: true, createdAt: true },
     });
   }
 

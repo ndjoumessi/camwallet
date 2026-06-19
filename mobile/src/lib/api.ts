@@ -500,6 +500,7 @@ export interface LoyaltyEvent {
   points: number;
   reason: string;
   createdAt: string;
+  amountCentimes?: number | null; // montant de la transaction source (centimes), null si N/A
 }
 
 export const loyaltyApi = {

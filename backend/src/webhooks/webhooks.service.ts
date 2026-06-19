@@ -226,7 +226,7 @@ export class WebhooksService {
     // Solde crédité (recharge) → invalider le cache + attribuer les points fidélité.
     if (tx.type === TransactionType.RECHARGE && tx.receiverId) {
       await this.cache.del(CacheKeys.walletBalance(tx.receiverId));
-      void this.loyalty.awardRecharge(tx.receiverId);
+      void this.loyalty.awardRecharge(tx.receiverId, tx.amount);
     }
 
     // Notification push après crédit d'une recharge (hors transaction, non bloquant).
