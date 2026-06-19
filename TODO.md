@@ -1,163 +1,95 @@
-# CamWallet — TODO & Fonctionnalités manquantes
+# CamWallet — TODO & feuille de route
 
-> Comparatif CDC v1.0 (Juin 2026) vs implémentation actuelle.  
-> Dernière mise à jour : 2026-06-18 (v3.2.17)
+> État réel du produit vs CDC v1.0 (Juin 2026).
+> Dernière mise à jour : **2026-06-19 — v3.5.5** (en production sur Railway + Vercel).
 
 ---
 
-## 🔴 MVP Bloquant
+## 📊 Synthèse
 
-Ces points bloquent la validation ou la sécurité du produit. Sans eux, CamWallet ne peut pas être mis en production.
+| Priorité | État |
+|---|---|
+| 🔴 MVP Bloquant | ✅ 100 % livré |
+| 🟠 Haute (CDC) | ✅ 100 % livré |
+| 🟡 Moyenne (CDC) | ✅ 100 % livré |
+| 🟢 Post-MVP (v2.4 → v3.2.17) | ✅ livré (CamPay, webhooks signés, SMS AfricasTalking, KYC IA) |
+| 🟣 Évolutions v3.3 → v3.5.5 | ✅ livré (voir ci-dessous) |
+| ⏳ Reportés | 6 chantiers (dont 4 bloqués sur config externe) |
+| 🔵 Optionnels | 2 |
+| ❌ Hors scope | 1 |
 
-### Backend
+Le MVP et **toutes** les priorités du CDC sont livrés et déployés. Le backlog restant
+est composé d'évolutions Phase 2 et de tâches d'activation prod (credentials live).
 
-- [x] **[SÉCU] Validation signature webhooks Orange Money** — HMAC-SHA256 avec `OM_WEBHOOK_SECRET`, comparaison à temps constant (`timingSafeEqual`). `webhooks/webhooks.service.ts`.
-- [x] **[SÉCU] Validation token webhooks MTN MoMo** — comparaison à temps constant des hashes SHA-256 du token reçu vs `MTN_WEBHOOK_SECRET`. `webhooks/webhooks.service.ts`.
-- [x] **[INTÉGRATION] SMS OTP réel via AfricasTalking** — déjà implémenté dans `otp.service.ts` (bascule sandbox quand `username === 'sandbox'` ou clé absente).
-- [x] **[AUTH] Endpoint `POST /auth/logout`** — incrémente `User.tokenVersion` ; le `refresh` rejette tout token antérieur à cette version. `auth/auth.controller.ts` + `auth.service.ts`.
-- [x] **[AUTH] Endpoint `PATCH /auth/change-pin`** — vérifie l'ancien PIN (bcrypt), hash le nouveau (coût 12), incrémente `tokenVersion` (invalide toutes les sessions). `auth/auth.controller.ts` + `auth.service.ts`.
+---
+
+## 🟣 Évolutions livrées v3.3.0 → v3.5.5
+
+### Paiements & fiabilité
+- [x] **Idempotency keys sur tous les transferts financiers** — middleware `IdempotencyMiddleware` (cache Redis, TTL 24h) sur `POST /transactions/p2p`, `/transactions/pay-qr`, `/wallets/recharge`, `/wallets/withdraw`. En-tête `Idempotency-Key` (UUID mobile, réutilisé au retry) → réponse rejouée à l'identique, **0 double transaction**. _(v3.5.4, **corrigé et vérifié en prod v3.5.5** — le matching de route initial ne s'exécutait pas)._
+- [x] **Optimisations connexions lentes (2G/3G)** — timeout 15s, retry 3× backoff (1/2/4s), bannière « Connexion lente / Hors ligne », indicateur de qualité réseau (barre signal basée latence réelle), gzip. _(v3.5.4)_
+- [x] **Mode hors-ligne mobile** — solde mis en cache (`AsyncStorage`) et affiché quand l'API est injoignable. _(v3.4.0)_
+
+### Fidélité
+- [x] **Programme de fidélité / cashback** — modèles `LoyaltyPoints` + `LoyaltyEvent`, +1 pt/1000 FCFA envoyés, +5/recharge, +10/KYC ; niveaux Bronze/Argent/Or/Platine ; `GET /loyalty/balance` & `/history` ; section mobile + widget admin. _(v3.4.0)_
+- [x] **Seuils & règles de fidélité configurables** depuis l'admin (`system_settings`, seed `onModuleInit`). _(v3.4.1)_
+
+### Performance backend
+- [x] **Cache applicatif** — `AppCacheModule` (Redis si `REDIS_URL`, sinon mémoire), cache solde/profil/stats/santé, invalidation ciblée, logs HIT/MISS. _(v3.4.0)_
+- [x] **Redis opérationnel en production** (Railway Redis) — intégration « Cache (Redis) » dans la santé (UP/DOWN/FALLBACK), hit ~4× plus rapide, vérifié en prod. _(v3.5.3)_
+
+### KYC & stockage
+- [x] **Cloudinary KYC opérationnel en production** — upload optimisé (quality/format auto), dossiers dédiés `cni_recto`/`cni_verso`/`selfie`, repli base64, `ping()` dans la santé. _(v3.3.2)_
+
+### Conformité (ANIF)
+- [x] **Export PDF du rapport de conformité ANIF** — générateur multi-sections (stats, alertes, dossiers, règles), pied « Confidentiel — CamWallet © 2026 ». _(v3.4.0)_
+
+### Admin — dashboard
+- [x] **Carte Google Maps du Cameroun** — répartition géographique par région (10 régions en Polygon, tooltips dark, fit-bounds, frontières), repli SVG d3-geo. _(v3.3.0 → v3.3.1, raffinements jusqu'à v3.5.x)_
+- [x] **Graphiques enrichis** — sparklines KPI, donut interactif, BarChart groupé à légende cliquable, AreaChart « Transactions par heure ». _(v3.5.0)_
+- [x] **Optimisations perfs admin** — code-splitting Vite (bundle 1.7 Mo → 724 Ko), mémoïsation des charts, images KYC lazy. _(v3.5.0)_
 
 ### Mobile
+- [x] **Scan QR marchand amélioré** — détection de type, checkmark animé, torche, pinch-zoom, historique des 5 derniers scans, haptique. _(v3.5.0)_
 
-- [x] **[CRITIQUE] HomeScreen : solde et transactions depuis l'API** — `useEffect` au montage appelle `fetchBalance()` + `fetchHistory()` (store). La HomeScreen remonte à chaque retour sur l'onglet (tab non persisté), donc les données sont toujours fraîches.
-- [x] **[SÉCU] SendModal : validation PIN via l'API** — `handlePin` appelle `authApi.login(user.phone, pin)` côté serveur avant tout envoi. Implémente le lockout backend (3 tentatives). Supprimé le hint "PIN de démo : 123456".
-- [x] **[UX] Contacts récents depuis l'API** — `fetchHistory()` dérive `recentContacts[]` depuis l'historique P2P (téléphone + nom des contreparties). HomeScreen + SendModal utilisent ces contacts réels.
-- [x] **[FLOW] Modal Retrait complet** — `WithdrawModal.tsx` : sélection opérateur → numéro + montant → `walletApi.withdraw()` → écran "Retrait initié". Bouton "Retirer" ajouté en HomeScreen (barre d'actions défilante).
-- [x] **[FLOW] RechargeModal câblée à l'API** — `handleRecharge` appelle `walletApi.recharge()`. Champ numéro MoMo (pré-rempli avec `user.phone`). Écran "Recharge en cours" (webhook crédite, pas de confirmation immédiate).
-- [x] **[SÉCU] Déconnexion automatique après 15 min d'inactivité** — Timer `setInterval` (60 s) dans `index.tsx` + `AppState` pour le background. `onTouchStart` sur le contenu réinitialise `lastActivityRef`. Appelle `logout()` + redirige vers login.
+### Qualité transverse
+- [x] **Audit UI/UX complet + i18n FR/EN** — correction des textes codés en dur (mobile + admin), parité des clés (mobile 578=578, admin ~1214), confirmations sur actions KYC, a11y, tokens couleur, états hover, messages d'erreur spécifiques. _(v3.5.1 + v3.5.2)_
 
 ---
 
-## 🟠 Haute priorité
+## ⏳ Reportés
 
-Fonctionnalités marquées "Haute" dans le CDC ou nécessaires pour une beta utilisable.
+### Bloqués sur configuration / accès externe (action requise hors code)
+- [ ] ⏳ **Notifications push FCM / Firebase** — remplacer Expo Push. **Bloqué** : créer le projet Firebase + `FIREBASE_SERVICE_ACCOUNT_JSON` + **build natif EAS** (sortie d'Expo Go). Expo Push fonctionne en attendant.
+- [ ] ⏳ **Widget Android écran d'accueil** (solde + raccourcis). **Bloqué** : code natif + build EAS (non testable en Expo Go).
+- [ ] ⏳ **AfricasTalking — credentials LIVE** — actuellement sandbox/log. Activer une clé de production pour l'envoi réel des SMS OTP.
+- [ ] ⏳ **CamPay — passage en LIVE** — actuellement sandbox. Basculer sur les credentials de production OM/MTN via CamPay + valider les webhooks signés en réel.
+- [ ] ⏳ **Domaine custom `.cm`** — `admin.camwallet.cm` / `app.camwallet.cm` (DNS + certificats + CORS déjà prévu en prod).
 
-### Backend
-
-- [x] **[ADMIN] Endpoint `POST /admin/transactions/:id/retry`** — relance manuelle d'une transaction en attente (§14.3.3 CDC). Utile pour les webhooks non reçus.
-- [x] **[ADMIN] Endpoint `GET /admin/integrations/status`** — santé temps réel de OM, MTN MoMo, SMS OTP et FCM (latence ping, uptime). Requis pour le tableau de bord admin (§14.3.7).
-- [x] **[NOTIF] Notification push + SMS sur décision KYC** — `reviewKyc()` envoie push via `NotificationsService.sendToUser()` + SMS via `OtpService.sendSms()`. `AdminModule` importe désormais `AuthModule`.
-- [x] **[SÉCU] Historique des 3 derniers PIN** — champ `previousPinHashes String[]` sur `User` (migration `add-pin-history`). `changePin()` vérifie les 3 derniers hashes avant d'accepter le nouveau PIN.
-- [x] **[ANIF] Alerte automatique transactions > 500 000 FCFA** — `p2p()` crée un `AuditLog { action: 'ANIF_HIGH_VALUE_ALERT' }` fire-and-forget si `amount >= 50_000_000n`.
-
-### Mobile
-
-- [x] **[UX] Détail transaction au clic dans HistoryScreen** — `onPress` sur chaque ligne ouvre une `Modal` (pageSheet) avec icône, montant, référence, opération, date, statut, motif.
-- [x] **[UX] Écran / modale Retrait accessible depuis HomeScreen** — `WithdrawModal.tsx` + bouton "Retirer" dans la barre d'actions défilante de `HomeScreen`.
-- [x] **[UX] Partage reçu WhatsApp après paiement QR** — deep link `wa.me` intégré dans `SendModal` à l'étape "done" (P2P et QR).
-- [x] **[PROFIL] Changement de PIN depuis ProfileScreen** — modal in-app (PIN actuel → nouveau × 2) appelant `authApi.changePin()` → `PATCH /auth/change-pin`. Vérifie les 3 derniers PIN côté serveur.
-- [x] **[PROFIL] Toggle préférences notifications** — switch push dans ProfileScreen, persisté via `AsyncStorage` (`cw_push_enabled`).
-- [x] **[LÉGAL] Écrans CGU et Politique de confidentialité** — modales pageSheet avec texte complet depuis ProfileScreen (section "Informations légales").
-- [x] **[UX] Mode dégradé offline** — `fetchBalance()` catch : charge `cw_cached_balance` depuis `AsyncStorage` + affiche `error: 'Mode hors ligne — solde affiché depuis le cache'`.
-
-### Admin
-
-- [x] **[ADMIN] Vue dédiée Recharges & Retraits** — page "Recharges & Retraits" dans le nav admin ; 2 onglets : Opérations (table avec type, statut, ref. opérateur, retryCount, bouton Relancer) + Callbacks webhook (table avec payload dépliable inline, statut traité/erreur). KPI cards : volume 7j recharges, retraits, webhooks en attente.
-- [x] **[ADMIN] Score de risque ANIF par utilisateur** — `getUserDetail()` calcule `anifRisk` (Bas/Moyen/Élevé) depuis le volume mensuel ; affiché sur la fiche utilisateur admin avec couleur (rouge/jaune/vert).
-- [x] **[ADMIN] Tableau santé intégrations sur Dashboard** — widget `HealthWidget` consomme `GET /admin/health/integrations` (déjà implémenté).
-- [x] **[ADMIN] Relance transaction manuelle** — `POST /admin/transactions/:id/retry` + bouton "Relancer" sur la fiche transaction admin (déjà implémenté).
+### Faisable en interne (effort)
+- [ ] ⏳ **Admin : `React.lazy` par route + virtualisation des tables** — nécessite d'éclater le `App.tsx` monolithique (~5000 lignes) en modules par page.
 
 ---
 
-## 🟡 Moyenne priorité
+## 🔵 Optionnels
 
-Fonctionnalités utiles pour la qualité du produit ou la conformité, mais non bloquantes pour le lancement beta.
-
-### Backend
-
-- [x] **[ANIF] Détection transactions suspectes avancées** — smurfing (>10 tx/24h < 50k FCFA, total > 300k FCFA) + montants inhabituels (juste sous le seuil ANIF). `admin.service.ts` `getAnifAlerts()`.
-- [x] **[ANIF] Rapport ANIF semi-automatique** — `GET /admin/anif/report` retourne JSON structuré (summary, highValue, smurfing, unusualAmounts, openCases) sur 30j.
-- [x] **[ADMIN] Endpoint `PATCH /admin/settings`** — modèle `SystemSettings` (migration), `GET/PATCH /admin/settings` : limites, frais P2P, durée session, seuil ANIF.
-- [x] **[PERF] Retry réseau avec backoff exponentiel** — 3 tentatives, délais 1s/2s/4s, erreurs réseau + 5xx uniquement. Mobile `axios` interceptor + admin `request()`.
-- [x] **[NOTIF] SMS de backup si push non reçu** — `setTimeout(30 000ms)` dans `NotificationsService.sendToUser()` après push ; `NotificationsModule` importe `AuthModule` pour `OtpService`.
-
-### Mobile
-
-- [x] **[UX] Feedback haptic sur actions critiques** — `expo-haptics` : `impactAsync(Medium)` sur bouton Envoyer, `notificationAsync(Success/Error)` sur PIN confirmé/incorrect + changement PIN ProfileScreen.
-- [x] **[UX] Pagination / scroll infini dans HistoryScreen** — `FlatList` + `onEndReached` (threshold 0.2) + `fetchHistoryPage(page)` dans le store, champs `historyHasMore` + `historyLoading`.
-- [x] **[UX] Deep link depuis notifications push** — `addNotificationTapHandler()` dans `notifications.ts` ; `index.tsx` appelle `setActiveTab('history')` au tap.
-- [x] **[UX] Écran Commerçant basique** — `MerchantScreen` déjà complet (stats jour/semaine/mois + QR dynamique via `merchantApi.getStats()`). Vérifié fonctionnel.
-
-### Admin
-
-- [x] **[ADMIN] Filtres avancés Audit Logs** — `GET /admin/audit?action=&actorId=&resource=&from=&to=&take=` + page "Journal Audit" dans le nav avec barre de filtres.
-- [x] **[ADMIN] Graphique taux de succès par opérateur** — `GET /admin/stats/operator-rates` + `OperatorRatesWidget` (BarChart Recharts) dans `TransactionsPage`.
-- [x] **[ADMIN] Dossiers d'enquête ANIF** — `PATCH /admin/anif/cases/:id/close` + bouton clôture inline dans `ANIFPage` avec saisie de résolution.
-- [x] **[ADMIN] Gestion des credentials API** — page Paramètres (Settings) avec champs éditables + section informatifs credentials (variables d'environnement).
+- [ ] 🔵 **SDK marchand public + portail développeur** — API publique avec API keys, rate-limiting, doc OpenAPI. Surface sensible (sécurité) — à cadrer.
+- [ ] 🔵 **PWA utilisateur** (login/solde/envoi/QR) — décidé non prioritaire (l'app mobile native couvre le besoin).
 
 ---
 
-## 🔵 Phase 2
+## ❌ Hors scope
 
-Explicitement marqué "Phase 2" dans le CDC, ou fonctionnalité avancée post-MVP.
-
-### Mobile
-
-- [x] **[AU-06] Connexion biométrique** — `expo-local-authentication` branché sur `LoginScreen` : détection matériel + proposition activation après PIN, bouton "Face ID / Empreinte" si activé, toggle dans ProfileScreen.
-- [x] **[AU-07] KYC complet Phase 2** — `KycModal` + soumission multipart existants vérifiés fonctionnels. Re-soumission après rejet supportée par le backend.
-- [x] **[WL-08] Limite de retrait journalier** — `dailyLimit` stocké dans le store depuis `fetchBalance()`, affiché dans `WithdrawModal`.
-- [x] **[WL-09] Programme de points fidélité** — `loyaltyApi.getPoints()` + bannière compacte sous balance card dans HomeScreen (silencieuse si endpoint absent).
-- [x] **[QR-09] QR Code commerçant imprimable (PDF)** — `expo-print` + `expo-sharing` dans `MerchantScreen` : PDF HTML stylé avec QR via qrserver.com, partage natif.
-- [x] **[P2P-07] Demande de remboursement (dispute)** — `disputeApi.open()` + bouton + formulaire inline dans modal détail HistoryScreen. Backend : `POST /disputes` + modèle `DisputeRequest`.
-- [x] **[3.6] Mode nuit / clair** — `ThemeContext` avec `DarkColors`/`LightColors`, toggle dans ProfileScreen, persisté via AsyncStorage.
-- [x] **[3.6] Langue Anglais** — `i18next` + `react-i18next`, dictionnaires fr/en, HomeScreen + ProfileScreen câblés, toggle de langue persisté.
-- [x] **[4.1] Espace commerçant avancé** — mini-graphe tendance 7j, alerte solde bas, bouton "Partager mon QR" via `Share.share()`.
-- [ ] **[6.4] WhatsApp Business API officielle** — deep link `wa.me` déjà en place (MVP), API officielle nécessite approbation Meta. Hors scope.
-- [x] **[Infra] Intégration Sentry** — `@sentry/react-native` installé, wrapper no-op si `EXPO_PUBLIC_SENTRY_DSN` absent, `initSentry()` au montage de l'app.
-
-### Admin
-
-- [x] **[14.4] Rôles multiples admin** — champ `adminRole` (SUPER_ADMIN/ANALYST/SUPPORT) sur User + `GET/PATCH /admin/team` + page "Équipe Admin" dans le nav.
-- [x] **[14.5] 2FA admin obligatoire** — TOTP via `otplib` : `POST /auth/2fa/setup|verify|disable` + UI de configuration dans SettingsPage (QR code + code de vérification).
-- [x] **[14.2] SSE temps réel** — `@nestjs/event-emitter` + `SseService` (RxJS Subject), endpoint `GET /admin/events?token=<jwt>`, indicateur Live animé + toast dans le dashboard admin.
-- [x] **[14.3.2] Export CSV utilisateurs** — `GET /admin/export/users` + bouton "⬇ Export CSV" dans UsersPage.
-- [x] **[14.3.2] Note admin interne** — modèle `AdminNote` + `GET/POST /admin/users/:id/notes` + `DELETE /admin/notes/:id` + section dans UserDetailModal.
-- [x] **[14.3.3] Export CSV transactions filtré** — `GET /admin/export/transactions` + bouton "⬇ Export CSV" dans TransactionsPage.
-- [x] **[14.5] IP Whitelisting** — middleware NestJS sur `/api/v1/admin/*` lisant `ADMIN_IP_WHITELIST` (CSV d'IPs, vide = pas de restriction en dev).
-- [x] **[14.5] Rotation mot de passe admin 90j** — `admin_password_changed_at` dans SystemSettings + alerte bandeau rouge dans SettingsPage si > 90j.
-
-### Infrastructure
-
-- [x] **[Infra] CI/CD GitHub Actions** — `.github/workflows/ci.yml` : 3 jobs (backend Postgres + lint + tests, admin vite build, mobile expo-doctor).
-- [x] **[Infra] Monitoring Sentry** — voir mobile ci-dessus. Datadog / Better Uptime : services externes, hors scope code.
-- [x] **[Infra] Base de données managée avec backups daily** — `directUrl` dans `schema.prisma` pour Supabase/Neon + exemples dans `.env.example`. Script `scripts/backup.sh` (pg_dump + gzip + rotation 30j, cron-ready).
-- [x] **[Infra] Soft delete users/wallets** — colonnes `deletedAt DateTime?` sur `User` et `Wallet` (migration `add_phase2_models`).
-- [x] **[Infra] CHECK constraint `balance >= 0`** — contrainte PostgreSQL appliquée via migration SQL dédiée `add_balance_check_constraint`.
+- [ ] ❌ **WhatsApp Business API officielle** — nécessite l'approbation Meta ; le deep link `wa.me` couvre le MVP.
 
 ---
 
-## 🟢 Post-MVP — Livré en v2.4.0 → v3.2.17
+## 🟢 Rappel — socle livré (MVP + CDC + Post-MVP)
 
-Travaux menés après la clôture du MVP (au-delà du périmètre CDC initial), intégrés au code et déployés en prod.
-
-### Paiements & Webhooks
-
-- [x] **[INTÉGRATION] CamPay comme agrégateur Mobile Money** — `campay/campay.service.ts` (recharge/retrait OM + MTN via une API unique). Webhook `POST /webhooks/campay` avec vérification de signature + cross-validation du montant payload vs DB. `webhooks.service.ts`.
-- [x] **[SÉCU] Validation signatures webhooks (réelle, fail-closed)** — OM (HMAC-SHA256 + `timingSafeEqual`), MTN (compare constant-time SHA-256), CamPay (signature + montant). `500` en prod si le secret est absent ; traitement idempotent (seules les tx `PENDING` sont touchées). _(Doc `CLAUDE.md` corrigée en conséquence.)_
-
-### SMS OTP
-
-- [x] **[INTÉGRATION] SMS OTP réel via AfricasTalking** — `sms/sms.service.ts` dédié (FR/EN, bascule sandbox auto quand `username === 'sandbox'`, mode `[SMS DEV]` log si non configuré, 1 retry). Ajouté à `GET /admin/health/integrations`. _En prod : mode sandbox/log en attendant une clé live valide._
-- [x] **[SÉCU] Normalisation téléphone E.164** — `common/phone.util.ts` : `normalizeCameroonPhone()` (gère +237/00237/237/national, valide `^[26]\d{8}`). Appliquée à register (strict), login, pin-reset, p2p (tolérant).
-
-### KYC assisté par IA (Claude Vision)
-
-- [x] **[KYC] Pré-validation automatique des documents** — `kyc/kyc-ai.service.ts` (`KycAiService`, modèle `claude-opus-4-8`, structured outputs). Score 0-100 + suggestion (APPROVE/REJECT/MANUAL_REVIEW) + issues par document (recto/verso/selfie), agrégés. Analyse en arrière-plan après soumission, persistée sur `KycDocument` (`aiScore`, `aiSuggestion`, `aiIssues`, `aiAnalyzedAt`).
-- [x] **[KYC] Badges + actions IA dans le dashboard admin** — badge score/suggestion dans la file KYC, panneau IA dans la modale détail : « Lancer l'analyse IA » (`POST /admin/kyc/:userId/analyze`), « Appliquer la suggestion IA », « Relancer ».
-- [x] **[KYC] Auto-approbation conditionnelle** — si `aiSuggestion === 'APPROVE'` ET `aiScore >= seuil` ET toggle admin `kyc_auto_approve` actif → approbation auto + `AuditLog { action: 'KYC_AUTO_APPROVED' }` + push. Sinon maintien en file.
-- [x] **[KYC] Seuil d'auto-approbation réglable depuis l'admin** — clé `kyc_auto_approve_threshold` (slider 70-100 dans Paramètres), priorité DB > env `KYC_AUTO_APPROVE_THRESHOLD` > défaut 95.
-- [x] **[ADMIN] Anthropic (IA KYC) dans la santé des intégrations** — entrée « IA KYC (Claude Vision) » (UP/DOWN/SIMULATED via `kycAi.ping()`) dans `GET /admin/health/integrations`.
-- [x] **[SÉCU] Durcissement SSRF `imageUrlToBase64`** — allowlist hôte Cloudinary + https uniquement, `redirect: 'error'`, content-type `image/*`, plafond 10 Mo. `admin.service.ts`.
-
----
-
-## Récapitulatif
-
-| Priorité | Nombre d'items | Domaines principaux |
-|---|---|---|
-| 🔴 MVP Bloquant | 0 *(tous ✅)* | — |
-| 🟠 Haute | 0 *(tous ✅)* | — |
-| 🟡 Moyenne | 0 *(tous ✅)* | — |
-| 🟢 Post-MVP (v2.4→v3.2.17) | 0 *(tous ✅)* | CamPay, webhooks signés, SMS AfricasTalking, KYC IA |
-| 🔵 Phase 2 | 1 hors scope | WhatsApp Business API officielle (approbation Meta) |
-| **Total** | **70** | |
+Pour mémoire, déjà livré et déployé (détails dans l'historique git / `CHANGELOG.md`) :
+sécurité webhooks signés (OM/MTN/CamPay, fail-closed), SMS OTP AfricasTalking,
+auth PIN + lockout + pepper, RBAC admin (6 sous-rôles), KYC + IA Claude Vision
+(auto-approbation réglable), ANIF (détection smurfing, rapports, dossiers d'enquête),
+2FA admin, SSE temps réel, exports CSV, IP whitelisting, rotation mot de passe,
+soft-delete, contrainte `balance >= 0`, CI/CD GitHub Actions, Sentry, biométrie,
+disputes, mode nuit, i18n FR/EN, perf p95 ~328 ms (EU West + pool + bcrypt 10 + keep-warm).
