@@ -945,21 +945,21 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
     {/* Historique complet des gains de fidélité */}
     <Modal visible={loyaltyModalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setLoyaltyModalOpen(false)}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }} edges={['top']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg }} edges={['top', 'bottom']}>
         <View style={styles.loyaltyModalHeader}>
           <Text style={styles.loyaltyModalTitle}>{t('loyalty.historyTitle')}</Text>
           <Pressable onPress={() => setLoyaltyModalOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('common.close')}>
             <Ionicons name="close" size={24} color={Colors.text} />
           </Pressable>
         </View>
-        <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
+        <ScrollView style={{ backgroundColor: Colors.bg }} contentContainerStyle={{ paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg }}>
           {loyaltyHistory.map((ev) => (
             <View key={ev.id} style={styles.loyaltyGainRow}>
               <View style={styles.loyaltyGainIcon}>
                 <Ionicons name={loyaltyGainIcon(ev.reason)} size={16} color={Colors.primary} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.loyaltyGainReason} numberOfLines={1}>{ev.reason}</Text>
+                <Text style={styles.loyaltyGainReason} numberOfLines={1}>{ev.reason}{ev.amountCentimes != null ? ` · ${fcfa(ev.amountCentimes)} FCFA` : ''}</Text>
                 <Text style={styles.loyaltyGainDate}>{relTime(ev.createdAt)}</Text>
               </View>
               <Text style={styles.loyaltyHistoryPoints}>+{ev.points} pts</Text>

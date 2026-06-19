@@ -582,8 +582,8 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: Colors.text, fontSize: Typography.base, paddingVertical: Spacing.sm },
   noContactText: { color: Colors.textMuted, fontSize: Typography.sm, textAlign: 'center', paddingVertical: Spacing.lg },
   freqDot: {
-    position: 'absolute', right: -1, bottom: -1, width: 13, height: 13, borderRadius: 7,
-    borderWidth: 2, borderColor: Colors.surface,
+    position: 'absolute', right: -2, bottom: -2, width: 14, height: 14, borderRadius: 7,
+    borderWidth: 2, borderColor: '#FFFFFF',
   },
   phoneInputBtn: {
     width: 44, height: 44, borderRadius: BorderRadius.md,
