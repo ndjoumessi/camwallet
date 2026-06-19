@@ -21,7 +21,7 @@ permissions:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # garde-fou contre un run infini (téléchargements bloqués, etc.)
+    timeout-minutes: 60 # garde-fou anti-run-infini ; 60min car le 1er run télécharge le SDK/NDK
     env:
       # Évite les warnings de dépréciation Node.js 20 sur les actions JS.
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -75,10 +75,33 @@ jobs:
           restore-keys: |
             android-sdk-
 
+      # Pré-installe explicitement les packages SDK requis (platform/build-tools/NDK)
+      # pour éviter un téléchargement implicite et lent au premier appel Gradle.
+      - name: Pré-installer les packages Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.1.12297006" 2>&1 | tail -5
+
       - name: Expo prebuild (génère android/ + applique le plugin de signature)
         run: cd mobile && npx expo prebuild --platform android --clean
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      # Optimise le build Gradle : prebuild régénère android/gradle.properties, on y
+      # ajoute parallélisme + cache + mémoire JVM (sans démon, runner éphémère).
+      - name: Optimiser gradle.properties
+        run: |
+          cat >> mobile/android/gradle.properties <<'EOF'
+
+          # --- Optimisations CI (ajoutées par le workflow) ---
+          org.gradle.daemon=false
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError
+          EOF
 
       # Le keystore est décodé APRÈS prebuild (qui régénère/efface android/).
       # build.gradle attend file("release.keystore") relatif au module app/.
@@ -113,9 +136,15 @@ jobs:
               f.write(data)
           magic = data[:4].hex()
           print(f"Keystore décodé : {len(data)} octets, en-tête = 0x{magic}")
-          # Un keystore JKS commence par 0xFEEDFEED ; BKS/PKCS12 diffèrent (juste un avertissement).
-          if magic != "feedfeed":
-              print(f"::warning::En-tête 0x{magic} != 0xfeedfeed — le secret n'est peut-être pas un keystore JKS valide.")
+          # Android Gradle accepte JKS (magie 0xFEEDFEED) ET PKCS12 (séquence DER ASN.1,
+          # 0x3082...) — keytool moderne génère du PKCS12 par défaut. On valide les deux.
+          JKS_MAGIC = "feedfeed"
+          if magic == JKS_MAGIC:
+              print("Keystore valide (format JKS)")
+          elif magic.startswith("3082"):
+              print("Keystore valide (format PKCS12)")
+          else:
+              print(f"::warning::Format keystore inconnu : 0x{magic}")
           PY
           test -s mobile/android/app/release.keystore || { echo "::error::Keystore non écrit."; exit 1; }
           ls -la mobile/android/app/release.keystore
