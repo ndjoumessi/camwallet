@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CamWallet is a QR-based prepaid payment app for Cameroon, backed by Orange Money and MTN Mobile Money. Users hold a virtual balance ("Crédit QR") — the product deliberately operates without a BEAC/COBAC banking licence, so the wallet is internal credit, not a bank account.
 
+The root **`README.md`** is the high-level, user-facing overview (stack, features, quick-start, APK build, deploy, security, economic model) — this `CLAUDE.md` is the working guide (architecture internals, gotchas, hard-won CI lessons). Keep README.md in sync on every release: its version badge and the version-dependent sections (current `v3.6.2`) move with the `package.json`/`app.json` bumps.
+
 Monorepo with three independent sub-projects (no workspace tooling — each has its own `package.json` and `node_modules`):
 
 - `backend/` — NestJS + Prisma + PostgreSQL REST API. The source of truth and the only datastore.
