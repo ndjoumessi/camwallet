@@ -615,6 +615,7 @@
     "toastSuccess": "Top-up of {{amount}} XAF initiated!"
   },
   "scan": {
+    "aim_guide": "Place the QR code in the frame",
     "btnAllowCamera": "Allow camera",
     "btnCancel": "Cancel",
     "btnCancelA11y": "Cancel",
@@ -624,11 +625,10 @@
     "cameraPermissionRequired": "Camera permission required",
     "closeBtnA11y": "Close",
     "headerTitle": "Scan a QR Code",
-    "hintAim": "Point the camera at the QR Code",
     "hintDetected": "QR Code detected!",
-    "hintNotRecognized": "QR Code not recognised",
     "hintText": "Text detected (not payable)",
     "hintUrl": "Web link detected (not payable)",
+    "invalid_qr": "QR code not recognized — use a CamWallet QR",
     "recentTitle": "Recent scans",
     "resultAmount": "Amount: {{amount}} XAF",
     "resultDefaultName": "Recipient",

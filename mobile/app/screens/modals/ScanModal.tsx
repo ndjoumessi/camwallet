@@ -72,8 +72,11 @@ function parseQr(raw: string): ScannedRecipient | null {
     }
     if (value.startsWith('{')) {
       const obj = JSON.parse(value);
-      const phone = obj.phone ?? obj.to;
-      if (phone) return { phone: String(phone), name: obj.name, amount: obj.amount != null ? String(obj.amount) : undefined };
+      // Format CamWallet standard : on exige le type pour éviter les faux positifs.
+      if (obj.type === 'camwallet_payment' && obj.phone) {
+        return { phone: String(obj.phone), name: obj.name, amount: obj.amount != null ? String(obj.amount) : undefined };
+      }
+      return null;
     }
     const digits = value.replace(/[^0-9+]/g, '');
     if (digits.length >= 8) return { phone: digits };
@@ -175,8 +178,14 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
     }
   }, [scanned, checkScale]);
 
+  // Anti-doublon : ignore un même QR rescanné dans les 2 s (évite le spam haptique/erreur image par image).
+  const lastScanRef = useRef<{ data: string; t: number }>({ data: '', t: 0 });
+
   const handleBarcode = ({ data }: { data: string }) => {
     if (scanned) return; // évite les détections répétées
+    const now = Date.now();
+    if (data === lastScanRef.current.data && now - lastScanRef.current.t < 2000) return;
+    lastScanRef.current = { data, t: now };
     const kind = detectQrKind(data);
     const parsed = kind === 'camwallet' ? parseQr(data) : null;
     if (parsed) {
@@ -219,7 +228,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
     ? t('scan.hintUrl', { defaultValue: 'Lien web détecté (non payable)' })
     : errorKind === 'text'
       ? t('scan.hintText', { defaultValue: 'Texte détecté (non payable)' })
-      : t('scan.hintNotRecognized');
+      : t('scan.invalid_qr', { defaultValue: 'QR code non reconnu — utilisez un QR CamWallet' });
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -238,7 +247,7 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
               color={scanned ? Colors.primary : error ? Colors.yellow : Colors.textSoft}
             />
             <Text style={styles.hint}>
-              {scanned ? t('scan.hintDetected') : error ? errorMsg : t('scan.hintAim')}
+              {scanned ? t('scan.hintDetected') : error ? errorMsg : t('scan.aim_guide', { defaultValue: 'Placez le QR code dans le cadre' })}
             </Text>
           </View>
 

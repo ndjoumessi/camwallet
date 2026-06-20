@@ -615,6 +615,7 @@
     "toastSuccess": "Recharge de {{amount}} FCFA initiée !"
   },
   "scan": {
+    "aim_guide": "Placez le QR code dans le cadre",
     "btnAllowCamera": "Autoriser la caméra",
     "btnCancel": "Annuler",
     "btnCancelA11y": "Annuler",
@@ -624,11 +625,10 @@
     "cameraPermissionRequired": "Autorisation caméra requise",
     "closeBtnA11y": "Fermer",
     "headerTitle": "Scanner un QR Code",
-    "hintAim": "Pointez la caméra vers le QR Code",
     "hintDetected": "QR Code détecté !",
-    "hintNotRecognized": "QR Code non reconnu",
     "hintText": "Texte détecté (non payable)",
     "hintUrl": "Lien web détecté (non payable)",
+    "invalid_qr": "QR code non reconnu — utilisez un QR CamWallet",
     "recentTitle": "Derniers scans",
     "resultAmount": "Montant : {{amount}} FCFA",
     "resultDefaultName": "Destinataire",

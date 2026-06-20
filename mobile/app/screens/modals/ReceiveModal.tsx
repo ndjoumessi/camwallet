@@ -66,7 +66,15 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
 
   const rawPhone = (user?.phone ?? '').replace(/\s/g, '');
   const displayPhone = formatPhone(user?.phone ?? '');
-  const qrValue = `camwallet://pay?to=${rawPhone}&name=${encodeURIComponent(user?.name ?? '')}${dynamicAmount ? `&amount=${dynamicAmount}` : ''}`;
+  // QR CamWallet : payload JSON structuré et versionné (lu/validé par ScanModal).
+  // Le montant n'est encodé qu'en QR dynamique.
+  const qrValue = JSON.stringify({
+    type: 'camwallet_payment',
+    phone: rawPhone,
+    name: user?.name ?? '',
+    version: '1',
+    ...(activeTab === 'dynamic' && dynamicAmount ? { amount: dynamicAmount } : {}),
+  });
 
   // Partage texte (repli si la capture image ou le partage natif est indisponible).
   const shareText = async () => {
