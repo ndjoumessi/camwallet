@@ -359,10 +359,11 @@ export default function ScanModal({ visible, onClose, onDetected }: ScanModalPro
                 label={scanned ? t('scan.btnSend') : t('scan.btnScanning')}
                 icon={scanned ? 'arrow-forward' : undefined}
                 onPress={() => {
-                  if (scanned) {
-                    onDetected(scanned);
-                    onClose();
-                  }
+                  // onDetected fait basculer le parent vers SendModal (activeModal='send'),
+                  // ce qui ferme ce modal via sa prop `visible`. Surtout NE PAS appeler
+                  // onClose() ici : il remettrait activeModal à null dans le même handler
+                  // et annulerait la navigation (le bouton « ne ferait rien »).
+                  if (scanned) onDetected(scanned);
                 }}
                 disabled={!scanned}
                 fullWidth
