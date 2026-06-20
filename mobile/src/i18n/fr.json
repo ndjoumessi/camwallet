@@ -577,7 +577,8 @@
     "btnShare": "Partager mon QR Code",
     "btnClose": "Fermer",
     "shareMessage": "Payez-moi via CamWallet\n{{phone}}\nRéférence: {{rawPhone}}",
-    "shareTitle": "CamWallet — Mon QR de paiement"
+    "shareTitle": "CamWallet — Mon QR de paiement",
+    "share_title": "Mon QR CamWallet"
   },
   "recharge": {
     "headerTitle": "Recharger mon compte",

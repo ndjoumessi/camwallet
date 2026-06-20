@@ -14,6 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
@@ -60,17 +62,45 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
     transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
   };
 
+  const qrRef = useRef<ViewShot>(null);
+
   const rawPhone = (user?.phone ?? '').replace(/\s/g, '');
   const displayPhone = formatPhone(user?.phone ?? '');
   const qrValue = `camwallet://pay?to=${rawPhone}&name=${encodeURIComponent(user?.name ?? '')}${dynamicAmount ? `&amount=${dynamicAmount}` : ''}`;
 
-  const handleShare = async () => {
+  // Partage texte (repli si la capture image ou le partage natif est indisponible).
+  const shareText = async () => {
     try {
       await Share.share({
         message: t('receive.shareMessage', { phone: displayPhone, rawPhone }),
         title: t('receive.shareTitle'),
       });
     } catch {}
+  };
+
+  // Partage l'image PNG du QR code (capture du bloc QR via react-native-view-shot).
+  const handleShare = async () => {
+    try {
+      const uri = await qrRef.current?.capture?.();
+      if (!uri) {
+        await shareText();
+        return;
+      }
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        await shareText();
+        return;
+      }
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: t('receive.share_title'),
+        UTI: 'public.png',
+      });
+    } catch (error) {
+      console.error('Share error:', error);
+      // Repli sur le partage texte en cas d'échec de la capture.
+      await shareText();
+    }
   };
 
   return (
@@ -110,8 +140,8 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
             })}
           </View>
 
-          {/* QR Code */}
-          <View style={styles.qrContainer}>
+          {/* QR Code (capturé en PNG pour le partage image via ViewShot) */}
+          <ViewShot ref={qrRef} options={{ format: 'png', quality: 1.0 }} style={styles.qrContainer}>
             <View style={styles.qrWrap}>
               <QRCode
                 value={qrValue}
@@ -125,7 +155,7 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
                 <Text style={styles.qrCenterText}>₩</Text>
               </View>
             </View>
-          </View>
+          </ViewShot>
 
           {/* User info */}
           <View style={styles.infoCard}>
