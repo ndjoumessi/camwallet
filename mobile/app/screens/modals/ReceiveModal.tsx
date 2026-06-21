@@ -148,22 +148,26 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
             })}
           </View>
 
-          {/* QR Code (capturé en PNG pour le partage image via ViewShot) */}
-          <ViewShot ref={qrRef} options={{ format: 'png', quality: 1.0 }} style={styles.qrContainer}>
-            <View style={styles.qrWrap}>
-              <QRCode
-                value={qrValue}
-                size={200}
-                color={Colors.bg}
-                backgroundColor="white"
-                logo={undefined}
-              />
-              {/* Center badge */}
-              <View style={styles.qrCenter}>
-                <Text style={styles.qrCenterText}>₩</Text>
+          {/* QR Code : la card sombre n'habille le QR qu'à l'écran. Le ViewShot
+              n'entoure QUE la tuile blanche (QR + logo) → l'image partagée est sur
+              fond blanc pur, sans le cadre sombre. */}
+          <View style={styles.qrContainer}>
+            <ViewShot ref={qrRef} options={{ format: 'png', quality: 1.0 }} style={styles.qrShot}>
+              <View style={styles.qrWrap}>
+                <QRCode
+                  value={qrValue}
+                  size={200}
+                  color="#000000"
+                  backgroundColor="white"
+                  logo={undefined}
+                />
+                {/* Center badge (logo ₩) — à l'intérieur du ViewShot → conservé dans l'image */}
+                <View style={styles.qrCenter}>
+                  <Text style={styles.qrCenterText}>₩</Text>
+                </View>
               </View>
-            </View>
-          </ViewShot>
+            </ViewShot>
+          </View>
 
           {/* User info */}
           <View style={styles.infoCard}>
@@ -248,6 +252,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.card, borderRadius: BorderRadius.xxl,
     borderWidth: 1, borderColor: Colors.border,
     width: '100%',
+  },
+  // Périmètre capturé par ViewShot : fond blanc + marge → QR partagé propre, sans cadre sombre.
+  qrShot: {
+    backgroundColor: 'white',
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   qrWrap: { position: 'relative', alignItems: 'center', justifyContent: 'center' },
   qrCenter: {
