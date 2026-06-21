@@ -11,6 +11,14 @@ on:
         description: "Étiquette de version pour nommer l'APK (ex. v3.5.7). Défaut : nom de la ref."
         required: false
         type: string
+      channel:
+        description: "Canal EAS Update (expo-channel-name) baked dans l'APK."
+        required: false
+        type: choice
+        options:
+          - preview
+          - production
+        default: preview
   push:
     tags:
       - 'v*'
@@ -31,6 +39,10 @@ jobs:
       # assembleRelease), pas au prebuild — d'où le niveau JOB pour couvrir les deux.
       EXPO_PUBLIC_API_URL: https://camwallet-production.up.railway.app
       EXPO_PUBLIC_ENV: production
+      # Canal EAS Update baked dans l'APK (expo-channel-name). Depuis l'input
+      # workflow_dispatch ; sur un push de tag (sans input) → "preview" par défaut.
+      # Jamais interpolé dans un shell : lu via process.env par le step Node ci-dessous.
+      EXPO_CHANNEL: ${{ github.event.inputs.channel || 'preview' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,6 +112,30 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;27.1.12297006" 2>&1 | tail -5
+
+      # Baked le canal OTA dans app.json AVANT le prebuild : le manifeste Android est
+      # généré depuis app.json, donc expo-channel-name doit y être présent à ce moment.
+      # On écrit via Node + JSON.stringify (pas de shell) et on valide la valeur contre
+      # une allowlist pour rejeter tout canal inattendu (défense en profondeur).
+      - name: Configurer le canal OTA (expo-channel-name)
+        env:
+          EXPO_CHANNEL: ${{ env.EXPO_CHANNEL }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const allowed = ["preview", "production"];
+            const ch = process.env.EXPO_CHANNEL;
+            if (!allowed.includes(ch)) {
+              console.error(`::error::Canal OTA invalide: ${JSON.stringify(ch)} (attendu: ${allowed.join(", ")})`);
+              process.exit(1);
+            }
+            const p = "mobile/app.json";
+            const a = JSON.parse(fs.readFileSync(p, "utf8"));
+            a.expo.updates = a.expo.updates || {};
+            a.expo.updates.requestHeaders = { ...(a.expo.updates.requestHeaders || {}), "expo-channel-name": ch };
+            fs.writeFileSync(p, JSON.stringify(a, null, 2) + "\n");
+            console.log("Canal OTA baked =", a.expo.updates.requestHeaders["expo-channel-name"]);
+          '
 
       - name: Expo prebuild (génère android/ + applique le plugin de signature)
         run: cd mobile && npx expo prebuild --platform android --clean
