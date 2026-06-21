@@ -69,18 +69,29 @@ function AppContent() {
 
   // Vérification OTA active au démarrage : si une update EAS est dispo, on la
   // télécharge et on recharge immédiatement le bundle. Désactivé en dev (__DEV__).
+  // Au boot, le réseau peut ne pas être prêt (« Unable to resolve host ») : on
+  // réessaie avec un délai de 2 s avant d'abandonner silencieusement. Le délai ne
+  // s'applique qu'APRÈS un échec → aucun retard quand le réseau est déjà prêt.
   useEffect(() => {
     if (__DEV__) return;
     let cancelled = false;
+    const MAX_ATTEMPTS = 3;
+    const RETRY_DELAY_MS = 2000;
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
     (async () => {
-      try {
-        const update = await Updates.checkForUpdateAsync();
-        if (!cancelled && update.isAvailable) {
-          await Updates.fetchUpdateAsync();
-          await Updates.reloadAsync();
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && !cancelled; attempt++) {
+        try {
+          const update = await Updates.checkForUpdateAsync();
+          if (cancelled) return;
+          if (update.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            if (!cancelled) await Updates.reloadAsync();
+          }
+          return; // check abouti (update appliquée ou aucune dispo) → on s'arrête
+        } catch (e) {
+          console.log(`OTA check failed (tentative ${attempt}/${MAX_ATTEMPTS}):`, e);
+          if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);
         }
-      } catch (e) {
-        console.log('OTA check failed:', e);
       }
     })();
     return () => { cancelled = true; };
