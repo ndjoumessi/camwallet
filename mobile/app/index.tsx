@@ -27,6 +27,7 @@ import { initSentry } from '../src/lib/sentry';
 import { initI18n } from '../src/i18n';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Updates from 'expo-updates';
 
 type Phase = 'splash' | 'onboard' | 'login' | 'app';
 type Tab = 'home' | 'history' | 'profile';
@@ -64,6 +65,25 @@ function AppContent() {
   useEffect(() => {
     initSentry();
     initI18n();
+  }, []);
+
+  // Vérification OTA active au démarrage : si une update EAS est dispo, on la
+  // télécharge et on recharge immédiatement le bundle. Désactivé en dev (__DEV__).
+  useEffect(() => {
+    if (__DEV__) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (!cancelled && update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        console.log('OTA check failed:', e);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // ── Timer d'inactivité (AU-09 CDC) — déconnexion après 15 min sans interaction
