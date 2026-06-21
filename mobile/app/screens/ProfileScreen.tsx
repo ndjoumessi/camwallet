@@ -34,9 +34,17 @@ import * as Haptics from 'expo-haptics';
 import { formatDistanceToNow } from 'date-fns';
 import { fr, enUS } from 'date-fns/locale';
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 
 // Version native réelle du paquet (app.json → expo.version), embarquée par Expo.
 const APP_VERSION = Constants.expoConfig?.version ?? '3.6.2';
+
+// Identifiant de l'update EAS appliquée : null sur le bundle natif embarqué,
+// UUID si une OTA est active. Sert à vérifier quelle OTA tourne sur l'appareil.
+const UPDATE_ID = Updates.updateId;
+const IS_OTA = UPDATE_ID != null;
+// Affiché sous la version : « 3.6.3 » (natif) ou « 3.6.3 (OTA · 019ee769) » (OTA).
+const VERSION_LABEL = IS_OTA ? `${APP_VERSION} (OTA · ${UPDATE_ID!.slice(0, 8)})` : APP_VERSION;
 
 // Icône Ionicons selon la raison du gain de fidélité.
 function loyaltyGainIcon(reason: string): keyof typeof Ionicons.glyphMap {
@@ -773,7 +781,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
         <Text style={styles.deleteText}>{t('profile.btnDeleteAccount')}</Text>
       </Pressable>
 
-      <Text style={styles.version}>{t('profile.versionText', { version: APP_VERSION })}</Text>
+      <Text style={styles.version}>{t('profile.versionText', { version: VERSION_LABEL })}</Text>
       <View style={{ height: 80 }} />
 
       <KycModal visible={kycOpen} onClose={() => setKycOpen(false)} onSubmitted={load} />
