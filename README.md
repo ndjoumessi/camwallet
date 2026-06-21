@@ -5,7 +5,7 @@
 Adossée à **Orange Money** & **MTN Mobile Money** (via CamPay). L'utilisateur détient un solde virtuel (« Crédit QR ») : le produit opère **délibérément sans agrément BEAC/COBAC** — le portefeuille est du crédit interne, pas un compte bancaire.
 
 <p>
-  <img alt="version" src="https://img.shields.io/badge/version-3.6.3-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-3.6.4-2563eb">
   <img alt="backend" src="https://img.shields.io/badge/backend-NestJS%20%2B%20Prisma-e0234e">
   <img alt="mobile" src="https://img.shields.io/badge/mobile-Expo%20SDK%2054-000020">
   <img alt="admin" src="https://img.shields.io/badge/admin-React%20%2B%20Vite-646cff">
