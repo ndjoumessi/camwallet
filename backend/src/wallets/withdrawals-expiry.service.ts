@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransactionStatus, TransactionType } from '@prisma/client';
 
@@ -27,7 +27,16 @@ export class WithdrawalsExpiryService {
     private config: ConfigService,
   ) {}
 
-  @Cron(CronExpression.EVERY_30_SECONDS, { name: 'expire-pending-withdrawals' })
+  /*
+    TOUTES LES 2 MINUTES, et non plus toutes les 30 secondes.
+
+    Le délai d'expiration vaut 10 minutes (WITHDRAWAL_TIMEOUT_MINUTES) : un
+    balayage toutes les 30 s ne rend pas les fonds plus vite, il ajoute
+    seulement un `findMany` toutes les 30 s pour rien. À 2 min, le retard
+    maximum d'un recrédit passe de 10 min 30 s à 12 min — invisible pour le
+    porteur — pour quatre fois moins de requêtes base.
+  */
+  @Cron('0 */2 * * * *', { name: 'expire-pending-withdrawals' })
   async sweep() {
     const timeoutMin = Number(
       this.config.get('WITHDRAWAL_TIMEOUT_MINUTES', DEFAULT_TIMEOUT_MIN),
