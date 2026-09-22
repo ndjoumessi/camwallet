@@ -1,10 +1,12 @@
 // Carte de répartition géographique du Cameroun (page Analytique).
-// Primaire : Google Maps (@react-google-maps/api) — heatmap + marqueurs par
-// région, thème dark CamWallet. Si VITE_GOOGLE_MAPS_API_KEY est absente ou que
-// la lib échoue, repli automatique sur une carte SVG d3-geo (vrais contours),
-// elle-même repliée sur une carte schématique. Aucune fonctionnalité perdue.
+// Primaire : OpenStreetMap via Leaflet (react-leaflet) — tuiles OSM assombries
+// (filtre CSS) au thème dark CamWallet, polygones + cercles + marqueurs par
+// région. Aucune clé API. Si Leaflet échoue, repli automatique sur une carte SVG
+// d3-geo (vrais contours), elle-même repliée sur une carte schématique.
 import { Component, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { GoogleMap, useJsApiLoader, Circle, MarkerF, PolygonF, OverlayViewF } from '@react-google-maps/api'
+import { MapContainer, TileLayer, Circle, CircleMarker, Polygon, Marker, Popup, useMap } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { geoMercator, geoPath } from 'd3-geo'
 import { scaleLinear } from 'd3-scale'
 import i18n from '../i18n'
@@ -36,10 +38,10 @@ function datumFor(byName: Map<string, GeoRegionDatum>, name: string): GeoRegionD
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 1) Google Maps
+// 1) OpenStreetMap (Leaflet)
 // ════════════════════════════════════════════════════════════════════════════
 const CAMEROON_CENTER = { lat: 5.5, lng: 12.5 }
-const MAP_ZOOM = 6 // zoom de secours avant que fitBounds (dans onLoad) ne s'applique
+const MAP_ZOOM = 6
 // Bornes géographiques SERRÉES du Cameroun pour fitBounds : SW côte atlantique
 // (1.65, 8.4) → NE lac Tchad (13.1, 16.2). On cadre exactement le pays.
 const CAMEROON_FIT_BOUNDS = { north: 13.1, south: 1.65, west: 8.4, east: 16.2 }
@@ -172,175 +174,137 @@ const REGION_COORDS: Record<string, { lat: number; lng: number }> = {
   'Nord-Ouest': { lat: 5.95, lng: 10.15 },
 }
 
-// Style dark premium CamWallet — focus Cameroun, frontières émeraude, voisins
-// estompés (POI/routes/transports masqués, localités sans label).
-const MAP_STYLES = [
-  { elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }, { weight: 3 }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
-  // Frontières bien visibles : pays = émeraude épaisse ; régions (provinces) émeraude plus fines.
-  { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 2.5 }] },
-  { featureType: 'administrative.country', elementType: 'geometry.fill', stylers: [{ visibility: 'on' }, { color: '#080d18' }] },
-  { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ visibility: 'on' }, { color: '#00C896' }, { weight: 1.5 }] },
-  // Noms de pays MASQUÉS (on ne veut pas voir les voisins) ; le label « Cameroun »
-  // est rajouté en overlay custom (Google ne permet pas de cibler un seul pays).
-  { featureType: 'administrative.country', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  // Labels secondaires masqués (évite le bruit et les petits libellés sombres).
-  { featureType: 'administrative.province', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  // Océan Atlantique visible : eau bleu très sombre + label "Océan Atlantique" affiché.
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0a1628' }] },
-  { featureType: 'water', elementType: 'labels.text', stylers: [{ visibility: 'on' }, { color: '#1e6ea8' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ visibility: 'on' }, { color: '#1e4a7a' }] },
-  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#080d18' }] },
-  { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#080d18' }] },
-  { featureType: 'road', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-]
+// Tuiles OpenStreetMap standard (usage conforme à la tile policy : attribution
+// visible, trafic admin faible). Assombries par filtre CSS pour le thème dark.
+// NB : tile.openstreetmap.org doit figurer dans img-src de la CSP (vercel.json).
+const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+const MAP_CSS = `
+.cw-osm-wrap .leaflet-container{background:${BG};font-family:Inter,sans-serif}
+.cw-osm-wrap .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.35)}
+.cw-osm-wrap .leaflet-tile-container img{width:256.5px!important;height:256.5px!important}
+.cw-osm-wrap .leaflet-control-attribution{background:rgba(13,17,23,.75);color:#64748B;font-size:10px}
+.cw-osm-wrap .leaflet-control-attribution a{color:#94a3b8}
+.cw-osm-wrap .cw-label{background:none;border:none;box-shadow:none;white-space:nowrap;pointer-events:none}
+.cw-osm-wrap .cw-popup .leaflet-popup-content-wrapper{background:rgba(13,17,23,.95);border:1px solid rgba(0,200,150,.4);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.6);color:#e6edf3}
+.cw-osm-wrap .cw-popup .leaflet-popup-content{margin:14px 16px;min-width:200px}
+.cw-osm-wrap .cw-popup .leaflet-popup-tip{background:rgba(13,17,23,.95);border:1px solid rgba(0,200,150,.4)}
+.cw-osm-wrap .cw-popup a.leaflet-popup-close-button{color:rgba(255,255,255,.6)}
+`
 
-function GoogleCameroonMap({ apiKey, regions }: { apiKey: string; regions: GeoRegionDatum[] }) {
-  // Plus de bibliothèque « visualization » : Circle/Marker sont dans le cœur.
-  // language: 'fr' + region: 'CM' → libellés traduits ("Cameroon" → "Cameroun", "Nigeria" → "Nigéria").
-  const { isLoaded, loadError } = useJsApiLoader({ id: 'cw-gmaps', googleMapsApiKey: apiKey, language: 'fr', region: 'CM' })
-  const [selected, setSelected] = useState<string | null>(null)
+// Label texte non interactif (divIcon centré sur la position).
+function textIcon(html: string) {
+  return L.divIcon({ className: 'cw-label', html: `<div style="transform:translate(-50%,-50%);display:inline-block">${html}</div>`, iconSize: [0, 0] })
+}
+
+// Cadrage initial sur les bornes du Cameroun + expose l'instance pour le zoom custom.
+function MapInit({ onReady }: { onReady: (m: L.Map) => void }) {
+  const map = useMap()
+  useEffect(() => {
+    const b = CAMEROON_FIT_BOUNDS
+    // Le conteneur peut ne pas avoir sa taille finale au montage (fitBounds
+    // retomberait au zoom max) : on recalcule la taille avant de cadrer.
+    const fit = () => { map.invalidateSize(); map.fitBounds([[b.south, b.west], [b.north, b.east]], { padding: [20, 20] }) }
+    fit()
+    const t = setTimeout(fit, 150)
+    onReady(map)
+    return () => clearTimeout(t)
+  }, [map])
+  return null
+}
+
+function OsmCameroonMap({ regions }: { regions: GeoRegionDatum[] }) {
+  const [map, setMap] = useState<L.Map | null>(null)
   const [hovered, setHovered] = useState<string | null>(null)
-  const [map, setMap] = useState<any>(null)
   const polys = useRegionPolygons()
   const byName = new Map(regions.map((r) => [r.name, r]))
-  const centerByName = new Map(polys.map((p) => [p.name, p.center]))
-  const zoomBy = (delta: number) => { if (map) map.setZoom((map.getZoom() ?? MAP_ZOOM) + delta) }
-  // NB : le cadrage initial (fitBounds sur les bornes serrées du Cameroun) est fait
-  // directement dans onLoad du GoogleMap.
+  const zoomBy = (delta: number) => { if (map) map.setZoom(map.getZoom() + delta) }
 
-  if (loadError) return <SvgFallback regions={regions} />
-  if (!isLoaded) return <MapLoading />
-
-  const g = (window as any).google
   // Échelle de couleur des cercles (#1a4a3a à 0 tx → #00C896 au max).
   const maxVol = Math.max(1, ...regions.map((r) => r.volume))
   const circleColor = scaleLinear<string>().domain([0, maxVol]).range([GRAD_LO, GRAD_HI]).clamp(true)
-  // Rayon proportionnel au volume : 20 km (1+ tx) → 80 km (max). Sans data : petit
-  // repère gris (15 km) pour signaler l'emplacement sans attirer l'œil.
+  // Rayon proportionnel au volume : 20 km (1+ tx) → 80 km (max). Sans data : 15 km.
   const radiusFor = (d: GeoRegionDatum) => (d.transactions === 0 ? 15000 : 20000 + (Math.min(d.volume, maxVol) / maxVol) * 60000)
   // Marqueur (ville) : gris (0 tx), vert clair (1-50), émeraude + plus gros (50+).
-  const iconFor = (tx: number) => {
-    const color = tx === 0 ? '#64748B' : tx <= 50 ? '#34D399' : '#00C896'
-    const scale = tx > 50 ? 12 : tx > 0 ? 9 : 6
-    return { path: g.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 0.95, strokeColor: '#0d1117', strokeWeight: 1.5, scale }
-  }
+  const markerStyle = (tx: number) => ({ color: tx === 0 ? '#64748B' : tx <= 50 ? '#34D399' : '#00C896', radius: tx > 50 ? 12 : tx > 0 ? 9 : 6 })
 
   return (
     <div style={{ position: 'relative', background: BG, borderRadius: 12, padding: 8 }}>
-      <div className="cw-gmap-wrap" style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(0, 200, 150, 0.15)', boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)' }}>
-        {/* Atténue le branding Google (logo + mentions) pour un rendu épuré */}
-        <style>{`.cw-gmap-wrap a[href^="https://maps.google.com"],.cw-gmap-wrap .gm-style-cc{opacity:.35;filter:grayscale(1)}`}</style>
-        {/* Contrôle de zoom custom (le natif a un fond blanc qui jure avec le thème dark) */}
-        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div className="cw-osm-wrap" style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(0, 200, 150, 0.15)', boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)' }}>
+        <style>{MAP_CSS}</style>
+        {/* Contrôle de zoom custom, aux couleurs du thème */}
+        <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {[{ s: '+', d: 1 }, { s: '−', d: -1 }].map(({ s, d }) => (
             <button key={s} onClick={() => zoomBy(d)} aria-label={d > 0 ? i18n.t('analytics.map_zoom_in', { defaultValue: 'Zoom avant' }) : i18n.t('analytics.map_zoom_out', { defaultValue: 'Zoom arrière' })}
               style={{ width: 32, height: 32, borderRadius: 8, background: '#161d2f', border: '1px solid rgba(0,200,150,0.3)', color: '#00C896', fontSize: 18, fontWeight: 700, lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>{s}</button>
           ))}
         </div>
-        <GoogleMap
-          mapContainerStyle={{ width: '100%', height: 'clamp(420px, 68vh, 640px)', background: BG }}
-          center={CAMEROON_CENTER}
+        <MapContainer
+          center={[CAMEROON_CENTER.lat, CAMEROON_CENTER.lng]}
           zoom={MAP_ZOOM}
-          onLoad={(m) => {
-            setMap(m)
-            // Cadrage sur les bornes serrées du Cameroun (padding 20px)…
-            const bounds = new g.maps.LatLngBounds({ lat: CAMEROON_FIT_BOUNDS.south, lng: CAMEROON_FIT_BOUNDS.west }, { lat: CAMEROON_FIT_BOUNDS.north, lng: CAMEROON_FIT_BOUNDS.east })
-            m.fitBounds(bounds, { top: 20, right: 20, bottom: 20, left: 20 })
-            // …puis, une fois la carte stabilisée, on FORCE le centre + zoom exacts du
-            // Cameroun (fitBounds décalait légèrement le cadrage selon les polygones).
-            g.maps.event.addListenerOnce(m, 'idle', () => {
-              m.setCenter({ lat: 7.5, lng: 12.5 })
-              m.setZoom(5.7)
-            })
-          }}
-          onUnmount={() => setMap(null)}
-          options={{
-            styles: MAP_STYLES as any,
-            disableDefaultUI: true,
-            zoomControl: false,
-            backgroundColor: BG,
-            gestureHandling: 'cooperative',
-            scrollwheel: false,
-            minZoom: 5.5,
-            maxZoom: 10,
-            // PAS de restriction latLngBounds : elle interférait avec fitBounds et décalait
-            // le cadrage. Le centrage est piloté par setCenter/setZoom dans onLoad.
-          }}
+          minZoom={5}
+          maxZoom={10}
+          zoomSnap={0.25}
+          zoomControl={false}
+          scrollWheelZoom={false}
+          style={{ width: '100%', height: 'clamp(420px, 68vh, 640px)', background: BG }}
         >
-          {/* Label « Cameroun » custom (les noms de pays natifs sont masqués) — émeraude,
-              discret, non interactif, posé au centre du pays. */}
-          <OverlayViewF position={{ lat: 7.0, lng: 12.5 }} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#00C896', letterSpacing: 1.5, textTransform: 'uppercase', whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0.28, textShadow: '0 1px 4px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{i18n.t('analytics.map_country', { defaultValue: 'Cameroun' })}</div>
-          </OverlayViewF>
-          {/* Frontières RÉGIONALES (internes) : Polygon émeraude FIN (weight 1.0, opacité 0.5)
-              pour se distinguer du contour NATIONAL — ce dernier est tracé par Google
-              (administrative.country geometry.stroke : weight 2.5, opacité 1.0). Fill subtil
-              si data (0.08), transparent sinon ; hover = fill 0.15 + bordure 2px. */}
+          <MapInit onReady={setMap} />
+          <TileLayer url={OSM_TILES} attribution={OSM_ATTRIBUTION} maxZoom={19} />
+          {/* Frontières régionales : polygones émeraude fins ; fill subtil si data, hover = accentué. */}
           {polys.map((rp) => {
             const d = datumFor(byName, rp.name)
-            const hasData = d.transactions > 0
             const isHover = hovered === rp.name
             return (
-              <PolygonF key={`poly-${rp.name}`} paths={rp.paths}
-                onMouseOver={() => setHovered(rp.name)} onMouseOut={() => setHovered((h) => (h === rp.name ? null : h))}
-                onClick={() => setSelected(rp.name)}
-                options={{ strokeColor: '#00C896', strokeOpacity: isHover ? 0.9 : 0.5, strokeWeight: isHover ? 2 : 1.0, fillColor: '#00C896', fillOpacity: isHover ? 0.15 : hasData ? 0.08 : 0, clickable: true, zIndex: isHover ? 3 : 1 }} />
+              <Polygon key={`poly-${rp.name}`} positions={rp.paths.map((ring) => ring.map((p) => [p.lat, p.lng] as [number, number]))}
+                eventHandlers={{ mouseover: () => setHovered(rp.name), mouseout: () => setHovered((h) => (h === rp.name ? null : h)) }}
+                pathOptions={{ color: STROKE, opacity: isHover ? 0.9 : 0.5, weight: isHover ? 2 : 1, fillColor: STROKE, fillOpacity: isHover ? 0.15 : d.transactions > 0 ? 0.08 : 0.02 }}>
+                <RegionPopup name={rp.name} d={d} />
+              </Polygon>
             )
           })}
-          {/* Label du nom de région au centroïde (discret, non interactif). Certaines
-              régions du sud reçoivent un décalage manuel pour éviter les chevauchements. */}
+          {/* Label « Cameroun » discret au centre du pays */}
+          <Marker position={[7.0, 12.5]} interactive={false} icon={textIcon(`<div style="font-size:16px;font-weight:700;color:#00C896;letter-spacing:1.5px;text-transform:uppercase;opacity:.28;text-shadow:0 1px 4px rgba(0,0,0,.9)">${i18n.t('analytics.map_country', { defaultValue: 'Cameroun' })}</div>`)} />
+          {/* Labels des régions au centroïde (décalage manuel pour les régions du sud). */}
           {polys.map((rp) => {
             const off = LABEL_OFFSETS[rp.name]
-            const pos = off ? { lat: rp.center.lat + off.lat, lng: rp.center.lng + off.lng } : rp.center
-            return (
-            <OverlayViewF key={`lbl-${rp.name}`} position={pos} mapPaneName="overlayLayer" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.65)', whiteSpace: 'nowrap', pointerEvents: 'none', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: 'Inter, sans-serif' }}>{rp.name}</div>
-            </OverlayViewF>
-            )
+            const pos: [number, number] = off ? [rp.center.lat + off.lat, rp.center.lng + off.lng] : [rp.center.lat, rp.center.lng]
+            return <Marker key={`lbl-${rp.name}`} position={pos} interactive={false} icon={textIcon(`<div style="font-size:12px;font-weight:600;color:rgba(255,255,255,.75);text-shadow:0 1px 3px rgba(0,0,0,.95)">${rp.name}</div>`)} />
           })}
-          {/* Cercles colorés par région (rayon + teinte selon le volume) — NON cliquables :
-              purement indicatifs, ils laissent passer le survol vers les polygones dessous. */}
+          {/* Cercles par région (rayon + teinte selon le volume) — non interactifs. */}
           {Object.entries(REGION_COORDS).map(([name, c]) => {
             const d = datumFor(byName, name)
             return (
-              <Circle key={`c-${name}`} center={c} radius={radiusFor(d)}
-                options={{ fillColor: d.transactions === 0 ? '#64748B' : (circleColor(d.volume) as string), fillOpacity: hovered === name ? 0.7 : 0.4, strokeColor: STROKE, strokeWeight: 2, strokeOpacity: 0.9, clickable: false, zIndex: 2 }} />
+              <Circle key={`c-${name}`} center={[c.lat, c.lng]} radius={radiusFor(d)} interactive={false}
+                pathOptions={{ fillColor: d.transactions === 0 ? '#64748B' : (circleColor(d.volume) as string), fillOpacity: hovered === name ? 0.7 : 0.4, color: STROKE, weight: 2, opacity: 0.9 }} />
             )
           })}
-          {/* Marqueur ville cliquable (MarkerF = variante fonctionnelle, sans warning) */}
+          {/* Marqueur ville cliquable → popup dark */}
           {Object.entries(REGION_COORDS).map(([name, c]) => {
             const d = datumFor(byName, name)
-            return <MarkerF key={`m-${name}`} position={c} icon={iconFor(d.transactions)} onClick={() => setSelected(name)} />
-          })}
-          {/* Tooltip custom DARK (l'InfoWindow Google a un fond blanc natif inévitable).
-              Rendu dans une OverlayView (float pane) ancrée au centroïde → reste collé
-              à la région pendant pan/zoom, sans calcul de pixels qui se périme. */}
-          {selected && (() => {
-            const d = datumFor(byName, selected)
-            const pos = centerByName.get(selected) ?? REGION_COORDS[selected]
+            const st = markerStyle(d.transactions)
             return (
-              <OverlayViewF position={pos} mapPaneName="floatPane" getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -h - 14 })}>
-                <div style={{ position: 'relative', background: 'rgba(13, 17, 23, 0.95)', border: '1px solid rgba(0, 200, 150, 0.4)', borderRadius: 12, padding: '14px 16px', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 8px 32px rgba(0,0,0,0.6)', minWidth: 200, zIndex: 10, pointerEvents: 'none', fontFamily: 'Inter, sans-serif' }}>
-                  <button onClick={() => setSelected(null)} aria-label={i18n.t('analytics.map_close', { defaultValue: 'Fermer' })}
-                    style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)', fontSize: 13, lineHeight: 1, cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-                  <div style={{ color: '#00C896', fontWeight: 700, fontSize: 14, marginBottom: 8, paddingRight: 18 }}>📍 {selected}</div>
-                  <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 6 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>
-                  <div style={{ color: '#00C896', fontSize: 18, fontWeight: 800 }}>💰 {fmtFcfa(d.volume)}</div>
-                  {d.city && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 8 }}>{i18n.t('analytics.geo_main_city', { city: d.city, defaultValue: `Ville : ${d.city}` })}</div>}
-                </div>
-              </OverlayViewF>
+              <CircleMarker key={`m-${name}`} center={[c.lat, c.lng]} radius={st.radius}
+                pathOptions={{ fillColor: st.color, fillOpacity: 0.95, color: '#0d1117', weight: 1.5 }}>
+                <RegionPopup name={name} d={d} />
+              </CircleMarker>
             )
-          })()}
-        </GoogleMap>
+          })}
+        </MapContainer>
         <MarkerLegend />
       </div>
     </div>
+  )
+}
+
+function RegionPopup({ name, d }: { name: string; d: GeoRegionDatum }) {
+  return (
+    <Popup className="cw-popup">
+      <div style={{ color: '#00C896', fontWeight: 700, fontSize: 14, marginBottom: 8, paddingRight: 18 }}>📍 {name}</div>
+      <div style={{ color: '#e6edf3', fontSize: 13, marginBottom: 6 }}>🔄 {i18n.t('analytics.tx_count', { n: d.transactions })}</div>
+      <div style={{ color: '#00C896', fontSize: 18, fontWeight: 800 }}>💰 {fmtFcfa(d.volume)}</div>
+      {d.city && <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 8 }}>{i18n.t('analytics.geo_main_city', { city: d.city, defaultValue: `Ville : ${d.city}` })}</div>}
+    </Popup>
   )
 }
 
@@ -352,7 +316,7 @@ function MarkerLegend() {
   ]
   return (
     <div style={{
-      position: 'absolute', bottom: 16, left: 16, zIndex: 10,
+      position: 'absolute', bottom: 16, left: 16, zIndex: 1000,
       background: 'rgba(13, 17, 23, 0.9)', border: '1px solid rgba(0, 200, 150, 0.2)',
       backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
       borderRadius: 12, padding: 16, fontFamily: 'Inter, system-ui, sans-serif',
@@ -375,17 +339,6 @@ function MarkerLegend() {
         </span>
         {i18n.t('analytics.geo_legend_size', { defaultValue: 'Taille = volume' })}
       </div>
-    </div>
-  )
-}
-
-// État de chargement de marque (spinner émeraude) — remplace le texte brut.
-function MapLoading() {
-  return (
-    <div style={{ height: 'clamp(420px, 68vh, 640px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: MUTED, fontSize: 13, background: BG, borderRadius: 12, border: '1px solid rgba(0, 200, 150, 0.15)' }}>
-      <style>{`@keyframes cw-spin{to{transform:rotate(360deg)}}`}</style>
-      <span style={{ width: 34, height: 34, borderRadius: '50%', border: '3px solid #1E2D45', borderTopColor: GRAD_HI, animation: 'cw-spin .8s linear infinite' }} />
-      {i18n.t('common.loading')}
     </div>
   )
 }
@@ -527,29 +480,9 @@ function SvgFallback({ regions }: { regions: GeoRegionDatum[] }) {
   return <FallbackBoundary fallback={<SchematicMap regions={regions} />}><SvgMap regions={regions} /></FallbackBoundary>
 }
 
-const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
-
-// Bandeau explicite quand la clé manque (au lieu d'un fond vide/vert), suivi de
-// la carte SVG de secours pour conserver l'affichage des données.
-function MissingKeyPanel({ regions }: { regions: GeoRegionDatum[] }) {
-  return (
-    <div style={{ background: BG, borderRadius: 12, padding: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '10px 12px', marginBottom: 8, color: '#FBBF24', fontSize: 12.5, fontWeight: 600 }}>
-        ⚠️ {i18n.t('analytics.geo_missing_key')}
-      </div>
-      <SvgFallback regions={regions} />
-    </div>
-  )
-}
-
 function MapChooser({ regions }: { regions: GeoRegionDatum[] }) {
-  // Sans clé Google Maps → message explicite + carte SVG d3-geo (jamais de fond vert).
-  if (!GMAPS_KEY) {
-    console.error('[CameroonMap] VITE_GOOGLE_MAPS_API_KEY manquante : la carte Google Maps ne peut pas se charger. Repli sur la carte SVG. Définir la variable dans .env.local (dev) et dans Vercel (prod).')
-    return <MissingKeyPanel regions={regions} />
-  }
-  // Avec clé → Google Maps ; si la lib plante, repli sur la carte SVG.
-  return <FallbackBoundary fallback={<SvgFallback regions={regions} />}><GoogleCameroonMap apiKey={GMAPS_KEY} regions={regions} /></FallbackBoundary>
+  // OpenStreetMap (Leaflet) ; si la lib plante, repli sur la carte SVG.
+  return <FallbackBoundary fallback={<SvgFallback regions={regions} />}><OsmCameroonMap regions={regions} /></FallbackBoundary>
 }
 
 export default function CameroonGeoMap({ regions }: { regions: GeoRegionDatum[] }) {

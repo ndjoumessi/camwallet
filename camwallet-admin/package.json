@@ -10,7 +10,6 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "@react-google-maps/api": "^2.20.8",
     "clsx": "^2.1.1",
     "d3-geo": "^3.1.1",
     "d3-scale": "^4.0.2",
@@ -18,14 +17,17 @@
     "i18next": "^26.3.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.468.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.8",
+    "react-leaflet": "^4.2.1",
     "recharts": "^2.13.3"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

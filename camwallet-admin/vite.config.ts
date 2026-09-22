@@ -35,6 +35,7 @@ export default defineConfig({
           charts: ['recharts'],
           pdf: ['jspdf', 'jspdf-autotable', 'html2canvas'],
           icons: ['lucide-react'],
+          map: ['leaflet', 'react-leaflet'],
         },
       },
     },

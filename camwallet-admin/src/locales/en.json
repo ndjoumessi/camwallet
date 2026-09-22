@@ -1295,7 +1295,6 @@
     "geo_stat_regions": "Active regions",
     "geo_stat_top": "Top region",
     "geo_stat_share": "{{pct}}% of volume",
-    "geo_missing_key": "Google Maps key missing — fallback map shown. Set VITE_GOOGLE_MAPS_API_KEY (Vercel in prod).",
     "map_zoom_in": "Zoom in",
     "map_zoom_out": "Zoom out",
     "map_country": "Cameroon",
