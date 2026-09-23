@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  AccessibilityInfo,
   Animated,
   Easing,
   TextInput,
@@ -14,6 +15,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { Colors, Typography, BorderRadius, Spacing, Shadows, Animation } from '../constants/theme';
 
 // ── Button ────────────────────────────────────────────────
@@ -75,6 +77,136 @@ export function Button({
         </View>
       )}
     </Pressable>
+  );
+}
+
+// ── HoldButton (confirmation par appui maintenu) ──────────
+// Pour une action irréversible sans PIN derrière (ex. retrait) : le remplissage suit le
+// doigt, relâcher avant la fin annule. Un lecteur d'écran ne peut pas maintenir un appui :
+// pour lui, un simple tap confirme.
+interface HoldButtonProps {
+  label: string;
+  onConfirm: () => void;
+  /** Explique comment déclencher l'action (annoncé par le lecteur d'écran). */
+  accessibilityHint: string;
+  /** À passer à true pendant l'appel réseau ; repasser à false après un échec réarme le bouton. */
+  loading?: boolean;
+  disabled?: boolean;
+  size?: ButtonSize;
+  /** Durée d'appui requise pour confirmer, en ms. */
+  holdMs?: number;
+  style?: StyleProp<ViewStyle>;
+}
+
+const HOLD_MS = 700;
+
+export function HoldButton({
+  label, onConfirm, accessibilityHint, loading, disabled, size = 'md', holdMs = HOLD_MS, style,
+}: HoldButtonProps) {
+  const s = SIZES[size];
+  const isDisabled = disabled || loading;
+  const [width, setWidth] = useState(0);
+  const [screenReader, setScreenReader] = useState(false);
+  const progress = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(1)).current;
+  const confirmed = useRef(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isScreenReaderEnabled().then(setScreenReader);
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', setScreenReader);
+    return () => sub.remove();
+  }, []);
+
+  // Après un échec (loading repasse à false), on réarme le bouton.
+  useEffect(() => {
+    if (!loading && confirmed.current) {
+      confirmed.current = false;
+      Animated.timing(progress, {
+        toValue: 0, duration: Animation.normal, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }).start();
+    }
+  }, [loading, progress]);
+
+  const settleScale = () =>
+    Animated.timing(scale, { toValue: 1, duration: Animation.fast, useNativeDriver: true }).start();
+
+  const complete = () => {
+    confirmed.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    settleScale();
+    onConfirm();
+  };
+
+  const startHold = () => {
+    if (isDisabled || confirmed.current) return;
+    Animated.timing(scale, { toValue: 0.97, duration: Animation.fast, useNativeDriver: true }).start();
+    // Reprend depuis la valeur courante si un retour est encore en cours.
+    progress.stopAnimation((value) => {
+      Animated.timing(progress, {
+        toValue: 1, duration: holdMs * (1 - value), easing: Easing.linear, useNativeDriver: true,
+      }).start(({ finished }) => { if (finished) complete(); });
+    });
+  };
+
+  const cancelHold = () => {
+    if (confirmed.current) return;
+    progress.stopAnimation();
+    Animated.timing(progress, {
+      toValue: 0, duration: Animation.fast, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+    }).start();
+    settleScale();
+  };
+
+  // onPress suit onPressOut : un tap bref ne confirme que pour un lecteur d'écran.
+  const handlePress = () => {
+    if (!screenReader || isDisabled || confirmed.current) return;
+    progress.stopAnimation();
+    progress.setValue(1);
+    complete();
+  };
+
+  const fillShift = (from: number) =>
+    progress.interpolate({ inputRange: [0, 1], outputRange: [from, 0] });
+
+  return (
+    <Animated.View style={[styles.holdWrap, { transform: [{ scale }] }]}>
+      <Pressable
+        onPressIn={startHold}
+        onPressOut={cancelHold}
+        onPress={handlePress}
+        disabled={isDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ disabled: !!isDisabled, busy: !!loading }}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        style={[
+          styles.holdBtn,
+          { minHeight: s.minHeight, paddingVertical: s.padV },
+          isDisabled && !loading && styles.btnDisabled,
+          style,
+        ]}
+      >
+        <Text style={[styles.btnText, styles.holdLabel, { fontSize: s.font, color: Colors.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+          {label}
+        </Text>
+        {width > 0 && (
+          // Le remplissage glisse vers la droite ; son contenu glisse en sens inverse pour que
+          // le texte foncé reste fixe et ne soit révélé qu'à mesure que le vert avance.
+          <Animated.View style={[styles.holdFill, { width, transform: [{ translateX: fillShift(-width) }] }]}>
+            <Animated.View style={[styles.holdFillInner, { width, transform: [{ translateX: fillShift(width) }] }]}>
+              {loading ? (
+                <ActivityIndicator color={Colors.bg} />
+              ) : (
+                <Text style={[styles.btnText, styles.holdLabel, { fontSize: s.font, color: Colors.bg }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {label}
+                </Text>
+              )}
+            </Animated.View>
+          </Animated.View>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -289,6 +421,26 @@ const styles = StyleSheet.create({
   btnContent: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   btnText: { fontWeight: Typography.bold },
   btnDisabled: { opacity: 0.4 },
+
+  // HoldButton
+  holdWrap: { alignSelf: 'stretch' },
+  holdBtn: {
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: Colors.primaryLight,
+  },
+  holdLabel: { textAlign: 'center', alignSelf: 'stretch' },
+  // overflow hidden : le texte contre-translaté ne doit apparaître que là où le vert est passé.
+  holdFill: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: Colors.primary, overflow: 'hidden', pointerEvents: 'none' },
+  holdFillInner: {
+    position: 'absolute', top: 0, bottom: 0, left: 0,
+    paddingHorizontal: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // IconButton
   iconBtn: {
