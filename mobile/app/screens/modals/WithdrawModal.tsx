@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
-import { Button, IconButton } from '../../components/ui';
+import { Button, HoldButton, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
 import { walletApi, MobileOperator } from '../../../src/lib/api';
 import { useTranslation } from 'react-i18next';
@@ -222,12 +222,13 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
 
                 {error && <Text style={styles.errorText}>{error}</Text>}
 
-                <Button
-                  label={amt ? t('withdraw.btnWithdrawWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('withdraw.btnWithdraw')}
-                  onPress={handleWithdraw}
+                {/* Le retrait débite le solde immédiatement et sans PIN : on demande un appui maintenu. */}
+                <HoldButton
+                  label={amt ? t('withdraw.btnHoldWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('withdraw.btnHold')}
+                  accessibilityHint={t('withdraw.holdHint')}
+                  onConfirm={handleWithdraw}
                   loading={loading}
-                  disabled={loading || amt < 500}
-                  fullWidth
+                  disabled={amt < 500}
                 />
               </>
             )}
