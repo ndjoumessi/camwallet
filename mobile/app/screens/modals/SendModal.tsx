@@ -11,14 +11,16 @@ import {
   Linking,
   ActivityIndicator,
   Dimensions,
+  Platform,
 } from 'react-native';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Avatar, Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { useKeyboardOverlap } from '../../hooks/useKeyboardOverlap';
 import { authApi } from '../../../src/lib/api';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
@@ -60,6 +62,11 @@ const searchNorm = (s: string): string => s.toLowerCase().normalize('NFD').repla
 export default function SendModal({ visible, onClose, onSuccess, initialContact, initialRecipient }: SendModalProps) {
   const { user, balance, recentContacts, sendMoney } = useStore();
   const { t } = useTranslation();
+  // Android : le clavier peut recouvrir le bas du Modal ; on réserve la part recouverte (sinon la barre système).
+  const sheetRef = useRef<View>(null);
+  const keyboardOverlap = useKeyboardOverlap(sheetRef);
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? (keyboardOverlap || insets.bottom) : 0;
   const [step, setStep] = useState<'contact' | 'amount' | 'pin' | 'done'>('contact');
   const [selectedContact, setSelectedContact] = useState<{ id: number; name: string; phone: string; avatar: string; color: string } | null>(null);
   const [manualPhone, setManualPhone] = useState(''); // chiffres locaux uniquement (sans +237)
@@ -313,7 +320,8 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
 
       case 'amount':
         return (
-          <ScrollView contentContainerStyle={styles.body}>
+          <>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.body}>
             {/* Recipient */}
             {selectedContact && (
               <View style={styles.recipientCard}>
@@ -393,9 +401,13 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
                 </View>
               </View>
             )}
-
-            <Button label={t('send.amount.btnContinue')} icon="arrow-forward" onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setStep('pin'); }} disabled={!canSend} fullWidth />
           </ScrollView>
+
+          {/* Pied de page fixe : le bouton reste visible au-dessus du clavier. */}
+          <View style={styles.footer}>
+            <Button label={t('send.amount.btnContinue')} icon="arrow-forward" onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setStep('pin'); }} disabled={!canSend} fullWidth />
+          </View>
+          </>
         );
 
       case 'pin':
@@ -507,7 +519,7 @@ export default function SendModal({ visible, onClose, onSuccess, initialContact,
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
-        <Animated.View style={[styles.flex, animStyle]}>
+        <Animated.View ref={sheetRef} collapsable={false} style={[styles.flex, animStyle, { paddingBottom: bottomPad }]}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
@@ -554,6 +566,10 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
   backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
+  footer: {
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.md,
+    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface,
+  },
   sectionLabel: {
     color: Colors.textMuted, fontSize: Typography.sm,
     fontWeight: Typography.semibold, marginBottom: Spacing.sm,
