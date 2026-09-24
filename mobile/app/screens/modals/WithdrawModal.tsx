@@ -11,11 +11,12 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, HoldButton, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { useKeyboardOverlap } from '../../hooks/useKeyboardOverlap';
 import { walletApi, MobileOperator } from '../../../src/lib/api';
 import { useTranslation } from 'react-i18next';
 
@@ -30,6 +31,11 @@ const toCentimes = (fcfa: number) => Math.round(fcfa * 100);
 export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawModalProps) {
   const { user, fetchBalance, dailyLimit } = useStore();
   const { t } = useTranslation();
+  // Android : le clavier peut recouvrir le bas du Modal ; on réserve la part recouverte (sinon la barre système).
+  const sheetRef = useRef<View>(null);
+  const keyboardOverlap = useKeyboardOverlap(sheetRef);
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? (keyboardOverlap || insets.bottom) : 0;
 
   const OPERATORS = [
     { id: 'mtn', icon: 'phone-portrait-outline' as const, label: t('withdraw.operator.mtnLabel'), color: Colors.mtn, ussd: '*126#' },
@@ -104,7 +110,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
     <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
-        <Animated.View style={[styles.flex, animStyle]}>
+        <Animated.View ref={sheetRef} collapsable={false} style={[styles.flex, animStyle, { paddingBottom: bottomPad }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{t('withdraw.headerTitle')}</Text>
             <IconButton icon="close" onPress={handleClose} accessibilityLabel={t('withdraw.closeBtnA11y')} />
@@ -122,7 +128,7 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
             </View>
           )}
 
-          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.flex} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {step === 'operator' && (
               <>
                 <Text style={styles.sectionLabel}>{t('withdraw.operator.sectionLabel')}</Text>
@@ -220,16 +226,6 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
                   )}
                 </View>
 
-                {error && <Text style={styles.errorText}>{error}</Text>}
-
-                {/* Le retrait débite le solde immédiatement et sans PIN : on demande un appui maintenu. */}
-                <HoldButton
-                  label={amt ? t('withdraw.btnHoldWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('withdraw.btnHold')}
-                  accessibilityHint={t('withdraw.holdHint')}
-                  onConfirm={handleWithdraw}
-                  loading={loading}
-                  disabled={amt < 500}
-                />
               </>
             )}
 
@@ -246,6 +242,21 @@ export default function WithdrawModal({ visible, onClose, onSuccess }: WithdrawM
               </View>
             )}
           </ScrollView>
+
+          {/* Pied de page fixe : le bouton reste visible au-dessus du clavier. Le retrait débite le
+              solde immédiatement et sans PIN : on demande un appui maintenu. */}
+          {step === 'amount' && operator && (
+            <View style={styles.footer}>
+              {error && <Text style={styles.errorText}>{error}</Text>}
+              <HoldButton
+                label={amt ? t('withdraw.btnHoldWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('withdraw.btnHold')}
+                accessibilityHint={t('withdraw.holdHint')}
+                onConfirm={handleWithdraw}
+                loading={loading}
+                disabled={amt < 500}
+              />
+            </View>
+          )}
         </Animated.View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -264,6 +275,10 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
   backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
+  footer: {
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.md, gap: Spacing.sm,
+    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface,
+  },
   sectionLabel: {
     color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
     marginBottom: Spacing.sm,

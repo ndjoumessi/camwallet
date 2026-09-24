@@ -11,11 +11,12 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { useKeyboardOverlap } from '../../hooks/useKeyboardOverlap';
 import { walletApi, MobileOperator } from '../../../src/lib/api';
 import { useTranslation } from 'react-i18next';
 
@@ -33,6 +34,11 @@ const QUICK_AMOUNTS = IS_SANDBOX ? [5, 10, 15, 25] : [5000, 10000, 25000, 50000]
 export default function RechargeModal({ visible, onClose, onSuccess }: RechargeModalProps) {
   const { user, fetchBalance } = useStore();
   const { t } = useTranslation();
+  // Android : le clavier peut recouvrir le bas du Modal ; on réserve la part recouverte (sinon la barre système).
+  const sheetRef = useRef<View>(null);
+  const keyboardOverlap = useKeyboardOverlap(sheetRef);
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? (keyboardOverlap || insets.bottom) : 0;
   const fetchBalanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const METHODS = [
@@ -110,7 +116,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
     <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
-        <Animated.View style={[styles.flex, animStyle]}>
+        <Animated.View ref={sheetRef} collapsable={false} style={[styles.flex, animStyle, { paddingBottom: bottomPad }]}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{t('recharge.headerTitle')}</Text>
             <IconButton icon="close" onPress={handleClose} accessibilityLabel={t('recharge.closeBtnA11y')} />
@@ -128,7 +134,7 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
             </View>
           )}
 
-          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          <ScrollView style={styles.flex} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {step === 'method' && (
             <>
               <Text style={styles.sectionLabel}>{t('recharge.method.sectionLabel')}</Text>
@@ -228,16 +234,6 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
                   {IS_SANDBOX ? t('recharge.limitNote.sandbox') : t('recharge.limitNote.prod')}
                 </Text>
               </View>
-
-              {error && <Text style={styles.errorText}>{error}</Text>}
-
-              <Button
-                label={amt ? t('recharge.btnRechargeWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('recharge.btnRecharge')}
-                onPress={handleRecharge}
-                loading={loading}
-                disabled={loading || (IS_SANDBOX ? (amt < 1 || amt > 25) : (amt < 500))}
-                fullWidth
-              />
             </>
           )}
 
@@ -254,6 +250,20 @@ export default function RechargeModal({ visible, onClose, onSuccess }: RechargeM
             </View>
           )}
           </ScrollView>
+
+          {/* Pied de page fixe : le bouton reste visible au-dessus du clavier. */}
+          {step === 'amount' && method && (
+            <View style={styles.footer}>
+              {error && <Text style={styles.errorText}>{error}</Text>}
+              <Button
+                label={amt ? t('recharge.btnRechargeWithAmount', { amount: amt.toLocaleString('fr-FR') }) : t('recharge.btnRecharge')}
+                onPress={handleRecharge}
+                loading={loading}
+                disabled={loading || (IS_SANDBOX ? (amt < 1 || amt > 25) : (amt < 500))}
+                fullWidth
+              />
+            </View>
+          )}
         </Animated.View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -272,6 +282,10 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: Spacing.sm },
   backLabel: { color: Colors.textMuted, fontSize: Typography.base },
   body: { padding: Spacing.xl, gap: Spacing.md },
+  footer: {
+    paddingHorizontal: Spacing.xl, paddingTop: Spacing.md, paddingBottom: Spacing.md, gap: Spacing.sm,
+    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface,
+  },
   sectionLabel: {
     color: Colors.textMuted, fontSize: Typography.sm, fontWeight: Typography.semibold,
     marginBottom: Spacing.sm,
@@ -319,7 +333,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md, padding: Spacing.md,
     color: Colors.text, fontSize: Typography.base,
   },
-  errorText: { color: Colors.red, fontSize: Typography.sm, textAlign: 'center', marginBottom: Spacing.sm },
+  errorText: { color: Colors.red, fontSize: Typography.sm, textAlign: 'center' },
   pendingContainer: { alignItems: 'center', padding: Spacing.xl, paddingTop: Spacing.xxl },
   pendingIcon: {
     width: 80, height: 80, borderRadius: 40,
