@@ -21,10 +21,13 @@ export function useKeyboardOverlap(ref: RefObject<View | null>): number {
       // Laisse le système / KeyboardAvoidingView finir leur relayout avant de mesurer.
       timer = setTimeout(() => {
         ref.current?.measureInWindow((_x, y, _w, h) => {
-          // `y` est relatif à la fenêtre du Modal, qui démarre sous la barre d'état ; `screenY`
-          // est relatif à l'écran : on ramène la mesure dans le repère de l'écran.
-          const bottomOnScreen = y + h + (StatusBar.currentHeight ?? 0);
-          setOverlap(Math.max(0, Math.round(bottomOnScreen - keyboardTop)));
+          // `y` est relatif à la fenêtre du Modal, `screenY` à l'écran. Le haut du conteneur ne peut
+          // pas être au-dessus de la barre d'état : soit la fenêtre démarre sous elle (y = 0, cas
+          // d'Expo Go), soit elle démarre à l'écran 0 et la zone sûre pousse le contenu dessous
+          // (y = hauteur de la barre, cas de l'APK). Dans les deux cas : max(y, barre d'état).
+          // `ref` doit donc être la racine de la feuille, juste sous la zone sûre du haut.
+          const topOnScreen = Math.max(y, StatusBar.currentHeight ?? 0);
+          setOverlap(Math.max(0, Math.round(topOnScreen + h - keyboardTop)));
         });
       }, 150);
     });
