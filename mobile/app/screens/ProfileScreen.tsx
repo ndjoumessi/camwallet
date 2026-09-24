@@ -12,8 +12,6 @@ import {
   ActivityIndicator,
   Pressable,
   Modal,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius, BALANCE_GRADIENT } from '../constants/theme';
 import { Badge, Skeleton } from '../components/ui';
+import { KeyboardSafeOverlay } from '../components/KeyboardSafeOverlay';
 import { userApi, authApi, MeResponse, loyaltyApi, LoyaltyBalance, LoyaltyEvent } from '../../src/lib/api';
 import { useStore } from '../store/useStore';
 import KycModal from './modals/KycModal';
@@ -789,8 +788,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
     {/* Modal : Changement de PIN (étape 1 : ancien PIN — étape 2 : nouveau PIN) */}
     <Modal visible={pinModalOpen} transparent animationType="slide" onRequestClose={() => setPinModalOpen(false)}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <View style={styles.deleteOverlay}>
+      <KeyboardSafeOverlay>
         <View style={[styles.deleteModalCard, { gap: Spacing.md }]}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.primary} />
           <Text style={styles.deleteModalTitle}>{t('profile.pinModal.title')}</Text>
@@ -860,8 +858,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
             <Text style={styles.deleteCancelText}>{t('profile.pinModal.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
-      </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeOverlay>
     </Modal>
 
     {/* Modal : Écrans légaux (CGU + Confidentialité) */}
@@ -922,8 +919,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
 
     {/* Modal 2 : confirmation PIN */}
     <Modal visible={deleteStep === 'pin'} transparent animationType="slide" onRequestClose={() => { setDeleteStep('idle'); setDeletePin(''); }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <View style={styles.deleteOverlay}>
+      <KeyboardSafeOverlay>
         <View style={styles.deleteModalCard}>
           <Ionicons name="lock-closed-outline" size={32} color={Colors.red} />
           <Text style={styles.deleteModalTitle}>{t('profile.deleteModal2.title')}</Text>
@@ -951,8 +947,7 @@ export default function ProfileScreen({ onLogout, onMerchant }: ProfileScreenPro
             <Text style={styles.deleteCancelText}>{t('profile.deleteModal2.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
-      </View>
-      </KeyboardAvoidingView>
+      </KeyboardSafeOverlay>
     </Modal>
 
     {/* Historique complet des gains de fidélité */}
