@@ -25,7 +25,9 @@ export function useKeyboardOverlap(ref: RefObject<View | null>): number {
           // pas être au-dessus de la barre d'état : soit la fenêtre démarre sous elle (y = 0, cas
           // d'Expo Go), soit elle démarre à l'écran 0 et la zone sûre pousse le contenu dessous
           // (y = hauteur de la barre, cas de l'APK). Dans les deux cas : max(y, barre d'état).
-          // `ref` doit donc être la racine de la feuille, juste sous la zone sûre du haut.
+          // `ref` doit donc être la racine du modal, sous la zone sûre du haut s'il y en a une. Sans
+          // zone sûre (overlay transparent), l'estimation peut être trop grande de la hauteur de la
+          // barre d'état, jamais trop petite : le contenu ne se retrouve pas sous le clavier.
           const topOnScreen = Math.max(y, StatusBar.currentHeight ?? 0);
           setOverlap(Math.max(0, Math.round(topOnScreen + h - keyboardTop)));
         });

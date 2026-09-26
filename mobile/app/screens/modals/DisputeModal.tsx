@@ -14,6 +14,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme
 import { disputeApi } from '../../../src/lib/api';
 import { useStore, Transaction } from '../../store/useStore';
 import { useTranslation } from 'react-i18next';
+import { KeyboardSafeOverlay } from '../../components/KeyboardSafeOverlay';
 
 const MAX_REASON = 60;
 const MIN_REASON = 5;
@@ -66,7 +67,7 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
-      <View style={styles.overlay}>
+      <KeyboardSafeOverlay>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
             <Ionicons name="return-up-back-outline" size={28} color={Colors.yellow} />
@@ -127,16 +128,12 @@ export default function DisputeModal({ visible, transaction, onClose, onSuccess 
             <Text style={styles.cancelText}>{t('dispute.btnCancel')}</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardSafeOverlay>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1, backgroundColor: Colors.overlay,
-    justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
-  },
   card: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.yellow + '40',
     borderRadius: BorderRadius.xl, padding: Spacing.xl, width: '100%', alignItems: 'center', gap: Spacing.md,

@@ -10,8 +10,9 @@ import {
   Animated,
   TextInput,
   AccessibilityInfo,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 import ViewShot from 'react-native-view-shot';
@@ -19,6 +20,7 @@ import * as Sharing from 'expo-sharing';
 import { Colors, Typography, Spacing, BorderRadius, Animation } from '../../constants/theme';
 import { Button, IconButton } from '../../components/ui';
 import { useStore } from '../../store/useStore';
+import { useKeyboardOverlap } from '../../hooks/useKeyboardOverlap';
 import { useTranslation } from 'react-i18next';
 
 interface ReceiveModalProps {
@@ -31,6 +33,11 @@ const formatPhone = (phone: string) => (phone.startsWith('+') ? phone : `+237 ${
 export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   const { user } = useStore();
   const { t } = useTranslation();
+  // Android : le clavier peut recouvrir le bas du Modal ; on réserve la part recouverte (sinon la barre système).
+  const sheetRef = useRef<View>(null);
+  const keyboardOverlap = useKeyboardOverlap(sheetRef);
+  const insets = useSafeAreaInsets();
+  const bottomPad = Platform.OS === 'android' ? (keyboardOverlap || insets.bottom) : 0;
   const [activeTab, setActiveTab] = useState<'static' | 'dynamic'>('static');
   const [dynamicAmount, setDynamicAmount] = useState('');
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -114,14 +121,14 @@ export default function ReceiveModal({ visible, onClose }: ReceiveModalProps) {
   return (
     <Modal visible={visible} animationType="none" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={styles.sheet} edges={['top']}>
-        <Animated.View style={[styles.flex, animStyle]}>
+        <Animated.View ref={sheetRef} collapsable={false} style={[styles.flex, animStyle, { paddingBottom: bottomPad }]}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{t('receive.headerTitle')}</Text>
             <IconButton icon="close" onPress={onClose} accessibilityLabel={t('receive.closeBtnA11y')} />
           </View>
 
-          <ScrollView contentContainerStyle={styles.body}>
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {/* Tabs */}
           <View style={styles.tabBar}>
             {(['static', 'dynamic'] as const).map((tab) => {
