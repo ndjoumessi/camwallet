@@ -312,11 +312,14 @@ export const authApi = {
 
   verifyOtp: (userId: string, code: string) =>
     api
-      .post<{ message: string; userId: string }>('/auth/verify-otp', { userId, code })
+      .post<{ message: string; userId: string; registrationToken: string }>('/auth/verify-otp', { userId, code })
       .then((r) => r.data),
 
-  async setPin(userId: string, pin: string): Promise<AuthTokens> {
-    const { data } = await api.post<AuthTokens>('/auth/set-pin', { userId, pin });
+  // `registrationToken` provient de verifyOtp : il prouve au backend que l'OTP a
+  // bien été validé pour ce compte (le backend en dérive le userId). Optionnel
+  // pour rester compatible, mais toujours transmis par le flux d'onboarding.
+  async setPin(userId: string, pin: string, registrationToken?: string): Promise<AuthTokens> {
+    const { data } = await api.post<AuthTokens>('/auth/set-pin', { userId, pin, registrationToken });
     await saveTokens(data.accessToken, data.refreshToken);
     return data;
   },

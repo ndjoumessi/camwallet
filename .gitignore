@@ -74,3 +74,8 @@ web-build/
 .cache/
 tmp/
 temp/
+
+# Strix (scans de sécurité — sorties & logs, ne pas committer)
+strix_runs/
+strix_authtest*.log
+camwallet_scan.log

@@ -14,6 +14,7 @@ describe('Flux authentification (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let userId: string;
+  let registrationToken: string;
   let accessToken: string;
 
   beforeAll(async () => {
@@ -72,12 +73,14 @@ describe('Flux authentification (e2e)', () => {
       .expect(200);
 
     expect(res.body).toHaveProperty('userId');
+    expect(res.body).toHaveProperty('registrationToken');
+    registrationToken = res.body.registrationToken;
   });
 
   it('Étape 3 — setPin : définit le PIN et retourne des tokens', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/auth/set-pin')
-      .send({ userId, pin: TEST_PIN })
+      .send({ userId, pin: TEST_PIN, registrationToken })
       .expect(200); // controller @HttpCode(HttpStatus.OK)
 
     expect(res.body).toHaveProperty('accessToken');

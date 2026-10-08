@@ -137,14 +137,48 @@ export class AuthService {
   // ─── Étape 2 : Vérification OTP ───────────────────────────────────────────
   async verifyOtp(dto: VerifyOtpDto) {
     await this.otpService.verifyOtp(dto.userId, dto.code, OtpPurpose.REGISTRATION);
-    return { message: 'Numéro vérifié', userId: dto.userId };
+    // Jeton d'enregistrement éphémère : preuve que l'OTP a bien été validé pour
+    // CE compte. set-pin le vérifie et en dérive le userId, plutôt que de faire
+    // confiance à un userId fourni dans le body (cf. setPin). Durée courte (10 min)
+    // car il n'ouvre que la création initiale du PIN.
+    const registrationToken = this.jwtService.sign(
+      { sub: dto.userId, purpose: 'set_pin' },
+      { expiresIn: '10m' },
+    );
+    return { message: 'Numéro vérifié', userId: dto.userId, registrationToken };
   }
 
   // ─── Étape 3 : Création PIN ────────────────────────────────────────────────
   async setPin(dto: SetPinDto) {
+    // SÉCURITÉ : set-pin est un endpoint public. La SEULE preuve d'identité
+    // acceptée est le `registrationToken` émis par verify-otp (purpose: 'set_pin') :
+    // on en dérive le compte cible côté serveur. Le `userId` du body est ignoré —
+    // sans token valide, aucune création de PIN n'est possible.
+    let payload: { sub?: string; purpose?: string };
+    try {
+      payload = this.jwtService.verify(dto.registrationToken);
+    } catch {
+      throw new UnauthorizedException("Jeton d'enregistrement invalide ou expiré");
+    }
+    if (payload.purpose !== 'set_pin' || !payload.sub) {
+      throw new UnauthorizedException("Jeton d'enregistrement invalide");
+    }
+    const userId = payload.sub;
+
+    // Création initiale du PIN uniquement — jamais d'écrasement d'un PIN existant
+    // (défense en profondeur ; les changements ultérieurs passent par le flux
+    // authentifié change-pin / pin-reset).
+    const existing = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) {
+      throw new BadRequestException('Utilisateur introuvable');
+    }
+    if (existing.pinHash !== '') {
+      throw new BadRequestException('Un PIN est déjà défini pour ce compte');
+    }
+
     const pinHash = await bcrypt.hash(this.pepperPin(dto.pin), PIN_BCRYPT_COST);
     const user = await this.prisma.user.update({
-      where: { id: dto.userId },
+      where: { id: userId },
       data: { pinHash },
     });
     return this.generateTokens(user.id, user.role, { tv: user.tokenVersion });
