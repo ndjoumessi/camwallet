@@ -73,6 +73,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
   const [pinConfirm, setPinConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState('');
+  // Jeton d'enregistrement émis par verify-otp, transmis à set-pin (preuve d'OTP).
+  const [registrationToken, setRegistrationToken] = useState('');
   const [pinStep, setPinStep] = useState<'create' | 'confirm'>('create');
   const [error, setError] = useState('');
   // Vrai quand le numéro saisi est déjà inscrit (409) → on propose d'aller se connecter.
@@ -161,7 +163,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
     setError('');
     setLoading(true);
     try {
-      await authApi.verifyOtp(userId, otp);
+      const res = await authApi.verifyOtp(userId, otp);
+      setRegistrationToken(res.registrationToken);
       setStep('pin');
     } catch (err: any) {
       const status: number | undefined = err?.response?.status;
@@ -197,7 +200,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingProps) {
         if (next === pin) {
           setLoading(true);
           authApi
-            .setPin(userId, next)
+            .setPin(userId, next, registrationToken)
             .then(() => setTimeout(onComplete, 200))
             .catch((err: any) => {
               const status: number | undefined = err?.response?.status;

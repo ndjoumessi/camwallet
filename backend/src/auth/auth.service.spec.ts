@@ -432,18 +432,37 @@ describe('AuthService', () => {
     });
 
     it('setPin hashe le PIN peppered (pas le PIN brut)', async () => {
+      // Onboarding nominal : token valide + compte existant sans PIN.
+      jwtService.verify.mockReturnValue({ sub: 'user-1', purpose: 'set_pin' });
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', pinHash: '' });
       let stored: string | undefined;
       prisma.user.update.mockImplementation(({ data }: any) => {
         stored = data.pinHash;
         return Promise.resolve({ id: 'user-1', role: 'USER', tokenVersion: 0 });
       });
 
-      await service.setPin({ userId: 'user-1', pin: '123456' });
+      await service.setPin({ userId: 'user-1', pin: '123456', registrationToken: 'reg-token' });
 
       expect(stored).toBeDefined();
       // Le hash correspond au PIN peppered, jamais au PIN brut.
       expect(bcrypt.compareSync(peppered('123456'), stored!)).toBe(true);
       expect(bcrypt.compareSync('123456', stored!)).toBe(false);
+    });
+
+    it('setPin refuse d’écraser un PIN déjà défini (anti-prise de contrôle)', async () => {
+      // Sécurité : même avec un token valide pour ce compte, set-pin ne doit
+      // jamais réécrire un PIN existant (défense en profondeur).
+      jwtService.verify.mockReturnValue({ sub: 'victime', purpose: 'set_pin' });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'victime',
+        pinHash: bcrypt.hashSync(peppered('000000'), 1),
+      });
+      prisma.user.update.mockClear();
+
+      await expect(
+        service.setPin({ userId: 'victime', pin: '123456', registrationToken: 'reg-token' }),
+      ).rejects.toThrow('Un PIN est déjà défini');
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
 
     it('connecte avec le PIN peppered', async () => {
@@ -503,6 +522,69 @@ describe('AuthService', () => {
       await expect(
         service.login({ phone: '+237677000001', pin: '000000' }),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // ─── set-pin : jeton d'enregistrement ───────────────────────────────────────
+  describe('setPin — jeton d’enregistrement', () => {
+    it('verifyOtp émet un registrationToken', async () => {
+      jwtService.sign.mockReturnValue('reg-token');
+      const res = await service.verifyOtp({ userId: 'user-1', code: '123456' });
+      expect(res.registrationToken).toBe('reg-token');
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        { sub: 'user-1', purpose: 'set_pin' },
+        expect.objectContaining({ expiresIn: expect.any(String) }),
+      );
+    });
+
+    it('dérive le compte du token (ignore un userId du body différent)', async () => {
+      // Le token prouve l'OTP pour 'user-token' ; le body tente 'victime'.
+      jwtService.verify.mockReturnValue({ sub: 'user-token', purpose: 'set_pin' });
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-token', pinHash: '' });
+      prisma.user.update.mockResolvedValue({ id: 'user-token', role: 'USER', tokenVersion: 0 });
+
+      await service.setPin({ userId: 'victime', pin: '123456', registrationToken: 'reg-token' });
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: 'user-token' } });
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'user-token' } }),
+      );
+    });
+
+    it('rejette un token invalide/expiré', async () => {
+      jwtService.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
+      });
+      prisma.user.update.mockClear();
+
+      await expect(
+        service.setPin({ userId: 'user-1', pin: '123456', registrationToken: 'bad' }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejette un token au mauvais purpose', async () => {
+      jwtService.verify.mockReturnValue({ sub: 'user-1', purpose: 'login' });
+      prisma.user.update.mockClear();
+
+      await expect(
+        service.setPin({ userId: 'user-1', pin: '123456', registrationToken: 'reg-token' }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejette l’absence de token (plus de repli userId)', async () => {
+      // Sans token, jsonwebtoken lève → rejet. (@IsNotEmpty bloque déjà au niveau
+      // HTTP ; ce test verrouille l'absence de repli côté service.)
+      jwtService.verify.mockImplementation(() => {
+        throw new Error('jwt must be provided');
+      });
+      prisma.user.update.mockClear();
+
+      await expect(
+        service.setPin({ userId: 'victime', pin: '123456', registrationToken: '' } as any),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.user.update).not.toHaveBeenCalled();
     });
   });
 });
